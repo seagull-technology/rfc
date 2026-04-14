@@ -27,6 +27,42 @@
         'submitted', 'under_review', 'in_review' => 'warning',
         default => 'info',
     };
+    $timelineEvents = collect([
+        [
+            'label' => __('app.workflow.current_stage'),
+            'date' => $application->updated_at,
+            'status' => $application->status,
+            'status_label' => $application->localizedStatus(),
+            'note' => $application->localizedStage(),
+            'meta' => null,
+        ],
+    ]);
+
+    foreach ($authorityApprovals as $approval) {
+        $timelineEvents->push([
+            'label' => $approval->localizedAuthority(),
+            'date' => $approval->decided_at ?? $approval->updated_at,
+            'status' => $approval->status,
+            'status_label' => $approval->localizedStatus(),
+            'note' => $approval->note,
+            'meta' => null,
+        ]);
+    }
+
+    foreach ($statusHistory as $event) {
+        $timelineEvents->push([
+            'label' => $event->localizedStatus(),
+            'date' => $event->happened_at,
+            'status' => $event->status,
+            'status_label' => $event->localizedStatus(),
+            'note' => $event->note,
+            'meta' => $event->user?->displayName(),
+        ]);
+    }
+
+    $timelineEvents = $timelineEvents
+        ->sortByDesc(fn (array $event) => $event['date']?->timestamp ?? 0)
+        ->values();
     $latestCorrespondence = $correspondences->first();
     $requestState = match ($application->status) {
         'draft' => [
@@ -166,47 +202,21 @@
                     <div class="card-body">
                         <div class="iq-timeline0 m-0 d-flex align-items-center justify-content-between position-relative">
                             <ul class="list-inline p-0 m-0">
-                                <li>
-                                    <div class="timeline-dots timeline-dot1 border-{{ $statusBadgeClass }} text-{{ $statusBadgeClass }}"></div>
-                                    <h6 class="float-left mb-1 fw-semibold">{{ __('app.workflow.current_stage') }}</h6>
-                                    <small class="float-right mt-1">{{ optional($application->updated_at)->format('Y-m-d') }}</small>
-                                    <div class="d-inline-block w-100">
-                                        <p class="mb-0">{{ $application->localizedStage() }}</p>
-                                        <p class="mb-0">{{ $application->localizedStatus() }}</p>
-                                    </div>
-                                </li>
-
-                                @foreach ($authorityApprovals as $approval)
-                                    @php($approvalColor = $timelineColor($approval->status))
+                                @foreach ($timelineEvents as $event)
+                                    @php($eventColor = $timelineColor($event['status']))
                                     <li>
-                                        <div class="timeline-dots timeline-dot1 border-{{ $approvalColor }} text-{{ $approvalColor }}"></div>
-                                        <h6 class="float-left mb-1 fw-semibold">{{ $approval->localizedAuthority() }}</h6>
-                                        @if ($approval->decided_at)
-                                            <small class="float-right mt-1">{{ $approval->decided_at->format('Y-m-d') }}</small>
+                                        <div class="timeline-dots timeline-dot1 border-{{ $eventColor }} text-{{ $eventColor }}"></div>
+                                        <h6 class="float-left mb-1 fw-semibold">{{ $event['label'] }}</h6>
+                                        @if ($event['date'])
+                                            <small class="float-right mt-1">{{ $event['date']->format('Y-m-d') }}</small>
                                         @endif
                                         <div class="d-inline-block w-100">
-                                            <p class="mb-0 text-{{ $approvalColor }}">{{ $approval->localizedStatus() }}</p>
-                                            @if ($approval->note)
-                                                <p class="mb-0">{{ $approval->note }}</p>
+                                            <p class="mb-0 text-{{ $eventColor }}">{{ $event['status_label'] }}</p>
+                                            @if ($event['note'])
+                                                <p class="mb-0">{{ $event['note'] }}</p>
                                             @endif
-                                        </div>
-                                    </li>
-                                @endforeach
-
-                                @foreach ($statusHistory as $event)
-                                    @php($historyColor = $timelineColor($event->status))
-                                    <li>
-                                        <div class="timeline-dots timeline-dot1 border-{{ $historyColor }} text-{{ $historyColor }}"></div>
-                                        <h6 class="float-left mb-1 fw-semibold">{{ $event->localizedStatus() }}</h6>
-                                        @if ($event->happened_at)
-                                            <small class="float-right mt-1">{{ $event->happened_at->format('Y-m-d') }}</small>
-                                        @endif
-                                        <div class="d-inline-block w-100">
-                                            @if ($event->note)
-                                                <p class="mb-0">{{ $event->note }}</p>
-                                            @endif
-                                            @if ($event->user)
-                                                <p class="mb-0 text-muted">{{ $event->user->displayName() }}</p>
+                                            @if ($event['meta'])
+                                                <p class="mb-0 text-muted">{{ $event['meta'] }}</p>
                                             @endif
                                         </div>
                                     </li>

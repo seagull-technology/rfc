@@ -34,6 +34,22 @@ class ScoutingRequestFlowTest extends TestCase
             ->assertSeeText(__('app.scouting.locations_tab'));
     }
 
+    public function test_scouting_directory_uses_template_table_shell(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $response = $this->actingAs($user)->get(route('scouting-requests.index'));
+
+        $response
+            ->assertOk()
+            ->assertSee('streamit-wraper-table', false)
+            ->assertSeeText(__('app.scouting.title'))
+            ->assertSeeText(__('app.scouting.open_requests'));
+    }
+
     public function test_applicant_can_create_and_submit_scouting_request(): void
     {
         Storage::fake('local');

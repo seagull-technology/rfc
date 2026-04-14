@@ -7,7 +7,7 @@
                 <div class="justify-content-center align-items-center height-self-center row">
                     <div class="align-self-center col-lg-10 col-md-12">
                         <div class="sign-user_card">
-                            <a href="#">
+                            <a href="{{ route('login') }}">
                                 <img class="img-fluid logo" src="{{ asset('images/logo.svg') }}" alt="#">
                             </a>
                             <div class="sign-in-page-data pt-5">

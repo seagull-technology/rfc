@@ -5,7 +5,6 @@
         .login-locale-switcher {
             display: flex;
             justify-content: flex-end;
-            gap: 10px;
             margin-bottom: 20px;
         }
 
@@ -46,19 +45,13 @@
                         <div class="sign-user_card">
                             <div class="login-locale-switcher">
                                 <a
-                                    href="{{ \Mcamara\LaravelLocalization\Facades\LaravelLocalization::getLocalizedURL('en', route('login', [], false), [], true) }}"
-                                    class="{{ app()->getLocale() === 'en' ? 'is-active' : '' }}"
+                                    href="{{ \Mcamara\LaravelLocalization\Facades\LaravelLocalization::getLocalizedURL(app()->getLocale() === 'ar' ? 'en' : 'ar', route('login', [], false), [], true) }}"
+                                    class="is-active"
                                 >
-                                    {{ __('app.meta.english') }}
-                                </a>
-                                <a
-                                    href="{{ \Mcamara\LaravelLocalization\Facades\LaravelLocalization::getLocalizedURL('ar', route('login', [], false), [], true) }}"
-                                    class="{{ app()->getLocale() === 'ar' ? 'is-active' : '' }}"
-                                >
-                                    {{ __('app.meta.arabic') }}
+                                    {{ app()->getLocale() === 'ar' ? __('app.meta.english') : __('app.meta.arabic') }}
                                 </a>
                             </div>
-                            <a href="#">
+                            <a href="{{ route('login') }}">
                                 <img class="img-fluid logo" src="{{ asset('images/logo.svg') }}" alt="#">
                             </a>
                             <div class="sign-in-page-data">
@@ -105,7 +98,7 @@
                                         </div>
 
                                         <div class="forgot-password">
-                                            <a href="#">{{ __('app.auth.forgot_password') }}</a>
+                                            <a href="{{ route('password.request') }}">{{ __('app.auth.forgot_password') }}</a>
                                         </div>
 
                                         <div class="submit">

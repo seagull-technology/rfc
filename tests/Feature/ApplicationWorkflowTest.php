@@ -37,7 +37,11 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText(__('app.applications.create_title'))
             ->assertSeeText(__('app.applications.general_information'))
             ->assertSeeText(__('app.applications.requirements_list'))
-            ->assertSee('id="form-wizard1"', false);
+            ->assertSee('id="form-wizard1"', false)
+            ->assertSee('id="step1"', false)
+            ->assertSee('id="step2"', false)
+            ->assertSee('class="btn btn-danger next action-button float-end btn-lg"', false)
+            ->assertSee('js/form-wizard.js', false);
     }
 
     public function test_applicant_can_create_a_draft_and_submit_it_for_review(): void
@@ -764,6 +768,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('card-dashboard', false)
             ->assertSeeText('Production requests')
             ->assertSeeText('Scouting requests')
             ->assertSeeText('Clarification Project')
@@ -812,6 +817,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('card-dashboard', false)
             ->assertSeeText('Production requests')
             ->assertSeeText('Scouting requests')
             ->assertSeeText('Student Documentary')
@@ -912,6 +918,25 @@ class ApplicationWorkflowTest extends TestCase
         ]);
 
         Application::query()->create([
+            'code' => 'REQ-30003',
+            'entity_id' => $entity->getKey(),
+            'submitted_by_user_id' => $user->getKey(),
+            'project_name' => 'Rejected Short',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'commercial',
+            'release_method' => 'digital',
+            'planned_start_date' => '2026-06-01',
+            'planned_end_date' => '2026-06-03',
+            'estimated_crew_count' => 9,
+            'estimated_budget' => 12000,
+            'project_summary' => 'Rejected project summary',
+            'status' => 'rejected',
+            'current_stage' => 'rejected',
+            'submitted_at' => now()->subDays(8),
+            'reviewed_at' => now()->subDays(4),
+        ]);
+
+        Application::query()->create([
             'code' => 'REQ-30002',
             'entity_id' => $entity->getKey(),
             'submitted_by_user_id' => $user->getKey(),
@@ -932,10 +957,14 @@ class ApplicationWorkflowTest extends TestCase
         $response = $this->actingAs($user)->get(route('profile.show'));
 
         $response->assertOk();
+        $response
+            ->assertSee('<span class="badge bg-success">Approved</span>', false)
+            ->assertSee('<span class="badge bg-danger">Rejected</span>', false);
         $previousProjects = collect($response->viewData('previousProjects'));
         $activeWorkflowRequests = collect($response->viewData('activeWorkflowRequests'));
 
         $this->assertTrue($previousProjects->contains(fn ($project) => $project->project_name === 'Released Feature'));
+        $this->assertTrue($previousProjects->contains(fn ($project) => $project->project_name === 'Rejected Short'));
         $this->assertFalse($previousProjects->contains(fn ($project) => $project->project_name === 'Open Review Project'));
         $this->assertTrue($activeWorkflowRequests->contains(fn ($item) => $item['project_name'] === 'Open Review Project'));
         $this->assertFalse($activeWorkflowRequests->contains(fn ($item) => $item['project_name'] === 'Released Feature'));
@@ -953,6 +982,7 @@ class ApplicationWorkflowTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('href="'.route('dashboard').'"', false)
+            ->assertSee('href="'.route('profile.show').'"', false)
             ->assertSee('href="'.route('profile.show', ['variant' => 'foreign_producer']).'"', false);
     }
 
@@ -975,6 +1005,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('href="'.route('dashboard').'"', false)
             ->assertSee('href="'.route('profile.show', ['variant' => 'foreign_producer']).'"', false)
             ->assertDontSeeText(__('app.reports.export_current'));
     }
@@ -1031,9 +1062,11 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Foreign Profile Studio')
             ->assertSeeText('Foreign Producer')
             ->assertSeeText('Production Requests')
+            ->assertSeeText('Applicant')
             ->assertSeeText('Foreign Feature')
             ->assertSeeText('Scouting requests')
-            ->assertSeeText('Foreign Scout');
+            ->assertSeeText('Foreign Scout')
+            ->assertDontSeeText('Work category');
     }
 
     public function test_admin_can_export_filtered_applications_directory(): void

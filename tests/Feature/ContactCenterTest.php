@@ -47,6 +47,7 @@ class ContactCenterTest extends TestCase
 
         $adminPage
             ->assertOk()
+            ->assertSee('streamit-wraper-table', false)
             ->assertSeeText('Updated filming guidance')
             ->assertSeeText('Applicant Studio');
 
@@ -54,6 +55,7 @@ class ContactCenterTest extends TestCase
 
         $applicantPage
             ->assertOk()
+            ->assertSee('streamit-wraper-table', false)
             ->assertSeeText('Updated filming guidance')
             ->assertSeeText('General notice');
 
@@ -118,6 +120,7 @@ class ContactCenterTest extends TestCase
 
         $adminInbox
             ->assertOk()
+            ->assertSee('streamit-wraper-table', false)
             ->assertSeeText('Clarification Required')
             ->assertSeeText('Scouting request correspondence')
             ->assertSeeText('Waiting on applicant');
@@ -126,6 +129,7 @@ class ContactCenterTest extends TestCase
 
         $applicantInbox
             ->assertOk()
+            ->assertSee('streamit-wraper-table', false)
             ->assertSeeText('Clarification Required')
             ->assertSeeText('Scouting request correspondence')
             ->assertSeeText('Waiting on applicant');
