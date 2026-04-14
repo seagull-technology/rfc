@@ -4,7 +4,9 @@ namespace Database\Seeders;
 
 use App\Models\Entity;
 use App\Models\Group;
+use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -25,6 +27,7 @@ class AccessControlSeeder extends Seeder
 
         $this->seedGroupRoleMap($groups, $roles);
         $this->seedEntities($groups);
+        $this->seedInitialSuperAdmin($roles);
 
         $registrar->forgetCachedPermissions();
     }
@@ -124,6 +127,44 @@ class AccessControlSeeder extends Seeder
                     'metadata' => $definition['metadata'] ?? null,
                 ],
             );
+        }
+    }
+
+    /**
+     * @param  array<string, Role>  $roles
+     */
+    private function seedInitialSuperAdmin(array $roles): void
+    {
+        $adminEntity = Entity::query()->where('code', 'platform-administration')->firstOrFail();
+
+        $user = User::query()->updateOrCreate(
+            ['email' => env('INITIAL_SUPER_ADMIN_EMAIL', 'superadmin@rfc.local')],
+            [
+                'name' => env('INITIAL_SUPER_ADMIN_NAME', 'Platform Super Admin'),
+                'username' => env('INITIAL_SUPER_ADMIN_USERNAME', 'superadmin'),
+                'national_id' => env('INITIAL_SUPER_ADMIN_NATIONAL_ID', '9999999999'),
+                'phone' => env('INITIAL_SUPER_ADMIN_PHONE', '0790000099'),
+                'status' => 'active',
+                'password' => Hash::make(env('INITIAL_SUPER_ADMIN_PASSWORD', 'Admin@12345')),
+            ],
+        );
+
+        $user->entities()->syncWithoutDetaching([
+            $adminEntity->getKey() => [
+                'job_title' => 'Platform Super Admin',
+                'is_primary' => true,
+                'status' => 'active',
+                'joined_at' => now(),
+            ],
+        ]);
+
+        $registrar = app(PermissionRegistrar::class);
+        $registrar->setPermissionsTeamId($adminEntity->getKey());
+
+        try {
+            $user->assignRole($roles['super_admin']);
+        } finally {
+            $registrar->setPermissionsTeamId(null);
         }
     }
 
