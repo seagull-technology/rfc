@@ -127,6 +127,18 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
 
+        'sms' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/sms.log'),
+            'level' => 'debug',
+        ],
+
+        'gov_lookup' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/gov-lookup.log'),
+            'level' => 'debug',
+        ],
+
     ],
 
 ];

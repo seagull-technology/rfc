@@ -37,4 +37,13 @@ class Group extends Model
         return $this->belongsToMany(Role::class, 'group_role')
             ->withTimestamps();
     }
+
+    public function displayName(?string $locale = null): string
+    {
+        $locale ??= app()->getLocale();
+
+        return $locale === 'ar'
+            ? ($this->name_ar ?: $this->name_en)
+            : ($this->name_en ?: $this->name_ar);
+    }
 }

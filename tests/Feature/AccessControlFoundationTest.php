@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -31,11 +32,18 @@ class AccessControlFoundationTest extends TestCase
             'code' => 'ministry-of-interior',
         ]);
 
+        $this->assertDatabaseHas('users', [
+            'email' => 'superadmin@rfc.local',
+            'username' => 'superadmin',
+        ]);
+
         $role = Role::query()->where('name', 'authority_approver')->firstOrFail();
 
         $this->assertDatabaseHas('group_role', [
             'role_id' => $role->getKey(),
         ]);
+
+        $this->assertInstanceOf(User::class, User::query()->where('email', 'superadmin@rfc.local')->first());
     }
 
     public function test_rfc_approver_role_receives_expected_permissions(): void
