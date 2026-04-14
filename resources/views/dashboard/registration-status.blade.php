@@ -30,7 +30,7 @@
                 <div class="justify-content-center align-items-center height-self-center row">
                     <div class="align-self-center col-lg-6 col-md-12">
                         <div class="sign-user_card registration-status-layout">
-                            <a href="#">
+                            <a href="{{ route('dashboard') }}">
                                 <img class="img-fluid logo" src="{{ asset('images/logo.svg') }}" alt="#">
                             </a>
                             <div class="sign-in-page-data">

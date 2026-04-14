@@ -1,10 +1,16 @@
 @php
     $title = $entity->displayName();
-    $statusClass = static fn (?string $status): string => match ($status) {
+    $entityStatusClass = static fn (?string $status): string => match ($status) {
         'active' => 'success',
         'pending_review' => 'warning',
         'needs_completion' => 'info',
         'rejected' => 'danger',
+        default => 'secondary',
+    };
+    $requestStatusClass = static fn (?string $status): string => match ($status) {
+        'submitted', 'under_review' => 'warning',
+        'approved' => 'success',
+        'rejected', 'needs_clarification' => 'danger',
         default => 'secondary',
     };
     $profileStats = $entityAnalytics['stats'];
@@ -42,6 +48,10 @@
             margin-bottom: 1.5rem;
         }
 
+        .portal-profile-layout .portal-summary-card {
+            margin-bottom: 1.5rem;
+        }
+
         .portal-profile-layout .portal-chart-card .card-body {
             min-height: 310px;
         }
@@ -62,17 +72,38 @@
             padding-bottom: 0;
         }
 
+        .portal-profile-layout .portal-chart-card .card-header,
+        .portal-profile-layout .portal-projects-card .card-header {
+            font-size: 1rem;
+            font-weight: 600;
+            padding-bottom: 1rem;
+        }
+
         .portal-profile-layout table thead th,
         .portal-profile-layout table tbody td {
             white-space: nowrap;
             vertical-align: middle;
         }
 
+        .portal-profile-layout .portal-stat-card h6 {
+            margin-bottom: .5rem;
+        }
+
+        .portal-profile-layout .portal-stat-card h3 {
+            margin-bottom: 0;
+        }
+
+        @media (min-width: 768px) {
+            .portal-profile-layout .portal-chart-row-secondary {
+                margin-top: 1rem !important;
+            }
+        }
+
     </style>
 @endpush
 
 @section('content')
-    <div class="card">
+    <div class="card portal-summary-card mb-4">
         <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
             <div class="d-flex align-items-center gap-3">
                 <img src="{{ asset('images/OIP.jpeg') }}" class="rounded-circle" width="70" alt="entity">
@@ -83,7 +114,7 @@
             </div>
 
             <div class="text-end">
-                <span class="badge bg-{{ $statusClass($entity->status) }}">{{ $entity->localizedStatus() }}</span>
+                <span class="badge bg-{{ $entityStatusClass($entity->status) }}">{{ $entity->localizedStatus() }}</span>
                 <div class="text-muted mt-1">{{ __('app.admin.entities.profile_member_since', ['year' => $memberSinceYear]) }}</div>
             </div>
         </div>
@@ -97,7 +128,7 @@
             ['label' => __('app.admin.entities.profile_metrics.approval_average'), 'value' => $profileStats['approval_average'].'%'],
         ] as $metric)
             <div class="col-md-3">
-                <div class="card">
+                <div class="card portal-stat-card">
                     <div class="card-body">
                         <h6>{{ $metric['label'] }}</h6>
                         <h3>{{ $metric['value'] }}</h3>
@@ -110,105 +141,75 @@
     <div class="row mt-4 g-3">
         <div class="col-md-6">
             <div class="card portal-chart-card">
-                <div class="card-header">
-                    <div class="header-title">
-                        <h2 class="episode-playlist-title wp-heading-inline">
-                            <span class="position-relative">{{ __('app.admin.entities.profile_charts.applications_by_type') }}</span>
-                        </h2>
-                    </div>
-                </div>
+                <div class="card-header">{{ __('app.admin.entities.profile_charts.applications_by_type') }}</div>
                 <div class="card-body"><div id="chartType" class="portal-chart-surface"></div></div>
             </div>
         </div>
 
         <div class="col-md-6">
             <div class="card portal-chart-card">
-                <div class="card-header">
-                    <div class="header-title">
-                        <h2 class="episode-playlist-title wp-heading-inline">
-                            <span class="position-relative">{{ __('app.admin.entities.profile_charts.budget_by_project') }}</span>
-                        </h2>
-                    </div>
-                </div>
+                <div class="card-header">{{ __('app.admin.entities.profile_charts.budget_by_project') }}</div>
                 <div class="card-body"><div id="chartBudget" class="portal-chart-surface"></div></div>
             </div>
         </div>
+    </div>
 
-        <div class="col-md-6">
+    <div class="row g-3 portal-chart-row-secondary">
+        <div class="col-md-6 mt-3 mt-md-0">
             <div class="card portal-chart-card">
-                <div class="card-header">
-                    <div class="header-title">
-                        <h2 class="episode-playlist-title wp-heading-inline">
-                            <span class="position-relative">{{ __('app.admin.entities.profile_charts.applications_by_month') }}</span>
-                        </h2>
-                    </div>
-                </div>
+                <div class="card-header">{{ __('app.admin.entities.profile_charts.applications_by_month') }}</div>
                 <div class="card-body"><div id="chartMonths" class="portal-chart-surface"></div></div>
             </div>
         </div>
 
-        <div class="col-md-6">
+        <div class="col-md-6 mt-3 mt-md-0">
             <div class="card portal-chart-card">
-                <div class="card-header">
-                    <div class="header-title">
-                        <h2 class="episode-playlist-title wp-heading-inline">
-                            <span class="position-relative">{{ __('app.admin.entities.profile_charts.crew_by_project') }}</span>
-                        </h2>
-                    </div>
-                </div>
+                <div class="card-header">{{ __('app.admin.entities.profile_charts.crew_by_project') }}</div>
                 <div class="card-body"><div id="chartActors" class="portal-chart-surface"></div></div>
             </div>
         </div>
+    </div>
 
-        <div class="col-md-12">
+    <div class="row g-3 portal-chart-row-secondary">
+        <div class="col-md-12 mt-3 mt-md-0">
             <div class="card portal-chart-card">
-                <div class="card-header">
-                    <div class="header-title">
-                        <h2 class="episode-playlist-title wp-heading-inline">
-                            <span class="position-relative">{{ __('app.admin.entities.profile_charts.authority_response_average') }}</span>
-                        </h2>
-                    </div>
-                </div>
+                <div class="card-header">{{ __('app.admin.entities.profile_charts.authority_response_average') }}</div>
                 <div class="card-body"><div id="chartGovResponse" class="portal-chart-surface"></div></div>
             </div>
         </div>
     </div>
 
-    <div class="card mt-4">
-        <div class="card-header">
-            <div class="header-title">
-                <h2 class="episode-playlist-title wp-heading-inline">
-                    <span class="position-relative">{{ __('app.admin.entities.profile_previous_projects') }}</span>
-                </h2>
-            </div>
-        </div>
+    <div class="card mt-4 portal-projects-card">
+        <div class="card-header">{{ __('app.admin.entities.profile_previous_projects') }}</div>
         <div class="card-body">
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>{{ __('app.applications.project_name') }}</th>
-                        <th>{{ __('app.applications.work_category') }}</th>
-                        <th>{{ __('app.applications.estimated_budget') }}</th>
-                        <th>{{ __('app.applications.status') }}</th>
-                        <th>{{ __('app.admin.entities.profile_project_year') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse ($previousProjects as $project)
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
                         <tr>
-                            <td><a href="{{ route('applications.show', $project) }}">{{ $project->project_name }}</a></td>
-                            <td>{{ $translateOrFallback('app.applications.work_categories.'.$project->work_category, $formatFallback($project->work_category)) }}</td>
-                            <td>{{ $project->estimated_budget ? number_format((float) $project->estimated_budget, 2) : __('app.dashboard.not_available') }}</td>
-                            <td><span class="badge bg-{{ $statusClass($project->status) }}">{{ $project->localizedStatus() }}</span></td>
-                            <td>{{ optional($project->created_at)->format('Y') ?: __('app.dashboard.not_available') }}</td>
+                            <th>{{ __('app.applications.project_name') }}</th>
+                            <th>{{ __('app.applications.work_category') }}</th>
+                            <th>{{ __('app.applications.estimated_budget') }}</th>
+                            <th>{{ __('app.applications.status') }}</th>
+                            <th>{{ __('app.admin.entities.profile_project_year') }}</th>
                         </tr>
-                    @empty
-                        <tr>
-                            <td colspan="5">{{ __('app.applications.empty_state') }}</td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        @forelse ($previousProjects as $project)
+                            <tr>
+                                <td><a href="{{ route('applications.show', $project) }}">{{ $project->project_name }}</a></td>
+                                <td>{{ $translateOrFallback('app.applications.work_categories.'.$project->work_category, $formatFallback($project->work_category)) }}</td>
+                                <td>{{ $project->estimated_budget ? number_format((float) $project->estimated_budget, 2) : __('app.dashboard.not_available') }}</td>
+                                <td><span class="badge bg-{{ $requestStatusClass($project->status) }}">{{ $project->localizedStatus() }}</span></td>
+                                <td>{{ optional($project->created_at)->format('Y') ?: __('app.dashboard.not_available') }}</td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="5">{{ __('app.applications.empty_state') }}</td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 @endsection

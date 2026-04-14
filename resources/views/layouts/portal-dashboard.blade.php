@@ -75,14 +75,10 @@
 
                     <div class="collapse navbar-collapse" id="navbarSupportedContent">
                         <ul class="mb-2 navbar-nav ms-auto align-items-center navbar-list mb-lg-0 ">
-                            <li class="nav-item dropdown">
-                                <a href="#" class="nav-link" id="langues-drop" data-bs-toggle="dropdown">
+                            <li class="nav-item">
+                                <a href="{{ \Mcamara\LaravelLocalization\Facades\LaravelLocalization::getLocalizedURL(app()->getLocale() === 'ar' ? 'en' : 'ar', null, [], true) }}" class="nav-link" id="langues-drop">
                                     {{ app()->getLocale() === 'ar' ? __('app.meta.english') : __('app.meta.arabic') }}
                                 </a>
-                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="langues-drop">
-                                    <li><a class="dropdown-item" href="{{ \Mcamara\LaravelLocalization\Facades\LaravelLocalization::getLocalizedURL('en', null, [], true) }}">{{ __('app.meta.english') }}</a></li>
-                                    <li><a class="dropdown-item" href="{{ \Mcamara\LaravelLocalization\Facades\LaravelLocalization::getLocalizedURL('ar', null, [], true) }}">{{ __('app.meta.arabic') }}</a></li>
-                                </ul>
                             </li>
                             <li class="nav-item dropdown">
                                 <a href="{{ route('contact-center.index') }}" class="nav-link position-relative">
@@ -154,7 +150,7 @@
                                                 <img class="avatar-img rounded-circle shadow avatar-70 rounded" src="{{ $portalAvatar }}" alt="avatar">
                                             </div>
                                             <div class="text-start">
-                                                <a class="h6" href="#">{{ $currentPortalEntity?->displayName() ?? __('app.dashboard.no_entity') }}</a>
+                                                <a class="h6" href="{{ route('profile.show') }}">{{ $currentPortalEntity?->displayName() ?? __('app.dashboard.no_entity') }}</a>
                                                 <p class="small m-0">{{ $currentPortalUser?->email }}</p>
                                             </div>
                                         </div>

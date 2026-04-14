@@ -27,7 +27,7 @@ class LocalizationTest extends TestCase
         $response->assertSee('تسجيل الدخول');
         $response->assertSee('إنشاء حساب');
         $response->assertSee($englishLoginUrl, false);
-        $response->assertSee($arabicLoginUrl, false);
+        $response->assertDontSee($arabicLoginUrl, false);
     }
 
     public function test_authenticated_user_can_view_dashboard_in_arabic(): void
@@ -66,5 +66,7 @@ class LocalizationTest extends TestCase
         $response->assertOk();
         $response->assertSee('لوحة التحكم');
         $response->assertSee('الهيئة الملكية الأردنية للأفلام');
+        $response->assertSee('عدد طلبات الانتاج');
+        $response->assertDontSeeText('This is the temporary testing dashboard');
     }
 }

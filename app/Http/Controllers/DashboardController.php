@@ -63,10 +63,41 @@ class DashboardController extends Controller
             ]);
         }
 
+        if ($group?->code === 'rfc') {
+            $applications = FilmApplication::query()
+                ->with(['entity', 'submittedBy'])
+                ->latest()
+                ->get();
+
+            $scoutingRequests = ScoutingRequest::query()
+                ->with(['entity', 'submittedBy'])
+                ->latest()
+                ->get();
+
+            return view('dashboard.staff', [
+                'user' => $user,
+                'entity' => $entity,
+                'group' => $group,
+                'roles' => $user->roleNamesForEntity($entity),
+                'applications' => $applications,
+                'scoutingRequests' => $scoutingRequests,
+                'applicationStats' => [
+                    'total' => $applications->count(),
+                    'active_reviews' => $applications->whereIn('status', ['submitted', 'under_review', 'needs_clarification'])->count(),
+                    'approved' => $applications->where('status', 'approved')->count(),
+                ],
+                'scoutingStats' => [
+                    'total' => $scoutingRequests->count(),
+                    'active_reviews' => $scoutingRequests->whereIn('status', ['submitted', 'under_review'])->count(),
+                    'approved' => $scoutingRequests->where('status', 'approved')->count(),
+                ],
+            ]);
+        }
+
         $view = match ($entity->registration_type) {
             'student' => 'dashboard.applicant',
             'company', 'ngo', 'school' => 'dashboard.organization',
-            default => 'dashboard.index',
+            default => 'dashboard.staff',
         };
 
         $applications = FilmApplication::query()

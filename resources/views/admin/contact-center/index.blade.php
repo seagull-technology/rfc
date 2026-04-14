@@ -9,6 +9,10 @@
 
 @push('styles')
     <style>
+        .admin-contact-center-layout {
+            padding-top: 0 !important;
+        }
+
         .admin-contact-center-layout .card-header {
             padding-bottom: 0;
         }
@@ -22,65 +26,63 @@
 @endpush
 
 @section('content')
-    <div class="content-inner container-fluid pb-0" id="page_layout">
-        <div class="row">
-            <div class="col-sm-12">
-                <div class="streamit-wraper-table">
-                    <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4">
-                        <h2 class="episode-playlist-title wp-heading-inline">
-                            <span class="position-relative">{{ __('app.contact_center.admin_title') }}</span>
-                        </h2>
-                        <button class="btn btn-danger" type="button" data-bs-toggle="offcanvas" data-bs-target="#newMsg">
-                            <i class="fa-solid fa-plus me-2"></i>{{ __('app.contact_center.new_message_action') }}
-                        </button>
-                    </div>
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="streamit-wraper-table">
+                <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4">
+                    <h2 class="episode-playlist-title wp-heading-inline">
+                        <span class="position-relative">{{ __('app.contact_center.admin_title') }}</span>
+                    </h2>
+                    <button class="btn btn-danger" type="button" data-bs-toggle="offcanvas" data-bs-target="#newMsg">
+                        <i class="fa-solid fa-plus me-2"></i>{{ __('app.contact_center.new_message_action') }}
+                    </button>
+                </div>
 
-                    <div class="table-view table-space">
-                        <table class="data-tables table custom-table data-table-one custom-table-height" role="grid" data-toggle="data-table1">
-                            <thead>
-                                <tr class="ligth">
-                                    <th>#</th>
-                                    <th>{{ __('app.contact_center.title_label') }}</th>
-                                    <th>{{ __('app.contact_center.type_label') }}</th>
-                                    <th>{{ __('app.contact_center.checkpoint_label') }}</th>
-                                    <th>{{ __('app.contact_center.recipient_label') }}</th>
-                                    <th>{{ __('app.contact_center.station_label') }}</th>
-                                    <th>{{ __('app.contact_center.sent_at') }}</th>
-                                    <th>{{ __('app.contact_center.actions') }}</th>
+                <div class="table-view table-space">
+                    <table class="data-tables table custom-table data-table-one custom-table-height" role="grid" data-toggle="data-table1">
+                        <thead>
+                            <tr class="ligth">
+                                <th>#</th>
+                                <th>{{ __('app.contact_center.title_label') }}</th>
+                                <th>{{ __('app.contact_center.type_label') }}</th>
+                                <th>{{ __('app.contact_center.checkpoint_label') }}</th>
+                                <th>{{ __('app.contact_center.recipient_label') }}</th>
+                                <th>{{ __('app.contact_center.station_label') }}</th>
+                                <th>{{ __('app.contact_center.sent_at') }}</th>
+                                <th>{{ __('app.contact_center.actions') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse ($messages as $message)
+                                <tr>
+                                    <td>{{ $loop->iteration }}</td>
+                                    <td>{{ $message['title'] }}</td>
+                                    <td>{{ $message['type_label'] }}</td>
+                                    <td>
+                                        @if ($message['workflow_checkpoint_label'])
+                                            <span class="badge bg-{{ $message['workflow_checkpoint_class'] }}">{{ $message['workflow_checkpoint_label'] }}</span>
+                                        @else
+                                            {{ __('app.dashboard.not_available') }}
+                                        @endif
+                                    </td>
+                                    <td>{{ $message['recipient_label'] }}</td>
+                                    <td>{{ $message['station_label'] }}</td>
+                                    <td>{{ $message['created_at']?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
+                                    <td>
+                                        <div class="flex align-items-center list-user-action">
+                                            <button class="btn btn-sm btn-icon btn-info-subtle rounded" type="button" data-bs-toggle="offcanvas" data-bs-target="#viewMsg-{{ $loop->iteration }}">
+                                                <i class="ph ph-eye fs-6"></i>
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                @forelse ($messages as $message)
-                                    <tr>
-                                        <td>{{ $loop->iteration }}</td>
-                                        <td>{{ $message['title'] }}</td>
-                                        <td>{{ $message['type_label'] }}</td>
-                                        <td>
-                                            @if ($message['workflow_checkpoint_label'])
-                                                <span class="badge bg-{{ $message['workflow_checkpoint_class'] }}">{{ $message['workflow_checkpoint_label'] }}</span>
-                                            @else
-                                                {{ __('app.dashboard.not_available') }}
-                                            @endif
-                                        </td>
-                                        <td>{{ $message['recipient_label'] }}</td>
-                                        <td>{{ $message['station_label'] }}</td>
-                                        <td>{{ $message['created_at']?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
-                                        <td>
-                                            <div class="flex align-items-center list-user-action">
-                                                <button class="btn btn-sm btn-icon btn-info-subtle rounded" type="button" data-bs-toggle="offcanvas" data-bs-target="#viewMsg-{{ $loop->iteration }}">
-                                                    <i class="ph ph-eye fs-6"></i>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                @empty
-                                    <tr>
-                                        <td colspan="8">{{ __('app.contact_center.empty_state') }}</td>
-                                    </tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
+                            @empty
+                                <tr>
+                                    <td colspan="8">{{ __('app.contact_center.empty_state') }}</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>

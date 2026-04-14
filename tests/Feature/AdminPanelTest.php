@@ -59,6 +59,7 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('href="'.route('admin.dashboard').'"', false)
             ->assertSee('href="'.route('profile.show', ['variant' => 'foreign_producer']).'"', false);
     }
 

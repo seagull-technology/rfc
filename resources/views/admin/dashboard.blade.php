@@ -472,7 +472,7 @@
                         <div class="card-body pt-0">
                             <div class="mt-4 table-responsive">
                                 <div class="table-responsive border rounded py-4">
-                                    <table id="datatable" class="table" data-toggle="data-table">
+                                    <table id="admin-recent-requests-table" class="table" data-toggle="data-table">
                                         <thead>
                                             <tr class="ligth">
                                                 <th>#</th>

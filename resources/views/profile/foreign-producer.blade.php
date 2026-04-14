@@ -46,6 +46,10 @@
             margin-bottom: 1.5rem;
         }
 
+        .foreign-producer-profile-layout .card-header {
+            padding-bottom: 0;
+        }
+
         .foreign-producer-profile-layout table.table thead th,
         .foreign-producer-profile-layout table.table tbody td {
             white-space: nowrap;
@@ -87,7 +91,7 @@
                                         <th>#</th>
                                         <th>{{ __('app.applications.request_number') }}</th>
                                         <th>{{ __('app.applications.project_name') }}</th>
-                                        <th>{{ __('app.applications.work_category') }}</th>
+                                        <th>{{ __('app.authority.applications.applicant') }}</th>
                                         <th>{{ __('app.applications.submitted_at_label') }}</th>
                                         <th>{{ __('app.applications.status') }}</th>
                                         <th>{{ __('app.applications.actions') }}</th>
@@ -99,7 +103,7 @@
                                             <td>{{ $loop->iteration }}</td>
                                             <td>{{ $application->code }}</td>
                                             <td>{{ $application->project_name }}</td>
-                                            <td>{{ __('app.applications.work_categories.'.$application->work_category) }}</td>
+                                            <td>{{ $application->submittedBy?->displayName() ?? $user->displayName() }}</td>
                                             <td>{{ $application->submitted_at?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
                                             <td><span class="badge bg-{{ $statusClass($application->status) }}">{{ $application->localizedStatus() }}</span></td>
                                             <td>
@@ -139,7 +143,7 @@
                                         <th>#</th>
                                         <th>{{ __('app.applications.request_number') }}</th>
                                         <th>{{ __('app.applications.project_name') }}</th>
-                                        <th>{{ __('app.dashboard.signed_in_user') }}</th>
+                                        <th>{{ __('app.authority.applications.applicant') }}</th>
                                         <th>{{ __('app.applications.submitted_at_label') }}</th>
                                         <th>{{ __('app.applications.status') }}</th>
                                         <th>{{ __('app.applications.actions') }}</th>

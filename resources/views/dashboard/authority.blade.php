@@ -161,53 +161,51 @@
 
     <div class="row">
         <div class="col-lg-12 col-md-12">
-            <div class="streamit-wraper-table">
-                <div class="card card-dashboard">
-                    <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4">
-                        <h2 class="episode-playlist-title wp-heading-inline">
-                            <span class="position-relative">{{ $isArabic ? 'الطلبات' : 'Requests' }}</span>
-                        </h2>
-                    </div>
-                    <div class="card-body pt-0">
-                        <div class="mt-4 table-responsive">
-                            <div class="table-responsive rounded py-4">
-                                <table id="datatable" class="table" data-toggle="data-table">
-                                    <thead>
-                                        <tr class="ligth">
-                                            <th>#</th>
-                                            <th>{{ $isArabic ? 'رقم الطلب' : 'Request number' }}</th>
-                                            <th>{{ $isArabic ? 'اسم المشروع' : 'Project name' }}</th>
-                                            <th>{{ $isArabic ? 'اسم مقدم الطلب' : 'Applicant name' }}</th>
-                                            <th>{{ $isArabic ? 'تاريخ تقديم الطلب' : 'Submission date' }}</th>
-                                            <th>{{ __('app.applications.status') }}</th>
-                                            <th>{{ __('app.authority.applications.actions') }}</th>
+            <div class="card card-dashboard">
+                <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4">
+                    <h2 class="episode-playlist-title wp-heading-inline">
+                        <span class="position-relative">{{ $isArabic ? 'الطلبات' : 'Requests' }}</span>
+                    </h2>
+                </div>
+                <div class="card-body pt-0">
+                    <div class="mt-4 table-responsive">
+                        <div class="table-responsive rounded py-4">
+                            <table id="authority-requests-table" class="table" data-toggle="data-table">
+                                <thead>
+                                    <tr class="ligth">
+                                        <th>#</th>
+                                        <th>{{ $isArabic ? 'رقم الطلب' : 'Request number' }}</th>
+                                        <th>{{ $isArabic ? 'اسم المشروع' : 'Project name' }}</th>
+                                        <th>{{ $isArabic ? 'اسم مقدم الطلب' : 'Applicant name' }}</th>
+                                        <th>{{ $isArabic ? 'تاريخ تقديم الطلب' : 'Submission date' }}</th>
+                                        <th>{{ __('app.applications.status') }}</th>
+                                        <th>{{ __('app.authority.applications.actions') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @forelse ($approvals as $approval)
+                                        <tr>
+                                            <td>{{ $loop->iteration }}</td>
+                                            <td>{{ $approval->application?->code ?? __('app.dashboard.not_available') }}</td>
+                                            <td>{{ $approval->application?->project_name ?? __('app.dashboard.not_available') }}</td>
+                                            <td>{{ $approval->application?->submittedBy?->displayName() ?? __('app.dashboard.not_available') }}</td>
+                                            <td>{{ $approval->application?->submitted_at?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
+                                            <td><span class="badge bg-{{ $statusClass($approval->status) }}">{{ $approval->localizedStatus() }}</span></td>
+                                            <td>
+                                                <div class="flex align-items-center list-user-action">
+                                                    <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ route('authority.applications.show', $approval->application) }}">
+                                                        <span class="btn-inner"><i class="ph ph-eye fs-6"></i></span>
+                                                    </a>
+                                                </div>
+                                            </td>
                                         </tr>
-                                    </thead>
-                                    <tbody>
-                                        @forelse ($approvals as $approval)
-                                            <tr>
-                                                <td>{{ $loop->iteration }}</td>
-                                                <td>{{ $approval->application?->code ?? __('app.dashboard.not_available') }}</td>
-                                                <td>{{ $approval->application?->project_name ?? __('app.dashboard.not_available') }}</td>
-                                                <td>{{ $approval->application?->submittedBy?->displayName() ?? __('app.dashboard.not_available') }}</td>
-                                                <td>{{ $approval->application?->submitted_at?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
-                                                <td><span class="badge bg-{{ $statusClass($approval->status) }}">{{ $approval->localizedStatus() }}</span></td>
-                                                <td>
-                                                    <div class="flex align-items-center list-user-action">
-                                                        <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ route('authority.applications.show', $approval->application) }}">
-                                                            <span class="btn-inner"><i class="ph ph-eye fs-6"></i></span>
-                                                        </a>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        @empty
-                                            <tr>
-                                                <td colspan="7">{{ __('app.authority.applications.empty_state') }}</td>
-                                            </tr>
-                                        @endforelse
-                                    </tbody>
-                                </table>
-                            </div>
+                                    @empty
+                                        <tr>
+                                            <td colspan="7">{{ __('app.authority.applications.empty_state') }}</td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>

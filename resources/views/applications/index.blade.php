@@ -17,20 +17,9 @@
             padding: 1.5rem;
         }
 
-        .applicant-applications-layout .request-tabs .nav-link {
-            font-size: 20px;
-            font-weight: 500;
-            color: #4b4f58;
-            border-radius: 0;
-        }
-
-        .applicant-applications-layout .request-tabs .nav-link.active {
-            color: #b72d1f;
-        }
-
         .applicant-applications-layout .request-pane {
             border: 1px solid rgba(0, 0, 0, 0.08);
-            padding: 2rem;
+            padding: 3rem;
             background: #fff;
         }
     </style>
@@ -73,24 +62,24 @@
                     </div>
                 </form>
 
-                <ul class="nav nav-pills mb-0 request-tabs" id="applicant-request-directory-tabs" role="tablist">
-                    <li class="nav-item">
-                        <a class="nav-link active p-4 fontSize20" id="applicant-active-tab" data-bs-toggle="pill" href="#applicant-active-pane" role="tab" aria-selected="true">
+                <ul class="nav nav-pills mb-0 nav-fill request-tabs" id="pills-tab-1" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <a class="nav-link active p-4 fontSize20" id="pills-home-tab-fill" data-bs-toggle="pill" href="#pills-home-fill" role="tab" aria-selected="true">
                             {{ __('app.applications.current_requests') }}
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link p-4 fontSize20" id="applicant-previous-tab" data-bs-toggle="pill" href="#applicant-previous-pane" role="tab" aria-selected="false">
+                    <li class="nav-item" role="presentation">
+                        <a class="nav-link p-4 fontSize20" id="pills-profile-tab-fill" data-bs-toggle="pill" href="#pills-profile-fill" role="tab" aria-selected="false">
                             {{ __('app.applications.previous_requests') }}
                         </a>
                     </li>
                 </ul>
 
-                <div class="tab-content">
-                    <div class="tab-pane fade show active request-pane" id="applicant-active-pane" role="tabpanel" aria-labelledby="applicant-active-tab">
+                <div class="tab-content" id="pills-tabContent-1">
+                    <div class="tab-pane fade show active request-pane" id="pills-home-fill" role="tabpanel" aria-labelledby="pills-home-tab-fill">
                         @include('applications.partials.table', ['applications' => $activeApplications])
                     </div>
-                    <div class="tab-pane fade request-pane" id="applicant-previous-pane" role="tabpanel" aria-labelledby="applicant-previous-tab">
+                    <div class="tab-pane fade request-pane" id="pills-profile-fill" role="tabpanel" aria-labelledby="pills-profile-tab-fill">
                         @include('applications.partials.table', ['applications' => $previousApplications])
                     </div>
                 </div>

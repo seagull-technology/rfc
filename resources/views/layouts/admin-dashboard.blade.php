@@ -202,18 +202,10 @@
                     </div>
                     <div class="collapse navbar-collapse" id="navbarSupportedContent">
                         <ul class="mb-2 navbar-nav ms-auto align-items-center navbar-list mb-lg-0 ">
-                            <li class="nav-item dropdown">
-                                <a href="#" class="nav-link" id="langues-drop" data-bs-toggle="dropdown">
+                            <li class="nav-item">
+                                <a href="{{ \Mcamara\LaravelLocalization\Facades\LaravelLocalization::getLocalizedURL(app()->getLocale() === 'ar' ? 'en' : 'ar', null, [], true) }}" class="nav-link" id="langues-drop">
                                     {{ app()->getLocale() === 'ar' ? __('app.meta.english') : __('app.meta.arabic') }}
                                 </a>
-                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="langues-drop">
-                                    <li>
-                                        <a class="dropdown-item" href="{{ \Mcamara\LaravelLocalization\Facades\LaravelLocalization::getLocalizedURL('en', null, [], true) }}">{{ __('app.meta.english') }}</a>
-                                    </li>
-                                    <li>
-                                        <a class="dropdown-item" href="{{ \Mcamara\LaravelLocalization\Facades\LaravelLocalization::getLocalizedURL('ar', null, [], true) }}">{{ __('app.meta.arabic') }}</a>
-                                    </li>
-                                </ul>
                             </li>
                             <li class="nav-item dropdown">
                                 <a href="#" class="nav-link position-relative" id="notification-drop" data-bs-toggle="dropdown">
@@ -279,7 +271,7 @@
                                                 <img class="avatar-img rounded-circle shadow avatar-70 rounded" src="{{ asset('images/logo.svg') }}" alt="avatar">
                                             </div>
                                             <div class="text-start">
-                                                <a class="h6" href="#">{{ $layoutProfileEntityName }}</a>
+                                                <a class="h6" href="{{ route('admin.dashboard') }}">{{ $layoutProfileEntityName }}</a>
                                                 <p class="small m-0">{{ $layoutProfileEmail }}</p>
                                             </div>
                                         </div>
@@ -320,7 +312,7 @@
         <footer class="footer">
             <div class="footer-body">
                 <ul class="left-panel list-inline mb-0 p-0">
-                    <li class="list-inline-item"><a href="#">{{ __('app.meta.app_name') }}</a></li>
+                    <li class="list-inline-item"><a href="{{ route('admin.dashboard') }}">{{ __('app.meta.app_name') }}</a></li>
                 </ul>
                 <div class="right-panel">
                     <span class="text-gray">
