@@ -507,6 +507,14 @@
                             </div>
 
                             <div id="profile-decision" class="tab-pane fade">
+                                @if ($canApproveApplication && ! $application->canBeFinallyDecided())
+                                    <div class="card">
+                                        <div class="card-body">
+                                            <div class="alert alert-info mb-0">{{ __('app.final_decision.approver_waiting_hint') }}</div>
+                                        </div>
+                                    </div>
+                                @endif
+
                                 @if ($canReviewApplication)
                                     <div class="card">
                                         <div class="card-header">

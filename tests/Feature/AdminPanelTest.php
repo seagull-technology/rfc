@@ -417,6 +417,92 @@ class AdminPanelTest extends TestCase
         $this->assertSame($reviewer->getKey(), $application->reviewed_by_user_id);
     }
 
+    public function test_user_with_rfc_reviewer_and_rfc_approver_roles_can_see_final_decision_when_request_is_ready(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $rfcEntity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+        $orgGroup = Group::query()->where('code', 'organizations')->firstOrFail();
+
+        $user = User::query()->create([
+            'name' => 'RFC Combined Reviewer',
+            'username' => 'rfc_combined_reviewer',
+            'email' => 'rfc-combined@example.com',
+            'national_id' => '7711223344',
+            'phone' => '0791118899',
+            'status' => 'active',
+            'registration_type' => 'staff',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $rfcEntity->users()->attach($user->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($rfcEntity->getKey());
+        $user->assignRole('rfc_reviewer');
+        $user->assignRole('rfc_approver');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $applicantEntity = Entity::query()->create([
+            'group_id' => $orgGroup->getKey(),
+            'code' => 'combined-role-company',
+            'name_en' => 'Combined Role Company',
+            'name_ar' => 'شركة الدور المزدوج',
+            'registration_no' => 'COMB-100',
+            'registration_type' => 'company',
+            'status' => 'active',
+            'email' => 'combined-role@example.com',
+            'phone' => '065550900',
+        ]);
+
+        $applicant = User::query()->create([
+            'name' => 'Combined Role Applicant',
+            'username' => 'combined_role_applicant',
+            'email' => 'combined-role-applicant@example.com',
+            'national_id' => '7000000001',
+            'phone' => '0797000001',
+            'registration_type' => 'company',
+            'status' => 'active',
+            'password' => Hash::make('Password@123'),
+        ]);
+
+        $applicantEntity->users()->attach($applicant->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        $application = Application::query()->create([
+            'code' => 'REQ-COMB-1',
+            'entity_id' => $applicantEntity->getKey(),
+            'submitted_by_user_id' => $applicant->getKey(),
+            'project_name' => 'Combined Role Final Decision',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'feature_film',
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-07-01',
+            'planned_end_date' => '2026-07-05',
+            'project_summary' => 'Ready for final decision.',
+            'status' => 'under_review',
+            'current_stage' => 'rfc_review',
+            'submitted_at' => now()->subDay(),
+        ]);
+
+        $response = $this->withSession(['current_entity_id' => $rfcEntity->getKey()])
+            ->actingAs($user)
+            ->get(route('admin.applications.show', $application));
+
+        $response
+            ->assertOk()
+            ->assertSeeText(__('app.admin.applications.review_title'))
+            ->assertSeeText(__('app.final_decision.title'))
+            ->assertSeeText(__('app.final_decision.submit'));
+    }
+
     public function test_super_admin_can_create_an_authority_user_with_scoped_role(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -635,6 +721,50 @@ class AdminPanelTest extends TestCase
             ->assertOk()
             ->assertSeeText('Pending NGO User')
             ->assertDontSeeText('Active Student User');
+    }
+
+    public function test_super_admin_can_remove_a_role_from_existing_user_membership(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $rfcEntity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+
+        $user = User::query()->create([
+            'name' => 'Role Removal User',
+            'username' => 'role-removal-user',
+            'email' => 'role-removal-user@example.com',
+            'national_id' => '4999555566',
+            'phone' => '0797444000',
+            'status' => 'active',
+            'registration_type' => 'staff',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $user->entities()->attach($rfcEntity->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($rfcEntity->getKey());
+        $user->assignRole('rfc_reviewer');
+        $user->assignRole('rfc_approver');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $response = $this->actingAs($admin)->post(route('admin.users.memberships.roles.delete', [
+            'user' => $user->getKey(),
+            'entity' => $rfcEntity->getKey(),
+            'role' => 'rfc_reviewer',
+        ]));
+
+        $response->assertRedirect(route('admin.users.show', $user->getKey()));
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($rfcEntity->getKey());
+        $this->assertFalse($user->fresh()->hasRole('rfc_reviewer'));
+        $this->assertTrue($user->fresh()->hasRole('rfc_approver'));
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
     }
 
     public function test_users_index_displays_internal_users_without_explicit_registration_type_in_staff_tab(): void

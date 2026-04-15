@@ -495,7 +495,11 @@
                                         </td>
                                         <td>
                                             @forelse ($membership['roles'] as $roleName)
-                                                <span class="badge bg-primary-subtle text-dark">{{ __('app.roles.'.$roleName) }}</span>
+                                                <form method="POST" action="{{ route('admin.users.memberships.roles.delete', [$user->getKey(), $membership['entity']->getKey(), $roleName]) }}" class="d-inline-flex align-items-center gap-1 me-2 mb-2">
+                                                    @csrf
+                                                    <span class="badge bg-primary-subtle text-dark">{{ __('app.roles.'.$roleName) }}</span>
+                                                    <button class="btn btn-sm btn-outline-danger py-0 px-2" type="submit">{{ __('app.admin.users.remove_role_action') }}</button>
+                                                </form>
                                             @empty
                                                 {{ __('app.dashboard.no_roles') }}
                                             @endforelse

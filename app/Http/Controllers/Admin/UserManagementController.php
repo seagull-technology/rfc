@@ -407,6 +407,20 @@ class UserManagementController extends Controller
             ->with('status', __('app.admin.users.membership_added'));
     }
 
+    public function destroyMembershipRole(string $user, string $entity, string $role): RedirectResponse
+    {
+        $record = $this->findUser($user);
+        $entityRecord = Entity::query()->with('group.roles')->findOrFail($entity);
+
+        abort_unless($record->entities()->whereKey($entityRecord->getKey())->exists(), 404);
+
+        $this->roleAssignmentService->removeFromEntity($record, $entityRecord, $role);
+
+        return redirect()
+            ->route('admin.users.show', $record)
+            ->with('status', __('app.admin.users.role_removed'));
+    }
+
     private function findUser(int|string $user): User
     {
         return User::query()
