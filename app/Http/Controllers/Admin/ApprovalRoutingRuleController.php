@@ -35,7 +35,7 @@ class ApprovalRoutingRuleController extends Controller
         ]);
 
         $activeRules = ApprovalRoutingRule::query()
-            ->with(['targetEntity.group', 'authorityApprovals'])
+            ->with(['targetEntity.group', 'authorityApprovals', 'latestAudit.changedBy'])
             ->where('request_type', 'application')
             ->where('is_active', true)
             ->orderBy('approval_code')
@@ -54,7 +54,7 @@ class ApprovalRoutingRuleController extends Controller
         $cleanupCandidates = $this->cleanupCandidatesForRules($activeRules, $activeUsageStats, $cleanupFilter);
 
         $query = ApprovalRoutingRule::query()
-            ->with(['targetEntity.group'])
+            ->with(['targetEntity.group', 'latestAudit.changedBy'])
             ->orderBy('priority')
             ->orderBy('id');
 
@@ -298,6 +298,7 @@ class ApprovalRoutingRuleController extends Controller
     public function show(ApprovalRoutingRule $approvalRouting): View
     {
         $approvalRouting->load(['targetEntity.group', 'audits.changedBy']);
+        $approvalRouting->loadMissing('latestAudit.changedBy');
 
         return view('admin.approval-routing.show', [
             ...$this->formViewData($approvalRouting),
@@ -347,7 +348,7 @@ class ApprovalRoutingRuleController extends Controller
 
     public function edit(ApprovalRoutingRule $approvalRouting): View
     {
-        $approvalRouting->loadMissing('targetEntity.group');
+        $approvalRouting->loadMissing(['targetEntity.group', 'latestAudit.changedBy']);
 
         return view('admin.approval-routing.edit', [
             ...$this->formViewData($approvalRouting),

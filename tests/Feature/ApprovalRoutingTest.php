@@ -221,7 +221,10 @@ class ApprovalRoutingTest extends TestCase
             ->assertSeeText('Drones to interior')
             ->assertSeeText(__('app.admin.approval_routing.audit_actions.created'))
             ->assertSeeText(__('app.admin.approval_routing.audit_actions.updated'))
-            ->assertSeeText($admin->displayName());
+            ->assertSeeText($admin->displayName())
+            ->assertSeeText('Last changed by')
+            ->assertSeeText('Last changed at')
+            ->assertSeeText('Last change');
 
         $this->assertSame(2, ApprovalRoutingRuleAudit::query()->where('approval_routing_rule_id', $rule->getKey())->count());
     }
@@ -880,6 +883,40 @@ class ApprovalRoutingTest extends TestCase
             ->assertSeeText('Cleanup stale rule')
             ->assertSeeText('Unused active rule')
             ->assertSeeText('Stale active rule');
+    }
+
+    public function test_index_displays_last_changed_signals_for_rules(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $targetEntity = Entity::query()->where('code', 'greater-amman-municipality')->firstOrFail();
+
+        $this->actingAs($admin)->post(route('admin.approval-routing.store'), [
+            'name' => 'Audit visibility rule',
+            'request_type' => 'application',
+            'approval_code' => 'municipalities',
+            'target_entity_id' => $targetEntity->getKey(),
+            'priority' => 55,
+            'is_active' => '1',
+            'conditions' => [
+                'project_nationalities' => ['jordanian'],
+                'work_categories' => ['feature_film'],
+                'release_methods' => ['cinema'],
+            ],
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('admin.approval-routing.index'));
+
+        $response
+            ->assertOk()
+            ->assertSeeText('Last changed by')
+            ->assertSeeText('Last changed at')
+            ->assertSeeText('Last change')
+            ->assertSeeText(__('app.admin.approval_routing.audit_actions.created'))
+            ->assertSeeText('Audit visibility rule')
+            ->assertSeeText($admin->displayName());
     }
 
     public function test_preview_endpoint_returns_matching_applications_for_current_rule_inputs(): void

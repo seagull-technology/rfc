@@ -26,6 +26,13 @@ return new class extends Migration
         }
 
         if (Schema::hasTable('application_authority_approvals')) {
+            if ($this->indexExists('application_authority_approvals', 'app_auth_approvals_unique')
+                && ! $this->indexExists('application_authority_approvals', 'app_auth_approvals_application_idx')) {
+                Schema::table('application_authority_approvals', function (Blueprint $table): void {
+                    $table->index(['application_id'], 'app_auth_approvals_application_idx');
+                });
+            }
+
             if ($this->indexExists('application_authority_approvals', 'app_auth_approvals_unique')) {
                 Schema::table('application_authority_approvals', function (Blueprint $table): void {
                     $table->dropUnique('app_auth_approvals_unique');
@@ -76,11 +83,20 @@ return new class extends Migration
                 if (Schema::hasColumn('application_authority_approvals', 'entity_id')) {
                     $table->dropConstrainedForeignId('entity_id');
                 }
+            });
 
+            Schema::table('application_authority_approvals', function (Blueprint $table): void {
                 if (! $this->indexExists('application_authority_approvals', 'app_auth_approvals_unique')) {
                     $table->unique(['application_id', 'authority_code'], 'app_auth_approvals_unique');
                 }
             });
+
+            if ($this->indexExists('application_authority_approvals', 'app_auth_approvals_application_idx')
+                && $this->indexExists('application_authority_approvals', 'app_auth_approvals_unique')) {
+                Schema::table('application_authority_approvals', function (Blueprint $table): void {
+                    $table->dropIndex('app_auth_approvals_application_idx');
+                });
+            }
         }
 
         Schema::dropIfExists('approval_routing_rules');

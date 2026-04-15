@@ -16,6 +16,15 @@
             default => 'secondary',
         };
     };
+    $auditBadgeClass = static function (?string $action): string {
+        return match ($action) {
+            'created', 'activated' => 'success',
+            'updated' => 'primary',
+            'deactivated' => 'warning text-dark',
+            'deleted' => 'danger',
+            default => 'secondary',
+        };
+    };
     $riskFilterUrl = static function (string $risk) use ($filters): string {
         return route('admin.approval-routing.index', array_filter([
             'q' => $filters['q'],
@@ -113,11 +122,17 @@
                                 <th>{{ __('app.admin.approval_routing.cleanup_type') }}</th>
                                 <th>{{ __('app.admin.approval_routing.analytics_usage_count') }}</th>
                                 <th>{{ __('app.admin.approval_routing.analytics_last_used') }}</th>
+                                <th>{{ __('app.admin.approval_routing.last_changed_by') }}</th>
+                                <th>{{ __('app.admin.approval_routing.last_changed_at') }}</th>
+                                <th>{{ __('app.admin.approval_routing.last_change_action') }}</th>
                                 <th>{{ __('app.admin.approval_routing.actions') }}</th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach ($cleanupCandidates as $candidate)
+                                @php
+                                    $latestAudit = $candidate['rule']->latestAudit;
+                                @endphp
                                 <tr>
                                     <td>
                                         <a href="{{ route('admin.approval-routing.show', $candidate['rule']) }}">{{ $candidate['rule']->name }}</a>
@@ -129,6 +144,15 @@
                                     </td>
                                     <td>{{ $candidate['usage']['total'] }}</td>
                                     <td>{{ $candidate['usage']['last_used_at'] ? \Illuminate\Support\Carbon::parse($candidate['usage']['last_used_at'])->format('Y-m-d H:i') : __('app.dashboard.not_available') }}</td>
+                                    <td>{{ $latestAudit?->changedBy?->displayName() ?? __('app.dashboard.not_available') }}</td>
+                                    <td>{{ optional($latestAudit?->created_at)->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</td>
+                                    <td>
+                                        @if ($latestAudit)
+                                            <span class="badge bg-{{ $auditBadgeClass($latestAudit->action) }}">{{ $latestAudit->localizedAction() }}</span>
+                                        @else
+                                            {{ __('app.dashboard.not_available') }}
+                                        @endif
+                                    </td>
                                     <td>
                                         <div class="d-flex gap-2 flex-wrap">
                                             <a class="btn btn-sm btn-outline-primary" href="{{ route('admin.approval-routing.edit', $candidate['rule']) }}">{{ __('app.admin.approval_routing.update_action') }}</a>
@@ -424,12 +448,18 @@
                             <th>{{ __('app.admin.approval_routing.priority') }}</th>
                             <th>{{ __('app.admin.approval_routing.analytics_usage_count') }}</th>
                             <th>{{ __('app.admin.approval_routing.analytics_last_used') }}</th>
+                            <th>{{ __('app.admin.approval_routing.last_changed_by') }}</th>
+                            <th>{{ __('app.admin.approval_routing.last_changed_at') }}</th>
+                            <th>{{ __('app.admin.approval_routing.last_change_action') }}</th>
                             <th>{{ __('app.admin.approval_routing.status') }}</th>
                             <th>{{ __('app.admin.approval_routing.actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         @forelse ($rules as $rule)
+                            @php
+                                $latestAudit = $rule->latestAudit;
+                            @endphp
                             <tr>
                                 <td>
                                     <div class="fw-semibold">{{ $rule->name }}</div>
@@ -463,6 +493,15 @@
                                 @endphp
                                 <td>{{ $usage['total'] }}</td>
                                 <td>{{ $usage['last_used_at'] ? \Illuminate\Support\Carbon::parse($usage['last_used_at'])->format('Y-m-d H:i') : __('app.dashboard.not_available') }}</td>
+                                <td>{{ $latestAudit?->changedBy?->displayName() ?? __('app.dashboard.not_available') }}</td>
+                                <td>{{ optional($latestAudit?->created_at)->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</td>
+                                <td>
+                                    @if ($latestAudit)
+                                        <span class="badge bg-{{ $auditBadgeClass($latestAudit->action) }}">{{ $latestAudit->localizedAction() }}</span>
+                                    @else
+                                        {{ __('app.dashboard.not_available') }}
+                                    @endif
+                                </td>
                                 <td>
                                     <span class="badge bg-{{ $rule->is_active ? 'success' : 'secondary' }}">
                                         {{ $rule->is_active ? __('app.statuses.active') : __('app.statuses.inactive') }}
@@ -489,7 +528,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="9" class="text-center text-muted py-4">{{ __('app.admin.approval_routing.empty_state') }}</td>
+                                <td colspan="12" class="text-center text-muted py-4">{{ __('app.admin.approval_routing.empty_state') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
