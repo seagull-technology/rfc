@@ -544,6 +544,7 @@ return [
         'issued_by' => 'Issued by',
         'issued_at' => 'Issued at',
         'not_ready' => 'The final RFC decision cannot be issued yet because there are still unresolved authority approvals.',
+        'approver_waiting_hint' => 'You already have final RFC approval permission, but the request is still waiting for all authority approvals to be resolved before the final decision can be issued.',
         'approval_blocked' => 'This request cannot be approved while one or more authority approvals are rejected.',
         'rejected_approval_warning' => 'One or more authority approvals are rejected. The final RFC decision can still be issued as a rejection.',
         'file_missing' => 'The final decision letter could not be found.',
@@ -1419,6 +1420,8 @@ return [
             'add_membership_title' => 'Add Membership',
             'add_membership_action' => 'Add membership',
             'membership_added' => 'The user membership was added successfully.',
+            'remove_role_action' => 'Remove role',
+            'role_removed' => 'The role has been removed from the user successfully.',
         ],
         'integrations' => [
             'title' => 'Integration Diagnostics',

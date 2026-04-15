@@ -44,4 +44,26 @@ class RoleAssignmentService
             $registrar->setPermissionsTeamId(null);
         }
     }
+
+    public function removeFromEntity(User $user, Entity $entity, string $roleName): void
+    {
+        $role = Role::query()
+            ->where('name', $roleName)
+            ->where('guard_name', 'web')
+            ->whereNull('entity_id')
+            ->first();
+
+        if (! $role) {
+            return;
+        }
+
+        $registrar = app(PermissionRegistrar::class);
+        $registrar->setPermissionsTeamId($entity->getKey());
+
+        try {
+            $user->removeRole($role);
+        } finally {
+            $registrar->setPermissionsTeamId(null);
+        }
+    }
 }

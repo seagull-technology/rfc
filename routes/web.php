@@ -338,6 +338,9 @@ Route::group([
                 Route::post('/users/{user}/memberships', [UserManagementController::class, 'storeMembership'])
                     ->middleware('permission:users.manage')
                     ->name('users.memberships.store');
+                Route::post('/users/{user}/memberships/{entity}/roles/{role}/delete', [UserManagementController::class, 'destroyMembershipRole'])
+                    ->middleware('permission:users.manage')
+                    ->name('users.memberships.roles.delete');
             });
     });
 });
