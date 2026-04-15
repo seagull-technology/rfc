@@ -9,14 +9,27 @@
         default => 'secondary',
     };
     $primaryEntityForUser = static fn ($user) => $user->entities->sortByDesc(fn ($entity) => (int) ($entity->pivot?->is_primary ?? false))->first();
+    $directoryTypeForUser = static function ($user) use ($primaryEntityForUser): ?string {
+        if (filled($user->registration_type)) {
+            return $user->registration_type;
+        }
+
+        $primaryEntity = $primaryEntityForUser($user);
+
+        if (in_array($primaryEntity?->group?->code, ['rfc', 'admins', 'authorities'], true)) {
+            return 'staff';
+        }
+
+        return null;
+    };
     $tabTypes = collect(['student', 'company', 'ngo', 'school'])
         ->when(
-            $users->contains(fn ($user) => $user->registration_type === 'staff') || $filters['registration_type'] === 'staff',
+            $users->contains(fn ($user) => $directoryTypeForUser($user) === 'staff') || $filters['registration_type'] === 'staff',
             fn ($types) => $types->push('staff')
         )
         ->values();
     $typedUsers = $tabTypes->mapWithKeys(fn (string $type): array => [
-        $type => $users->filter(fn ($user) => $user->registration_type === $type)->values(),
+        $type => $users->filter(fn ($user) => $directoryTypeForUser($user) === $type)->values(),
     ]);
 @endphp
 

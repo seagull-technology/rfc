@@ -443,6 +443,7 @@ class AdminPanelTest extends TestCase
 
         $user = User::query()->where('email', 'authority.manager@example.com')->firstOrFail();
 
+        $this->assertSame('staff', $user->registration_type);
         $this->assertDatabaseHas('entity_user', [
             'entity_id' => $entity->getKey(),
             'user_id' => $user->getKey(),
@@ -634,6 +635,39 @@ class AdminPanelTest extends TestCase
             ->assertOk()
             ->assertSeeText('Pending NGO User')
             ->assertDontSeeText('Active Student User');
+    }
+
+    public function test_users_index_displays_internal_users_without_explicit_registration_type_in_staff_tab(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $rfcEntity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+
+        $user = User::query()->create([
+            'name' => 'RFC Reviewer Hidden',
+            'username' => 'rfc-reviewer-hidden',
+            'email' => 'rfc-reviewer-hidden@example.com',
+            'national_id' => '4444555566',
+            'phone' => '0797333000',
+            'status' => 'active',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $user->entities()->attach($rfcEntity->getKey(), [
+            'job_title' => 'Reviewer',
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('admin.users.index'));
+
+        $response
+            ->assertOk()
+            ->assertSeeText('RFC Reviewer Hidden')
+            ->assertSeeText(__('app.registration_types.staff'));
     }
 
     public function test_super_admin_can_filter_groups_index(): void

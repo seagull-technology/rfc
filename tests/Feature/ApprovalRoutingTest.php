@@ -12,6 +12,7 @@ use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\PermissionRegistrar;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class ApprovalRoutingTest extends TestCase
@@ -919,6 +920,82 @@ class ApprovalRoutingTest extends TestCase
             ->assertSeeText($admin->displayName());
     }
 
+    public function test_index_can_filter_rules_by_last_change_action_and_editor(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $targetEntity = Entity::query()->where('code', 'greater-amman-municipality')->firstOrFail();
+        $secondAdmin = $this->createAdminUser([
+            'name' => 'Routing Auditor',
+            'username' => 'routing-auditor',
+            'email' => 'routing-auditor@example.com',
+            'phone' => '0798888000',
+        ]);
+
+        $this->actingAs($admin)->post(route('admin.approval-routing.store'), [
+            'name' => 'Filter target rule',
+            'request_type' => 'application',
+            'approval_code' => 'municipalities',
+            'target_entity_id' => $targetEntity->getKey(),
+            'priority' => 55,
+            'is_active' => '1',
+            'conditions' => [
+                'project_nationalities' => ['jordanian'],
+                'work_categories' => ['feature_film'],
+                'release_methods' => ['cinema'],
+            ],
+        ]);
+
+        $this->actingAs($admin)->post(route('admin.approval-routing.store'), [
+            'name' => 'Other unchanged rule',
+            'request_type' => 'application',
+            'approval_code' => 'environment',
+            'target_entity_id' => $targetEntity->getKey(),
+            'priority' => 65,
+            'is_active' => '1',
+            'conditions' => [
+                'project_nationalities' => ['international'],
+                'work_categories' => ['documentary'],
+                'release_methods' => ['festival'],
+            ],
+        ]);
+
+        $rule = ApprovalRoutingRule::query()->where('name', 'Filter target rule')->firstOrFail();
+
+        $this->actingAs($secondAdmin)->post(route('admin.approval-routing.update', $rule), [
+            'name' => 'Filter target rule',
+            'request_type' => 'application',
+            'approval_code' => 'municipalities',
+            'target_entity_id' => $targetEntity->getKey(),
+            'priority' => 25,
+            'is_active' => '1',
+            'conditions' => [
+                'project_nationalities' => ['jordanian'],
+                'work_categories' => ['feature_film'],
+                'release_methods' => ['cinema'],
+            ],
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('admin.approval-routing.index', [
+            'last_action' => 'updated',
+            'last_changed_by_user_id' => $secondAdmin->getKey(),
+        ]));
+
+        $content = $response->getContent();
+        $mainTableHtml = substr($content, (int) strrpos($content, '<table class="table mb-0">'));
+
+        $response
+            ->assertOk()
+            ->assertSeeText('Filter target rule')
+            ->assertSeeText('Routing Auditor')
+            ->assertSeeText('Updated');
+
+        $this->assertStringContainsString('Filter target rule', $mainTableHtml);
+        $this->assertStringNotContainsString('Other unchanged rule', $mainTableHtml);
+    }
+
     public function test_preview_endpoint_returns_matching_applications_for_current_rule_inputs(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -1209,6 +1286,36 @@ class ApprovalRoutingTest extends TestCase
         app(PermissionRegistrar::class)->setPermissionsTeamId(null);
 
         return [$user, $entity];
+    }
+
+    /**
+     * @param  array<string, mixed>  $userOverrides
+     */
+    private function createAdminUser(array $userOverrides = []): User
+    {
+        $adminEntity = Entity::query()->where('code', 'platform-administration')->firstOrFail();
+
+        $user = User::query()->create(array_merge([
+            'name' => 'Secondary Admin',
+            'username' => 'secondary-admin',
+            'email' => 'secondary-admin@example.com',
+            'phone' => '0797777000',
+            'status' => 'active',
+            'password' => Hash::make('Admin@12345'),
+        ], $userOverrides));
+
+        $user->entities()->attach($adminEntity->getKey(), [
+            'job_title' => 'Platform Admin',
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($adminEntity->getKey());
+        $user->assignRole(Role::query()->where('name', 'super_admin')->whereNull('entity_id')->firstOrFail());
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        return $user;
     }
 
     /**

@@ -33,6 +33,8 @@
             'is_active' => $filters['is_active'] !== 'all' ? $filters['is_active'] : null,
             'risk' => $risk !== 'all' ? $risk : null,
             'cleanup' => $filters['cleanup'] !== 'all' ? $filters['cleanup'] : null,
+            'last_action' => $filters['last_action'] !== 'all' ? $filters['last_action'] : null,
+            'last_changed_by_user_id' => $filters['last_changed_by_user_id'] !== '' ? $filters['last_changed_by_user_id'] : null,
         ], fn ($value) => $value !== null && $value !== ''));
     };
     $cleanupFilterUrl = static function (string $cleanup) use ($filters): string {
@@ -43,6 +45,8 @@
             'is_active' => $filters['is_active'] !== 'all' ? $filters['is_active'] : null,
             'risk' => $filters['risk'] !== 'all' ? $filters['risk'] : null,
             'cleanup' => $cleanup !== 'all' ? $cleanup : null,
+            'last_action' => $filters['last_action'] !== 'all' ? $filters['last_action'] : null,
+            'last_changed_by_user_id' => $filters['last_changed_by_user_id'] !== '' ? $filters['last_changed_by_user_id'] : null,
         ], fn ($value) => $value !== null && $value !== ''));
     };
     $filteredRiskRuleIds = $conflictReport
@@ -105,6 +109,8 @@
                         <input type="hidden" name="redirect_is_active" value="{{ $filters['is_active'] }}">
                         <input type="hidden" name="redirect_risk" value="{{ $filters['risk'] }}">
                         <input type="hidden" name="redirect_cleanup" value="{{ $filters['cleanup'] }}">
+                        <input type="hidden" name="redirect_last_action" value="{{ $filters['last_action'] }}">
+                        <input type="hidden" name="redirect_last_changed_by_user_id" value="{{ $filters['last_changed_by_user_id'] }}">
                         <button class="btn btn-sm btn-outline-danger" type="submit">{{ __('app.admin.approval_routing.cleanup_bulk_deactivate_action') }}</button>
                     </form>
                 @endif
@@ -288,6 +294,24 @@
                         <option value="stale" @selected($filters['cleanup'] === 'stale')>{{ __('app.admin.approval_routing.cleanup_types.stale') }}</option>
                     </select>
                 </div>
+                <div class="col-xl-2">
+                    <label for="filter-last-action" class="form-label">{{ __('app.admin.approval_routing.last_change_action') }}</label>
+                    <select id="filter-last-action" name="last_action" class="form-select">
+                        <option value="all" @selected($filters['last_action'] === 'all')>{{ __('app.admin.filters.all_option') }}</option>
+                        @foreach ($auditActions as $auditAction)
+                            <option value="{{ $auditAction }}" @selected($filters['last_action'] === $auditAction)>{{ __('app.admin.approval_routing.audit_actions.'.$auditAction) }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="col-xl-3">
+                    <label for="filter-last-changed-by" class="form-label">{{ __('app.admin.approval_routing.last_changed_by') }}</label>
+                    <select id="filter-last-changed-by" name="last_changed_by_user_id" class="form-select">
+                        <option value="">{{ __('app.admin.filters.all_option') }}</option>
+                        @foreach ($auditUsers as $auditUser)
+                            <option value="{{ $auditUser->getKey() }}" @selected($filters['last_changed_by_user_id'] === (string) $auditUser->getKey())>{{ $auditUser->displayName() }}</option>
+                        @endforeach
+                    </select>
+                </div>
                 <div class="col-12 d-flex gap-2 flex-wrap">
                     <button class="btn btn-danger" type="submit">{{ __('app.admin.filters.apply_action') }}</button>
                     <a class="btn btn-outline-secondary" href="{{ route('admin.approval-routing.index') }}">{{ __('app.admin.filters.clear_action') }}</a>
@@ -326,6 +350,8 @@
                         <input type="hidden" name="redirect_is_active" value="{{ $filters['is_active'] }}">
                         <input type="hidden" name="redirect_risk" value="{{ $filters['risk'] }}">
                         <input type="hidden" name="redirect_cleanup" value="{{ $filters['cleanup'] }}">
+                        <input type="hidden" name="redirect_last_action" value="{{ $filters['last_action'] }}">
+                        <input type="hidden" name="redirect_last_changed_by_user_id" value="{{ $filters['last_changed_by_user_id'] }}">
                         <button class="btn btn-sm btn-outline-danger" type="submit">{{ __('app.admin.approval_routing.bulk_deactivate_action') }}</button>
                     </form>
                 @endif
@@ -420,7 +446,9 @@
                                         {{ $audit->rule_name }}
                                     @endif
                                 </td>
-                                <td>{{ $audit->localizedAction() }}</td>
+                                <td>
+                                    <span class="badge bg-{{ $auditBadgeClass($audit->action) }}">{{ $audit->localizedAction() }}</span>
+                                </td>
                                 <td>{{ $audit->changedBy?->displayName() ?? __('app.dashboard.not_available') }}</td>
                                 <td>{{ optional($audit->created_at)->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</td>
                             </tr>
