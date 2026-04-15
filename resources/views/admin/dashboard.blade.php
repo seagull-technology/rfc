@@ -1,7 +1,10 @@
 @php
-    $title = __('app.admin.dashboard.title');
+    $adminHasDirectoryAccess = $admin->can('users.view') || $admin->can('entities.view') || $admin->can('groups.view');
+    $isWorkflowDashboard = $admin->can('applications.view.all') && ! $adminHasDirectoryAccess;
+    $title = $isWorkflowDashboard ? __('app.admin.applications.title') : __('app.admin.dashboard.title');
     $breadcrumb = __('app.admin.navigation.dashboard');
-    $notificationItems = $reviewQueue->take(5);
+    $dashboardIntro = $isWorkflowDashboard ? __('app.admin.applications.intro') : __('app.admin.dashboard.intro');
+    $notificationItems = $adminHasDirectoryAccess ? $reviewQueue->take(5) : collect();
     $profileEntityName = $entity?->displayName() ?? __('app.dashboard.no_entity');
     $profileEmail = $admin->email;
     $statusClass = static fn (?string $status): string => match ($status) {
@@ -131,11 +134,13 @@
             <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4 px-0">
                 <div>
                     <h2 class="episode-playlist-title wp-heading-inline mb-1">
-                        <span class="position-relative">{{ __('app.admin.dashboard.title') }}</span>
+                        <span class="position-relative">{{ $title }}</span>
                     </h2>
-                    <div class="text-muted">{{ __('app.admin.dashboard.intro') }}</div>
+                    <div class="text-muted">{{ $dashboardIntro }}</div>
                 </div>
-                <a class="btn btn-primary" href="{{ route('admin.reports.export') }}">{{ __('app.reports.export_dashboard') }}</a>
+                @can('reports.export')
+                    <a class="btn btn-primary" href="{{ route('admin.reports.export') }}">{{ __('app.reports.export_dashboard') }}</a>
+                @endcan
             </div>
         </div>
     </div>
@@ -166,94 +171,100 @@
                     </div>
                 </div>
 
-                <div class="col-xl-6">
-                    <div class="card mb-3">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between align-itmes-center">
-                                <div>
-                                    <div class="p-3 rounded bg-primary-subtle">
-                                        <i class="ph ph-user fs-2"></i>
+                @if ($adminHasDirectoryAccess)
+                    <div class="col-xl-6">
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-itmes-center">
+                                    <div>
+                                        <div class="p-3 rounded bg-primary-subtle">
+                                            <i class="ph ph-user fs-2"></i>
+                                        </div>
                                     </div>
-                                </div>
-                                <div>
-                                    <h1 class="counter">{{ $stats['individuals'] }}</h1>
-                                    <p class="mb-0">{{ __('app.admin.dashboard.metrics.individuals') }}</p>
-                                </div>
-                                <div>
-                                    <div class="badge bg-primary">
-                                        <span>{{ $individualPercent }}%</span>
+                                    <div>
+                                        <h1 class="counter">{{ $stats['individuals'] }}</h1>
+                                        <p class="mb-0">{{ __('app.admin.dashboard.metrics.individuals') }}</p>
+                                    </div>
+                                    <div>
+                                        <div class="badge bg-primary">
+                                            <span>{{ $individualPercent }}%</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="card">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between align-itmes-center">
-                                <div>
-                                    <div class="p-3 rounded bg-primary-subtle">
-                                        <i class="ph ph-buildings fs-2"></i>
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-itmes-center">
+                                    <div>
+                                        <div class="p-3 rounded bg-primary-subtle">
+                                            <i class="ph ph-buildings fs-2"></i>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h1 class="counter">{{ $stats['organizations'] }}</h1>
+                                        <p class="mb-0">{{ __('app.admin.dashboard.metrics.organizations') }}</p>
+                                    </div>
+                                    <div>
+                                        <div class="badge bg-primary">
+                                            <span>{{ $organizationPercent }}%</span>
+                                        </div>
                                     </div>
                                 </div>
-                                <div>
-                                    <h1 class="counter">{{ $stats['organizations'] }}</h1>
-                                    <p class="mb-0">{{ __('app.admin.dashboard.metrics.organizations') }}</p>
+                            </div>
+                        </div>
+                    </div>
+                @endif
+
+                @can('users.view')
+                    <div class="col-lg-3">
+                        <div class="card admin-mini-card">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between">
+                                    <div class="rounded p-3 bg-primary-subtle">
+                                        <i class="ph ph-users-three fs-3"></i>
+                                    </div>
+                                    <div>
+                                        <span>{{ __('app.admin.dashboard.metrics.users') }}</span>
+                                    </div>
                                 </div>
-                                <div>
-                                    <div class="badge bg-primary">
-                                        <span>{{ $organizationPercent }}%</span>
+                                <div class="text-center">
+                                    <h2 class="counter">{{ $stats['users'] }}</h2>
+                                    <div>
+                                        <span>{{ $activeUserPercent }}%</span>
+                                        <span>{{ __('app.statuses.active') }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="admin-stat-users" class="admin-sparkline"></div>
+                        </div>
+                    </div>
+                @endcan
+
+                @if ($adminHasDirectoryAccess)
+                    <div class="col-lg-6 col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="text-center">{{ __('app.admin.dashboard.metrics.pending_reviews') }}</div>
+                                <div class="d-flex align-items-center justify-content-between mt-3">
+                                    <div>
+                                        <h2 class="counter">{{ $stats['pending_reviews'] }}</h2>
+                                        {{ $pendingReviewPercent }}%
+                                    </div>
+                                    <div class="border bg-danger-subtle rounded p-3">
+                                        <i class="ph ph-hourglass-medium fs-1"></i>
+                                    </div>
+                                </div>
+                                <div class="mt-4">
+                                    <div class="progress bg-danger-subtle shadow-none w-100" style="height: 6px">
+                                        <div class="progress-bar bg-danger" style="width: {{ $pendingReviewPercent }}%"></div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <div class="col-lg-3">
-                    <div class="card admin-mini-card">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between">
-                                <div class="rounded p-3 bg-primary-subtle">
-                                    <i class="ph ph-users-three fs-3"></i>
-                                </div>
-                                <div>
-                                    <span>{{ __('app.admin.dashboard.metrics.users') }}</span>
-                                </div>
-                            </div>
-                            <div class="text-center">
-                                <h2 class="counter">{{ $stats['users'] }}</h2>
-                                <div>
-                                    <span>{{ $activeUserPercent }}%</span>
-                                    <span>{{ __('app.statuses.active') }}</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="admin-stat-users" class="admin-sparkline"></div>
-                    </div>
-                </div>
-
-                <div class="col-lg-6 col-md-6">
-                    <div class="card">
-                        <div class="card-body">
-                            <div class="text-center">{{ __('app.admin.dashboard.metrics.pending_reviews') }}</div>
-                            <div class="d-flex align-items-center justify-content-between mt-3">
-                                <div>
-                                    <h2 class="counter">{{ $stats['pending_reviews'] }}</h2>
-                                    {{ $pendingReviewPercent }}%
-                                </div>
-                                <div class="border bg-danger-subtle rounded p-3">
-                                    <i class="ph ph-hourglass-medium fs-1"></i>
-                                </div>
-                            </div>
-                            <div class="mt-4">
-                                <div class="progress bg-danger-subtle shadow-none w-100" style="height: 6px">
-                                    <div class="progress-bar bg-danger" style="width: {{ $pendingReviewPercent }}%"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                @endif
 
                 <div class="col-lg-6 col-md-6">
                     <div class="card">
@@ -449,20 +460,22 @@
 
         <div class="col-12">
             <div class="row">
-                <div class="col-lg-4 col-md-6">
-                    <div class="card card-block card-height card-dashboard admin-chart-card">
-                        <div class="card-header">
-                            <div class="iq-header-title">
-                                <h3 class="card-title">{{ __('app.admin.dashboard.charts.registrations_breakdown') }}</h3>
+                @if ($adminHasDirectoryAccess)
+                    <div class="col-lg-4 col-md-6">
+                        <div class="card card-block card-height card-dashboard admin-chart-card">
+                            <div class="card-header">
+                                <div class="iq-header-title">
+                                    <h3 class="card-title">{{ __('app.admin.dashboard.charts.registrations_breakdown') }}</h3>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div id="admin-registration-chart" class="admin-chart-surface d-flex align-items-center justify-content-center"></div>
                             </div>
                         </div>
-                        <div class="card-body">
-                            <div id="admin-registration-chart" class="admin-chart-surface d-flex align-items-center justify-content-center"></div>
-                        </div>
                     </div>
-                </div>
+                @endif
 
-                <div class="col-lg-8 col-md-6">
+                <div class="{{ $adminHasDirectoryAccess ? 'col-lg-8 col-md-6' : 'col-12' }}">
                     <div class="card card-dashboard">
                         <div class="card-header d-flex align-items-center justify-content-between gap-2 flex-wrap">
                             <div class="iq-header-title">
@@ -575,6 +588,10 @@
             const releaseData = @json($applicationsByReleaseChart);
             const approvalDurationData = @json($approvalDurationChart);
             const registrationData = @json($registrationBreakdownChart);
+            const applicationsSeriesLabel = @json(__('app.admin.dashboard.metrics.applications'));
+            const usersSeriesLabel = @json(__('app.admin.dashboard.metrics.users'));
+            const requestsSeriesLabel = @json(__('app.admin.dashboard.recent_requests_title'));
+            const hoursSeriesLabel = @json(__('app.admin.dashboard.charts.approval_duration'));
 
             renderChart('#admin-stat-applications', monthlyCounts.some(function (value) { return value > 0; }), {
                 chart: {
@@ -583,7 +600,7 @@
                     sparkline: { enabled: true },
                     toolbar: { show: false }
                 },
-                series: [{ name: 'Applications', data: monthlyCounts }],
+                series: [{ name: applicationsSeriesLabel, data: monthlyCounts }],
                 colors: [primaryColor],
                 stroke: { curve: 'smooth', width: 2 },
                 fill: {
@@ -604,7 +621,7 @@
                     sparkline: { enabled: true },
                     toolbar: { show: false }
                 },
-                series: [{ name: 'Users', data: monthlyCounts.map(function (value, index) { return value + index; }) }],
+                series: [{ name: usersSeriesLabel, data: monthlyCounts.map(function (value, index) { return value + index; }) }],
                 colors: [dangerColor],
                 stroke: { curve: 'smooth', width: 2 },
                 fill: {
@@ -643,7 +660,7 @@
                     height: 300,
                     toolbar: { show: false }
                 },
-                series: [{ name: 'Applications', data: monthlyCounts }],
+                series: [{ name: applicationsSeriesLabel, data: monthlyCounts }],
                 xaxis: {
                     categories: monthlyLabels
                 },
@@ -677,7 +694,7 @@
                     toolbar: { show: false }
                 },
                 series: [{
-                    name: 'Requests',
+                    name: requestsSeriesLabel,
                     data: releaseData.map(function (item) { return item.value; })
                 }],
                 xaxis: {
@@ -703,7 +720,7 @@
                     toolbar: { show: false }
                 },
                 series: [{
-                    name: 'Hours',
+                    name: hoursSeriesLabel,
                     data: approvalDurationData.map(function (item) { return item.value; })
                 }],
                 xaxis: {

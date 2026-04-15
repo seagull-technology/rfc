@@ -8,6 +8,7 @@ use App\Models\ApplicationCorrespondence;
 use App\Models\ApplicationDocument;
 use App\Models\Entity;
 use App\Notifications\InboxMessageNotification;
+use App\Services\ApprovalRoutingService;
 use App\Support\ApplicantRequestOverview;
 use App\Support\NotificationRecipients;
 use App\Support\WorkflowMessageMetadata;
@@ -22,6 +23,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ApplicationController extends Controller
 {
+    public function __construct(
+        private readonly ApprovalRoutingService $approvalRoutingService,
+    ) {
+    }
+
     public function index(Request $request): View
     {
         [$user, $entity] = $this->applicantContext($request);
@@ -135,6 +141,7 @@ class ApplicationController extends Controller
         $record = $this->findApplicantApplication($application, $entity);
         $record->load([
             'statusHistory.user',
+            'authorityApprovals.entity',
             'authorityApprovals.reviewedBy',
             'documents.uploadedBy',
             'documents.reviewedBy',
@@ -221,7 +228,7 @@ class ApplicationController extends Controller
             $this->appendHistory($record, 'submitted', __('app.applications.history.submitted'), $user->getKey());
         });
 
-        $record->load(['entity', 'authorityApprovals']);
+        $record->load(['entity', 'authorityApprovals.entity']);
 
         NotificationRecipients::except(NotificationRecipients::adminUsers(), $user->getKey())
             ->each(fn ($recipient) => $recipient->notify(new InboxMessageNotification(
@@ -484,7 +491,7 @@ class ApplicationController extends Controller
     private function findApplicantApplication(string $application, Entity $entity): FilmApplication
     {
         return FilmApplication::query()
-            ->with(['entity', 'submittedBy', 'reviewedBy', 'assignedTo', 'finalDecisionIssuedBy', 'authorityApprovals', 'permit'])
+            ->with(['entity', 'submittedBy', 'reviewedBy', 'assignedTo', 'finalDecisionIssuedBy', 'authorityApprovals.entity', 'authorityApprovals.reviewedBy', 'permit'])
             ->where('entity_id', $entity->getKey())
             ->findOrFail($application);
     }
@@ -606,20 +613,30 @@ class ApplicationController extends Controller
 
     private function syncAuthorityApprovals(FilmApplication $application): void
     {
-        $requiredApprovals = array_values(array_unique(data_get($application->metadata, 'requirements.required_approvals', [])));
+        $routes = $this->approvalRoutingService->routesForApplication($application);
+        $wantedKeys = $routes
+            ->map(fn (array $route): string => $route['approval_code'].'|'.($route['target_entity_id'] ?? 'none'))
+            ->all();
 
-        ApplicationAuthorityApproval::query()
-            ->where('application_id', $application->getKey())
-            ->whereNotIn('authority_code', $requiredApprovals)
+        $application->authorityApprovals()
+            ->get()
+            ->reject(fn (ApplicationAuthorityApproval $approval): bool => in_array(
+                $approval->authority_code.'|'.($approval->entity_id ?? 'none'),
+                $wantedKeys,
+                true
+            ))
+            ->each
             ->delete();
 
-        foreach ($requiredApprovals as $approvalCode) {
+        foreach ($routes as $route) {
             ApplicationAuthorityApproval::query()->updateOrCreate(
                 [
                     'application_id' => $application->getKey(),
-                    'authority_code' => $approvalCode,
+                    'authority_code' => $route['approval_code'],
+                    'entity_id' => $route['target_entity_id'],
                 ],
                 [
+                    'approval_routing_rule_id' => $route['approval_routing_rule_id'],
                     'status' => 'pending',
                     'note' => null,
                     'reviewed_by_user_id' => null,

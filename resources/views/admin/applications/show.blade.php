@@ -83,6 +83,9 @@
             ];
         })
         ->values();
+    $canAssignReviewer = auth()->user()?->can('applications.assign') ?? false;
+    $canReviewApplication = auth()->user()?->can('applications.review') ?? false;
+    $canApproveApplication = auth()->user()?->can('applications.approve') ?? false;
 @endphp
 
 @extends('layouts.admin-dashboard', ['title' => $title])
@@ -284,20 +287,22 @@
                                     <small class="text-muted d-block">{{ __('app.workflow.assigned_reviewer') }}</small>
                                     <div>{{ $application->assignedTo?->displayName() ?? __('app.workflow.unassigned') }}</div>
                                 </div>
-                                <form method="POST" action="{{ route('admin.applications.assign', $application) }}" class="row g-3">
-                                    @csrf
-                                    <div class="col-12">
-                                        <label for="assigned_to_user_id" class="form-label">{{ __('app.workflow.assign_reviewer') }}</label>
-                                        <select id="assigned_to_user_id" name="assigned_to_user_id" class="form-select" required>
-                                            @foreach ($reviewers as $reviewer)
-                                                <option value="{{ $reviewer->getKey() }}" @selected($application->assigned_to_user_id === $reviewer->getKey())>{{ $reviewer->displayName() }}</option>
-                                            @endforeach
-                                        </select>
-                                    </div>
-                                    <div class="col-12">
-                                        <button class="btn btn-outline-primary" type="submit">{{ __('app.workflow.assign_action') }}</button>
-                                    </div>
-                                </form>
+                                @if ($canAssignReviewer)
+                                    <form method="POST" action="{{ route('admin.applications.assign', $application) }}" class="row g-3">
+                                        @csrf
+                                        <div class="col-12">
+                                            <label for="assigned_to_user_id" class="form-label">{{ __('app.workflow.assign_reviewer') }}</label>
+                                            <select id="assigned_to_user_id" name="assigned_to_user_id" class="form-select" required>
+                                                @foreach ($reviewers as $reviewer)
+                                                    <option value="{{ $reviewer->getKey() }}" @selected($application->assigned_to_user_id === $reviewer->getKey())>{{ $reviewer->displayName() }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div class="col-12">
+                                            <button class="btn btn-outline-primary" type="submit">{{ __('app.workflow.assign_action') }}</button>
+                                        </div>
+                                    </form>
+                                @endif
                             </div>
                         </div>
                     </div>
@@ -313,9 +318,13 @@
                                 </div>
 
                                 <div class="d-flex gap-2 flex-wrap mt-4">
-                                    <a class="btn btn-outline-secondary" data-bs-toggle="tab" href="#profile-decision" role="tab">{{ __('app.admin_request_state.open_review') }}</a>
-                                    <a class="btn btn-outline-secondary" data-bs-toggle="tab" href="#profile-activity2" role="tab">{{ __('app.admin_request_state.open_approvals') }}</a>
-                                    <a class="btn btn-outline-secondary" data-bs-toggle="tab" href="#profile-correspondence" role="tab">{{ __('app.admin_request_state.open_correspondence') }}</a>
+                                    @if ($canReviewApplication || $canApproveApplication)
+                                        <a class="btn btn-outline-secondary" data-bs-toggle="tab" href="#profile-decision" role="tab">{{ __('app.admin_request_state.open_review') }}</a>
+                                    @endif
+                                    @if ($canReviewApplication)
+                                        <a class="btn btn-outline-secondary" data-bs-toggle="tab" href="#profile-activity2" role="tab">{{ __('app.admin_request_state.open_approvals') }}</a>
+                                        <a class="btn btn-outline-secondary" data-bs-toggle="tab" href="#profile-correspondence" role="tab">{{ __('app.admin_request_state.open_correspondence') }}</a>
+                                    @endif
                                 </div>
 
                                 <div class="row g-3 mt-1">
@@ -498,39 +507,43 @@
                             </div>
 
                             <div id="profile-decision" class="tab-pane fade">
-                                <div class="card">
-                                    <div class="card-header">
-                                        <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
-                                            <div class="iq-header-title">
-                                                <h2 class="episode-playlist-title wp-heading-inline">
-                                                    <span class="position-relative">{{ __('app.admin.applications.review_title') }}</span>
-                                                </h2>
+                                @if ($canReviewApplication)
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                                                <div class="iq-header-title">
+                                                    <h2 class="episode-playlist-title wp-heading-inline">
+                                                        <span class="position-relative">{{ __('app.admin.applications.review_title') }}</span>
+                                                    </h2>
+                                                </div>
                                             </div>
                                         </div>
+                                        <div class="card-body">
+                                            <form method="POST" action="{{ route('admin.applications.review', $application) }}" class="row g-3">
+                                                @csrf
+                                                <div class="col-12">
+                                                    <label for="decision" class="form-label flex-grow-1">{{ __('app.admin.applications.review_decision') }}</label>
+                                                    <select id="decision" name="decision" class="form-control bg-white" required>
+                                                        @foreach (['under_review', 'needs_clarification'] as $decision)
+                                                            <option value="{{ $decision }}" @selected(old('decision', $application->status) === $decision)>{{ __('app.statuses.'.$decision) }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                </div>
+                                                <div class="col-12">
+                                                    <label class="form-label flex-grow-1" for="note">{{ __('app.admin.applications.review_note') }}</label>
+                                                    <textarea id="note" name="note" rows="6" class="form-control mt-2 bg-white">{{ old('note', $application->review_note) }}</textarea>
+                                                </div>
+                                                <div class="col-12">
+                                                    <button class="btn btn-danger" type="submit">{{ __('app.admin.applications.review_submit') }}</button>
+                                                </div>
+                                            </form>
+                                        </div>
                                     </div>
-                                    <div class="card-body">
-                                        <form method="POST" action="{{ route('admin.applications.review', $application) }}" class="row g-3">
-                                            @csrf
-                                            <div class="col-12">
-                                                <label for="decision" class="form-label flex-grow-1">{{ __('app.admin.applications.review_decision') }}</label>
-                                                <select id="decision" name="decision" class="form-control bg-white" required>
-                                                    @foreach (['under_review', 'needs_clarification'] as $decision)
-                                                        <option value="{{ $decision }}" @selected(old('decision', $application->status) === $decision)>{{ __('app.statuses.'.$decision) }}</option>
-                                                    @endforeach
-                                                </select>
-                                            </div>
-                                            <div class="col-12">
-                                                <label class="form-label flex-grow-1" for="note">{{ __('app.admin.applications.review_note') }}</label>
-                                                <textarea id="note" name="note" rows="6" class="form-control mt-2 bg-white">{{ old('note', $application->review_note) }}</textarea>
-                                            </div>
-                                            <div class="col-12">
-                                                <button class="btn btn-danger" type="submit">{{ __('app.admin.applications.review_submit') }}</button>
-                                            </div>
-                                        </form>
-                                    </div>
-                                </div>
+                                @endif
 
-                                @include('admin.applications.partials.final-decision')
+                                @if ($canApproveApplication)
+                                    @include('admin.applications.partials.final-decision')
+                                @endif
                             </div>
 
                             <div id="profile-activity2" class="tab-pane fade">
@@ -564,16 +577,20 @@
                                                             <td>{{ optional($approval->updated_at)->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</td>
                                                             <td><span class="badge bg-{{ $statusClass($approval->status) }}">{{ $approval->localizedStatus() }}</span></td>
                                                             <td>
-                                                                <form method="POST" action="{{ route('admin.applications.approvals.update', [$application, $approval]) }}" class="d-grid gap-2">
-                                                                    @csrf
-                                                                    <select name="status" class="form-select form-select-sm">
-                                                                        @foreach (['pending', 'in_review', 'approved', 'rejected'] as $approvalStatus)
-                                                                            <option value="{{ $approvalStatus }}" @selected($approval->status === $approvalStatus)>{{ __('app.approvals.statuses.'.$approvalStatus) }}</option>
-                                                                        @endforeach
-                                                                    </select>
-                                                                    <input name="note" type="text" class="form-control form-control-sm" value="{{ $approval->note }}" placeholder="{{ __('app.admin.applications.review_note') }}">
-                                                                    <button class="btn btn-sm btn-outline-primary" type="submit">{{ __('app.approvals.update_action') }}</button>
-                                                                </form>
+                                                                @if ($canReviewApplication)
+                                                                    <form method="POST" action="{{ route('admin.applications.approvals.update', [$application, $approval]) }}" class="d-grid gap-2">
+                                                                        @csrf
+                                                                        <select name="status" class="form-select form-select-sm">
+                                                                            @foreach (['pending', 'in_review', 'approved', 'rejected'] as $approvalStatus)
+                                                                                <option value="{{ $approvalStatus }}" @selected($approval->status === $approvalStatus)>{{ __('app.approvals.statuses.'.$approvalStatus) }}</option>
+                                                                            @endforeach
+                                                                        </select>
+                                                                        <input name="note" type="text" class="form-control form-control-sm" value="{{ $approval->note }}" placeholder="{{ __('app.admin.applications.review_note') }}">
+                                                                        <button class="btn btn-sm btn-outline-primary" type="submit">{{ __('app.approvals.update_action') }}</button>
+                                                                    </form>
+                                                                @else
+                                                                    <span class="text-muted">{{ __('app.dashboard.not_available') }}</span>
+                                                                @endif
                                                             </td>
                                                         </tr>
                                                     @empty

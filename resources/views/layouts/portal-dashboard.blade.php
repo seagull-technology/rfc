@@ -1,6 +1,8 @@
 @php
     $currentPortalUser = auth()->user();
     $currentPortalEntity = $currentPortalUser?->primaryEntity();
+    $currentPortalGroupCode = $currentPortalEntity?->group?->code;
+    $currentPortalRegistrationType = $currentPortalEntity?->registration_type ?? $currentPortalUser?->registration_type;
     $portalAvatar = asset('images/OIP.jpeg');
     $portalUnreadNotifications = $currentPortalUser?->unreadNotifications ?? collect();
     $portalInboxNotificationCount = $portalUnreadNotifications
@@ -8,12 +10,36 @@
         ->count();
     $portalBellNotificationCount = $portalUnreadNotifications->count();
     $portalNotificationItems = $notificationItems ?? ($currentPortalUser?->notifications()->latest()->take(5)->get() ?? collect());
-    $portalProfileLinks = [
-        ['label' => __('app.portal.profile_links.applicant'), 'url' => route('dashboard')],
-        ['label' => __('app.portal.profile_links.foreign_producer'), 'url' => route('profile.show', ['variant' => 'foreign_producer'])],
-        ['label' => __('app.portal.profile_links.rfc'), 'url' => $currentPortalUser && $currentPortalUser->canAccessAdminPanel($currentPortalEntity) ? route('admin.dashboard') : route('dashboard')],
-        ['label' => __('app.portal.profile_links.authority'), 'url' => route('dashboard')],
-    ];
+    $portalProfileLinks = collect();
+    $currentPortalProfileUrl = route('dashboard');
+
+    if ($currentPortalUser && $currentPortalUser->canAccessAdminPanel($currentPortalEntity)) {
+        $currentPortalProfileUrl = route('admin.dashboard');
+        $portalProfileLinks->push([
+            'label' => __('app.portal.profile_links.rfc'),
+            'url' => route('admin.dashboard'),
+        ]);
+    } elseif ($currentPortalGroupCode === 'authorities') {
+        $portalProfileLinks->push([
+            'label' => __('app.portal.profile_links.authority'),
+            'url' => route('dashboard'),
+        ]);
+    } elseif (in_array($currentPortalRegistrationType, ['company', 'ngo', 'school'], true) || $currentPortalGroupCode === 'organizations') {
+        $currentPortalProfileUrl = request()->query('variant') === 'foreign_producer'
+            ? route('profile.show', ['variant' => 'foreign_producer'])
+            : route('profile.show');
+        $portalProfileLinks->push([
+            'label' => request()->query('variant') === 'foreign_producer'
+                ? __('app.portal.profile_links.foreign_producer')
+                : __('app.portal.profile_links.organization'),
+            'url' => $currentPortalProfileUrl,
+        ]);
+    } else {
+        $portalProfileLinks->push([
+            'label' => __('app.portal.profile_links.applicant'),
+            'url' => route('dashboard'),
+        ]);
+    }
 @endphp
 
 <!doctype html>
@@ -150,7 +176,7 @@
                                                 <img class="avatar-img rounded-circle shadow avatar-70 rounded" src="{{ $portalAvatar }}" alt="avatar">
                                             </div>
                                             <div class="text-start">
-                                                <a class="h6" href="{{ route('profile.show') }}">{{ $currentPortalEntity?->displayName() ?? __('app.dashboard.no_entity') }}</a>
+                                                <a class="h6" href="{{ $currentPortalProfileUrl }}">{{ $currentPortalEntity?->displayName() ?? __('app.dashboard.no_entity') }}</a>
                                                 <p class="small m-0">{{ $currentPortalUser?->email }}</p>
                                             </div>
                                         </div>

@@ -9,6 +9,7 @@ use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\Admin\AdminDashboardController;
+use App\Http\Controllers\Admin\ApprovalRoutingRuleController;
 use App\Http\Controllers\Admin\ApplicationManagementController;
 use App\Http\Controllers\Admin\ContactCenterController as AdminContactCenterController;
 use App\Http\Controllers\Admin\EntityManagementController;
@@ -139,7 +140,7 @@ Route::group([
             ->group(function (): void {
                 Route::get('/', AdminDashboardController::class)->name('dashboard');
                 Route::get('/reports/export', [AdminDashboardController::class, 'export'])
-                    ->middleware('permission:access.admin-panel')
+                    ->middleware('permission:reports.export')
                     ->name('reports.export');
 
                 Route::get('/producers', ProducerDirectoryController::class)
@@ -241,6 +242,40 @@ Route::group([
                 Route::post('/integrations/company-registry-test', [IntegrationDiagnosticsController::class, 'lookupCompanyRegistry'])
                     ->middleware('permission:settings.manage')
                     ->name('integrations.company-registry-test');
+
+                Route::get('/approval-routing', [ApprovalRoutingRuleController::class, 'index'])
+                    ->middleware('permission:settings.manage')
+                    ->name('approval-routing.index');
+                Route::get('/approval-routing/create', [ApprovalRoutingRuleController::class, 'create'])
+                    ->middleware('permission:settings.manage')
+                    ->name('approval-routing.create');
+                Route::get('/approval-routing/simulator', [ApprovalRoutingRuleController::class, 'simulator'])
+                    ->middleware('permission:settings.manage')
+                    ->name('approval-routing.simulator');
+                Route::post('/approval-routing/preview', [ApprovalRoutingRuleController::class, 'preview'])
+                    ->middleware('permission:settings.manage')
+                    ->name('approval-routing.preview');
+                Route::post('/approval-routing/bulk-status', [ApprovalRoutingRuleController::class, 'bulkUpdateStatus'])
+                    ->middleware('permission:settings.manage')
+                    ->name('approval-routing.bulk-status');
+                Route::post('/approval-routing', [ApprovalRoutingRuleController::class, 'store'])
+                    ->middleware('permission:settings.manage')
+                    ->name('approval-routing.store');
+                Route::get('/approval-routing/{approvalRouting}', [ApprovalRoutingRuleController::class, 'show'])
+                    ->middleware('permission:settings.manage')
+                    ->name('approval-routing.show');
+                Route::get('/approval-routing/{approvalRouting}/edit', [ApprovalRoutingRuleController::class, 'edit'])
+                    ->middleware('permission:settings.manage')
+                    ->name('approval-routing.edit');
+                Route::post('/approval-routing/{approvalRouting}/update', [ApprovalRoutingRuleController::class, 'update'])
+                    ->middleware('permission:settings.manage')
+                    ->name('approval-routing.update');
+                Route::post('/approval-routing/{approvalRouting}/status', [ApprovalRoutingRuleController::class, 'updateStatus'])
+                    ->middleware('permission:settings.manage')
+                    ->name('approval-routing.status');
+                Route::post('/approval-routing/{approvalRouting}/delete', [ApprovalRoutingRuleController::class, 'destroy'])
+                    ->middleware('permission:settings.manage')
+                    ->name('approval-routing.destroy');
 
                 Route::get('/entities', [EntityManagementController::class, 'index'])
                     ->middleware('permission:entities.view')

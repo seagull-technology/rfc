@@ -63,10 +63,17 @@ class LocalizationTest extends TestCase
             ->actingAs($user)
             ->get('/ar/dashboard');
 
-        $response->assertOk();
-        $response->assertSee('لوحة التحكم');
-        $response->assertSee('الهيئة الملكية الأردنية للأفلام');
-        $response->assertSee('عدد طلبات الانتاج');
-        $response->assertDontSeeText('This is the temporary testing dashboard');
+        $response->assertRedirect(route('admin.dashboard'));
+
+        $dashboardResponse = $this
+            ->withSession(['current_entity_id' => $entity->getKey()])
+            ->actingAs($user)
+            ->get('/ar/admin');
+
+        $dashboardResponse->assertOk();
+        $dashboardResponse->assertSee('الهيئة الملكية الأردنية للأفلام');
+        $dashboardResponse->assertSee(__('app.admin.applications.title'));
+        $dashboardResponse->assertSee(__('app.admin.applications.intro'));
+        $dashboardResponse->assertDontSeeText('This is the temporary testing dashboard');
     }
 }

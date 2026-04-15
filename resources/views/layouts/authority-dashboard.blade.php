@@ -5,12 +5,9 @@
     $authorityUnreadNotifications = $currentAuthorityUser?->unreadNotifications ?? collect();
     $authorityNotificationCount = $authorityUnreadNotifications->count();
     $authorityNotificationItems = $notificationItems ?? ($currentAuthorityUser?->notifications()->latest()->take(5)->get() ?? collect());
-    $authorityProfileLinks = [
-        ['label' => __('app.portal.profile_links.applicant'), 'url' => route('dashboard')],
-        ['label' => __('app.portal.profile_links.foreign_producer'), 'url' => route('profile.show', ['variant' => 'foreign_producer'])],
-        ['label' => __('app.portal.profile_links.rfc'), 'url' => $currentAuthorityUser && $currentAuthorityUser->canAccessAdminPanel($currentAuthorityEntity) ? route('admin.dashboard') : route('dashboard')],
+    $authorityProfileLinks = collect([
         ['label' => __('app.portal.profile_links.authority'), 'url' => route('dashboard')],
-    ];
+    ]);
 @endphp
 
 <!doctype html>

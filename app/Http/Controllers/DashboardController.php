@@ -43,8 +43,18 @@ class DashboardController extends Controller
             $approvalCodes = ApplicationWorkflowRegistry::approvalCodesForEntity($entity);
 
             $approvals = ApplicationAuthorityApproval::query()
-                ->with(['application.entity', 'application.submittedBy', 'reviewedBy'])
-                ->whereIn('authority_code', $approvalCodes)
+                ->with(['application.entity', 'application.submittedBy', 'reviewedBy', 'entity'])
+                ->where(function ($query) use ($entity, $approvalCodes): void {
+                    $query->where('entity_id', $entity->getKey());
+
+                    if ($approvalCodes !== []) {
+                        $query->orWhere(function ($legacyQuery) use ($approvalCodes): void {
+                            $legacyQuery
+                                ->whereNull('entity_id')
+                                ->whereIn('authority_code', $approvalCodes);
+                        });
+                    }
+                })
                 ->latest()
                 ->get();
 

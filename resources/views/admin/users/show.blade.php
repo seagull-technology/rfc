@@ -584,6 +584,10 @@
             const monthCounts = @json($applicationsByMonthCounts);
             const crewData = @json($crewByProjectChart);
             const authorityData = @json($authorityResponseChart);
+            const budgetSeriesLabel = @json(__('app.admin.users.profile_charts.budget_by_project'));
+            const requestsSeriesLabel = @json(__('app.admin.users.profile_charts.applications_by_month'));
+            const crewSeriesLabel = @json(__('app.admin.users.profile_charts.crew_by_project'));
+            const authoritySeriesLabel = @json(__('app.admin.users.profile_charts.authority_response_average'));
 
             renderChart('#user-chart-type', typeData.length > 0, {
                 chart: { type: 'donut', height: 260 },
@@ -596,7 +600,7 @@
 
             renderChart('#user-chart-budget', budgetData.length > 0, {
                 chart: { type: 'bar', height: 260, toolbar: { show: false } },
-                series: [{ name: 'Budget', data: budgetData.map(item => item.value) }],
+                series: [{ name: budgetSeriesLabel, data: budgetData.map(item => item.value) }],
                 xaxis: { categories: budgetData.map(item => item.label) },
                 colors: ['#ce0812'],
                 plotOptions: { bar: { borderRadius: 6, columnWidth: '45%' } },
@@ -605,7 +609,7 @@
 
             renderChart('#user-chart-months', monthCounts.some(value => value > 0), {
                 chart: { type: 'area', height: 260, toolbar: { show: false } },
-                series: [{ name: 'Requests', data: monthCounts }],
+                series: [{ name: requestsSeriesLabel, data: monthCounts }],
                 xaxis: { categories: monthLabels },
                 colors: ['#89050c'],
                 stroke: { curve: 'smooth', width: 3 },
@@ -618,7 +622,7 @@
 
             renderChart('#user-chart-crew', crewData.length > 0, {
                 chart: { type: 'bar', height: 260, toolbar: { show: false } },
-                series: [{ name: 'Crew', data: crewData.map(item => item.value) }],
+                series: [{ name: crewSeriesLabel, data: crewData.map(item => item.value) }],
                 xaxis: { categories: crewData.map(item => item.label) },
                 colors: ['#f97316'],
                 plotOptions: { bar: { borderRadius: 6, columnWidth: '45%' } },
@@ -627,7 +631,7 @@
 
             renderChart('#user-chart-authority-response', authorityData.length > 0, {
                 chart: { type: 'bar', height: 260, toolbar: { show: false } },
-                series: [{ name: 'Hours', data: authorityData.map(item => item.value) }],
+                series: [{ name: authoritySeriesLabel, data: authorityData.map(item => item.value) }],
                 xaxis: { categories: authorityData.map(item => item.label) },
                 colors: ['#2e0204'],
                 plotOptions: { bar: { horizontal: true, borderRadius: 6, barHeight: '45%' } },
