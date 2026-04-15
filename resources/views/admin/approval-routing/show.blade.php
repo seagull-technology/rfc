@@ -10,6 +10,15 @@
             default => $value,
         };
     };
+    $auditBadgeClass = static function (?string $action): string {
+        return match ($action) {
+            'created', 'activated' => 'success',
+            'updated' => 'primary',
+            'deactivated' => 'warning text-dark',
+            'deleted' => 'danger',
+            default => 'secondary',
+        };
+    };
     $formatAuditValues = static function (?array $values) use ($translateCondition, $auditEntityNames): array {
         if (! $values) {
             return [];
@@ -91,6 +100,24 @@
                         <span class="badge bg-{{ $rule->is_active ? 'success' : 'secondary' }}">
                             {{ $rule->is_active ? __('app.statuses.active') : __('app.statuses.inactive') }}
                         </span>
+                    </div>
+                    <div class="mb-3">
+                        <small class="text-muted d-block">{{ __('app.admin.approval_routing.last_changed_by') }}</small>
+                        <div>{{ $rule->latestAudit?->changedBy?->displayName() ?? __('app.dashboard.not_available') }}</div>
+                    </div>
+                    <div class="mb-3">
+                        <small class="text-muted d-block">{{ __('app.admin.approval_routing.last_changed_at') }}</small>
+                        <div>{{ optional($rule->latestAudit?->created_at)->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</div>
+                    </div>
+                    <div class="mb-3">
+                        <small class="text-muted d-block">{{ __('app.admin.approval_routing.last_change_action') }}</small>
+                        <div>
+                            @if ($rule->latestAudit)
+                                <span class="badge bg-{{ $auditBadgeClass($rule->latestAudit->action) }}">{{ $rule->latestAudit->localizedAction() }}</span>
+                            @else
+                                {{ __('app.dashboard.not_available') }}
+                            @endif
+                        </div>
                     </div>
                     <div class="mb-3">
                         <small class="text-muted d-block">{{ __('app.admin.approval_routing.analytics_usage_count') }}</small>

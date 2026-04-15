@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ApprovalRoutingRule extends Model
 {
@@ -38,6 +39,11 @@ class ApprovalRoutingRule extends Model
     public function audits(): HasMany
     {
         return $this->hasMany(ApprovalRoutingRuleAudit::class)->latest();
+    }
+
+    public function latestAudit(): HasOne
+    {
+        return $this->hasOne(ApprovalRoutingRuleAudit::class)->latestOfMany();
     }
 
     public function authorityApprovals(): HasMany
