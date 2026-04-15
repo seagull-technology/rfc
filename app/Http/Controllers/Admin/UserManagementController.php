@@ -60,7 +60,19 @@ class UserManagementController extends Controller
         }
 
         if (($filters['registration_type'] ?? 'all') !== 'all') {
-            $query->where('registration_type', $filters['registration_type']);
+            if ($filters['registration_type'] === 'staff') {
+                $query->where(function (Builder $builder): void {
+                    $builder
+                        ->where('registration_type', 'staff')
+                        ->orWhere(function (Builder $internalBuilder): void {
+                            $internalBuilder
+                                ->whereNull('registration_type')
+                                ->whereHas('entities.group', fn (Builder $groupQuery): Builder => $groupQuery->whereIn('code', ['rfc', 'admins', 'authorities']));
+                        });
+                });
+            } else {
+                $query->where('registration_type', $filters['registration_type']);
+            }
         }
 
         match ($filters['deleted'] ?? 'all') {
@@ -119,6 +131,7 @@ class UserManagementController extends Controller
                 'national_id' => $validated['national_id'],
                 'phone' => $validated['phone'],
                 'status' => 'active',
+                'registration_type' => $this->inferRegistrationTypeForEntity($entity),
                 'password' => Hash::make($validated['password']),
             ]);
 
@@ -400,5 +413,15 @@ class UserManagementController extends Controller
             ->withTrashed()
             ->with(['entities.group'])
             ->findOrFail($user);
+    }
+
+    private function inferRegistrationTypeForEntity(Entity $entity): ?string
+    {
+        $entity->loadMissing('group');
+
+        return match ($entity->group?->code) {
+            'rfc', 'admins', 'authorities' => 'staff',
+            default => $entity->registration_type,
+        };
     }
 }

@@ -8,6 +8,7 @@ use App\Models\ApplicationAuthorityApproval;
 use App\Models\ApprovalRoutingRule;
 use App\Models\ApprovalRoutingRuleAudit;
 use App\Models\Entity;
+use App\Models\User;
 use App\Services\ApprovalRoutingService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -32,6 +33,8 @@ class ApprovalRoutingRuleController extends Controller
             'is_active' => ['nullable', Rule::in(['all', '1', '0'])],
             'risk' => ['nullable', Rule::in(['all', 'any', 'shadowed_rule', 'same_priority_overlap'])],
             'cleanup' => ['nullable', Rule::in(['all', 'unused', 'stale'])],
+            'last_action' => ['nullable', Rule::in(['all', ...$this->auditActions()])],
+            'last_changed_by_user_id' => ['nullable', 'integer', 'exists:users,id'],
         ]);
 
         $activeRules = ApprovalRoutingRule::query()
@@ -48,6 +51,8 @@ class ApprovalRoutingRuleController extends Controller
         $conflictReport = $this->buildConflictReport($activeRules);
         $riskFilter = $filters['risk'] ?? 'all';
         $cleanupFilter = $filters['cleanup'] ?? 'all';
+        $lastActionFilter = $filters['last_action'] ?? 'all';
+        $lastChangedByUserIdFilter = isset($filters['last_changed_by_user_id']) ? (int) $filters['last_changed_by_user_id'] : null;
         $filteredConflictReport = $riskFilter === 'all'
             ? $conflictReport
             : $conflictReport->filter(fn (array $finding): bool => $riskFilter === 'any' || $finding['type'] === $riskFilter)->values();
@@ -80,6 +85,14 @@ class ApprovalRoutingRuleController extends Controller
 
         if (($filters['is_active'] ?? 'all') !== 'all') {
             $query->where('is_active', $filters['is_active'] === '1');
+        }
+
+        if ($lastActionFilter !== 'all') {
+            $query->whereHas('latestAudit', fn (Builder $auditQuery): Builder => $auditQuery->where('action', $lastActionFilter));
+        }
+
+        if ($lastChangedByUserIdFilter !== null) {
+            $query->whereHas('latestAudit', fn (Builder $auditQuery): Builder => $auditQuery->where('changed_by_user_id', $lastChangedByUserIdFilter));
         }
 
         if ($riskFilter !== 'all') {
@@ -133,6 +146,8 @@ class ApprovalRoutingRuleController extends Controller
                 ->get(),
             'authorityEntities' => $this->authorityEntities(),
             'approvalCodes' => $this->approvalCodes(),
+            'auditActions' => $this->auditActions(),
+            'auditUsers' => $this->auditUsers(),
             'filters' => [
                 'q' => $filters['q'] ?? '',
                 'approval_code' => $filters['approval_code'] ?? 'all',
@@ -140,6 +155,8 @@ class ApprovalRoutingRuleController extends Controller
                 'is_active' => $filters['is_active'] ?? 'all',
                 'risk' => $riskFilter,
                 'cleanup' => $cleanupFilter,
+                'last_action' => $lastActionFilter,
+                'last_changed_by_user_id' => $lastChangedByUserIdFilter ? (string) $lastChangedByUserIdFilter : '',
             ],
         ]);
     }
@@ -208,6 +225,8 @@ class ApprovalRoutingRuleController extends Controller
                 'is_active' => (string) $request->input('redirect_is_active', 'all'),
                 'risk' => (string) $request->input('redirect_risk', 'all'),
                 'cleanup' => (string) $request->input('redirect_cleanup', 'all'),
+                'last_action' => (string) $request->input('redirect_last_action', 'all'),
+                'last_changed_by_user_id' => (string) $request->input('redirect_last_changed_by_user_id', ''),
             ], fn (string $value): bool => $value !== '' && $value !== 'all'))
             ->with('status', $targetStatus
                 ? __('app.admin.approval_routing.bulk_activated', ['count' => $updatedCount])
@@ -516,6 +535,29 @@ class ApprovalRoutingRuleController extends Controller
     private function approvalCodes(): array
     {
         return ['public_security', 'digital_economy', 'environment', 'municipalities', 'airports', 'drones', 'heritage'];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function auditActions(): array
+    {
+        return ['created', 'updated', 'activated', 'deactivated', 'deleted'];
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, User>
+     */
+    private function auditUsers()
+    {
+        return User::query()
+            ->whereIn('id', ApprovalRoutingRuleAudit::query()
+                ->whereNotNull('changed_by_user_id')
+                ->select('changed_by_user_id')
+                ->distinct())
+            ->orderBy('name')
+            ->orderBy('email')
+            ->get();
     }
 
     /**
