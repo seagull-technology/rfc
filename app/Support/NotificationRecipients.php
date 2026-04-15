@@ -91,6 +91,10 @@ class NotificationRecipients
      */
     public static function authorityUsersForApproval(ApplicationAuthorityApproval $approval): Collection
     {
+        if ($approval->entity && $approval->entity->group?->code === 'authorities') {
+            return self::entityUsers($approval->entity);
+        }
+
         return self::authorityUsersForApprovalCodes([$approval->authority_code]);
     }
 
@@ -99,11 +103,15 @@ class NotificationRecipients
      */
     public static function authorityUsersForApplication(Application $application): Collection
     {
-        $approvalCodes = $application->relationLoaded('authorityApprovals')
-            ? $application->authorityApprovals->pluck('authority_code')->filter()->values()->all()
-            : $application->authorityApprovals()->pluck('authority_code')->filter()->values()->all();
+        $approvals = $application->relationLoaded('authorityApprovals')
+            ? $application->authorityApprovals
+            : $application->authorityApprovals()->with('entity.group')->get();
 
-        return self::authorityUsersForApprovalCodes($approvalCodes);
+        return $approvals
+            ->flatMap(fn (ApplicationAuthorityApproval $approval): Collection => self::authorityUsersForApproval($approval))
+            ->filter()
+            ->unique(fn (User $user): int => $user->getKey())
+            ->values();
     }
 
     /**

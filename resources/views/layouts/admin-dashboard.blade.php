@@ -7,12 +7,9 @@
     $layoutProfileEntityName = $profileEntityName ?? $currentAdmin?->primaryEntity()?->displayName() ?? __('app.dashboard.no_entity');
     $layoutProfileEmail = $profileEmail ?? $currentAdmin?->email ?? '';
     $layoutSidebarCounters = $layoutSidebarCounters ?? ['applications' => 0, 'scouting_requests' => 0, 'contact_center' => 0];
-    $adminProfileLinks = [
-        ['label' => __('app.portal.profile_links.applicant'), 'url' => route('dashboard')],
-        ['label' => __('app.portal.profile_links.foreign_producer'), 'url' => route('profile.show', ['variant' => 'foreign_producer'])],
-        ['label' => __('app.portal.profile_links.rfc'), 'url' => $currentAdmin && $currentAdmin->canAccessAdminPanel($currentAdminEntity) ? route('admin.dashboard') : route('dashboard')],
-        ['label' => __('app.portal.profile_links.authority'), 'url' => route('dashboard')],
-    ];
+    $adminProfileLinks = collect([
+        ['label' => __('app.portal.profile_links.rfc'), 'url' => route('admin.dashboard')],
+    ]);
 @endphp
 
 <!doctype html>
@@ -100,69 +97,89 @@
                             <span class="item-name">{{ __('app.admin.navigation.dashboard') }}</span>
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('admin.producers.*') ? 'active' : '' }}" href="{{ route('admin.producers.index') }}">
-                            <i class="icon"><i class="ph ph-users-three fs-4"></i></i>
-                            <span class="item-name">{{ __('app.admin.navigation.producers') }}</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('admin.entities.*') ? 'active' : '' }}" href="{{ route('admin.entities.index') }}">
-                            <i class="icon"><i class="ph ph-users-three fs-4"></i></i>
-                            <span class="item-name">{{ __('app.admin.navigation.entities') }}</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('admin.users.*') ? 'active' : '' }}" href="{{ route('admin.users.index') }}">
-                            <i class="icon"><i class="ph ph-user-circle fs-4"></i></i>
-                            <span class="item-name">{{ __('app.admin.navigation.users') }}</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('admin.applications.*') ? 'active' : '' }}" href="{{ route('admin.applications.index') }}">
-                            <i class="icon"><i class="ph ph-film-strip fs-4"></i></i>
-                            <span class="item-name">{{ __('app.admin.navigation.applications') }}</span>
-                            @if ($layoutSidebarCounters['applications'] > 0)
-                                <span class="badge bg-primary rounded-pill admin-sidebar-counter" data-sidebar-counter="applications">{{ $layoutSidebarCounters['applications'] }}</span>
-                            @endif
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('admin.scouting-requests.*') ? 'active' : '' }}" href="{{ route('admin.scouting-requests.index') }}">
-                            <i class="icon"><i class="ph ph-map-pin-area fs-4"></i></i>
-                            <span class="item-name">{{ __('app.admin.navigation.scouting_requests') }}</span>
-                            @if ($layoutSidebarCounters['scouting_requests'] > 0)
-                                <span class="badge bg-primary rounded-pill admin-sidebar-counter" data-sidebar-counter="scouting_requests">{{ $layoutSidebarCounters['scouting_requests'] }}</span>
-                            @endif
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('admin.contact-center.*') ? 'active' : '' }}" href="{{ route('admin.contact-center.index') }}">
-                            <i class="icon"><i class="ph ph-headset fs-4"></i></i>
-                            <span class="item-name">{{ __('app.admin.navigation.contact_center') }}</span>
-                            @if ($layoutSidebarCounters['contact_center'] > 0)
-                                <span class="badge bg-danger rounded-pill admin-sidebar-counter" data-sidebar-counter="contact_center">{{ $layoutSidebarCounters['contact_center'] }}</span>
-                            @endif
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('admin.permits.*') ? 'active' : '' }}" href="{{ route('admin.permits.index') }}">
-                            <i class="icon"><i class="ph ph-seal-check fs-4"></i></i>
-                            <span class="item-name">{{ __('app.admin.navigation.permits') }}</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('admin.groups.*') ? 'active' : '' }}" href="{{ route('admin.groups.index') }}">
-                            <i class="icon"><i class="ph ph-stack fs-4"></i></i>
-                            <span class="item-name">{{ __('app.admin.navigation.groups') }}</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('admin.integrations.*') ? 'active' : '' }}" href="{{ route('admin.integrations.index') }}">
-                            <i class="icon"><i class="ph ph-plugs-connected fs-4"></i></i>
-                            <span class="item-name">{{ __('app.admin.navigation.integrations') }}</span>
-                        </a>
-                    </li>
+                    @can('applications.view.all')
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.producers.*') ? 'active' : '' }}" href="{{ route('admin.producers.index') }}">
+                                <i class="icon"><i class="ph ph-users-three fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.producers') }}</span>
+                            </a>
+                        </li>
+                    @endcan
+                    @can('entities.view')
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.entities.*') ? 'active' : '' }}" href="{{ route('admin.entities.index') }}">
+                                <i class="icon"><i class="ph ph-users-three fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.entities') }}</span>
+                            </a>
+                        </li>
+                    @endcan
+                    @can('users.view')
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.users.*') ? 'active' : '' }}" href="{{ route('admin.users.index') }}">
+                                <i class="icon"><i class="ph ph-user-circle fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.users') }}</span>
+                            </a>
+                        </li>
+                    @endcan
+                    @can('applications.view.all')
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.applications.*') ? 'active' : '' }}" href="{{ route('admin.applications.index') }}">
+                                <i class="icon"><i class="ph ph-film-strip fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.applications') }}</span>
+                                @if ($layoutSidebarCounters['applications'] > 0)
+                                    <span class="badge bg-primary rounded-pill admin-sidebar-counter" data-sidebar-counter="applications">{{ $layoutSidebarCounters['applications'] }}</span>
+                                @endif
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.scouting-requests.*') ? 'active' : '' }}" href="{{ route('admin.scouting-requests.index') }}">
+                                <i class="icon"><i class="ph ph-map-pin-area fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.scouting_requests') }}</span>
+                                @if ($layoutSidebarCounters['scouting_requests'] > 0)
+                                    <span class="badge bg-primary rounded-pill admin-sidebar-counter" data-sidebar-counter="scouting_requests">{{ $layoutSidebarCounters['scouting_requests'] }}</span>
+                                @endif
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.contact-center.*') ? 'active' : '' }}" href="{{ route('admin.contact-center.index') }}">
+                                <i class="icon"><i class="ph ph-headset fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.contact_center') }}</span>
+                                @if ($layoutSidebarCounters['contact_center'] > 0)
+                                    <span class="badge bg-danger rounded-pill admin-sidebar-counter" data-sidebar-counter="contact_center">{{ $layoutSidebarCounters['contact_center'] }}</span>
+                                @endif
+                            </a>
+                        </li>
+                    @endcan
+                    @can('permits.view.all')
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.permits.*') ? 'active' : '' }}" href="{{ route('admin.permits.index') }}">
+                                <i class="icon"><i class="ph ph-seal-check fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.permits') }}</span>
+                            </a>
+                        </li>
+                    @endcan
+                    @can('groups.view')
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.groups.*') ? 'active' : '' }}" href="{{ route('admin.groups.index') }}">
+                                <i class="icon"><i class="ph ph-stack fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.groups') }}</span>
+                            </a>
+                        </li>
+                    @endcan
+                    @can('settings.manage')
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.approval-routing.*') ? 'active' : '' }}" href="{{ route('admin.approval-routing.index') }}">
+                                <i class="icon"><i class="ph ph-flow-arrow fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.approval_routing') }}</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.integrations.*') ? 'active' : '' }}" href="{{ route('admin.integrations.index') }}">
+                                <i class="icon"><i class="ph ph-plugs-connected fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.integrations') }}</span>
+                            </a>
+                        </li>
+                    @endcan
                 </ul>
             </div>
         </div>

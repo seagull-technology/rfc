@@ -119,7 +119,7 @@ class ApplicationManagementController extends Controller
         return view('admin.applications.show', [
             'application' => $record,
             'statusHistory' => $record->statusHistory,
-            'authorityApprovals' => $record->authorityApprovals()->with('reviewedBy')->get(),
+            'authorityApprovals' => $record->authorityApprovals()->with(['reviewedBy', 'entity'])->get(),
             'reviewers' => $reviewers,
             'documents' => $record->documents,
             'correspondences' => $record->correspondences,
@@ -567,7 +567,7 @@ class ApplicationManagementController extends Controller
     private function findApplication(string $application): FilmApplication
     {
         return FilmApplication::query()
-            ->with(['entity.group', 'submittedBy', 'reviewedBy', 'assignedTo', 'finalDecisionIssuedBy', 'authorityApprovals.reviewedBy', 'permit'])
+            ->with(['entity.group', 'submittedBy', 'reviewedBy', 'assignedTo', 'finalDecisionIssuedBy', 'authorityApprovals.reviewedBy', 'authorityApprovals.entity', 'permit'])
             ->findOrFail($application);
     }
 

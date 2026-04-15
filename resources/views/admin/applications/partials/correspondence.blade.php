@@ -7,26 +7,28 @@
         </div>
     </div>
     <div class="card-body">
-        <div class="border rounded p-3 bg-light mb-4">
-            <form method="POST" action="{{ route('admin.applications.correspondence.store', $application) }}" enctype="multipart/form-data" class="row g-3">
-                @csrf
-                <div class="col-md-4">
-                    <label class="form-label" for="admin_subject">{{ __('app.correspondence.subject') }}</label>
-                    <input id="admin_subject" name="subject" type="text" class="form-control">
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label" for="admin_attachment">{{ __('app.correspondence.attachment') }}</label>
-                    <input id="admin_attachment" name="attachment" type="file" class="form-control">
-                </div>
-                <div class="col-12">
-                    <label class="form-label" for="admin_message">{{ __('app.correspondence.message') }}</label>
-                    <textarea id="admin_message" name="message" rows="4" class="form-control" required></textarea>
-                </div>
-                <div class="col-12">
-                    <button class="btn btn-danger" type="submit">{{ __('app.correspondence.send_action') }}</button>
-                </div>
-            </form>
-        </div>
+        @can('applications.review')
+            <div class="border rounded p-3 bg-light mb-4">
+                <form method="POST" action="{{ route('admin.applications.correspondence.store', $application) }}" enctype="multipart/form-data" class="row g-3">
+                    @csrf
+                    <div class="col-md-4">
+                        <label class="form-label" for="admin_subject">{{ __('app.correspondence.subject') }}</label>
+                        <input id="admin_subject" name="subject" type="text" class="form-control">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="admin_attachment">{{ __('app.correspondence.attachment') }}</label>
+                        <input id="admin_attachment" name="attachment" type="file" class="form-control">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" for="admin_message">{{ __('app.correspondence.message') }}</label>
+                        <textarea id="admin_message" name="message" rows="4" class="form-control" required></textarea>
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-danger" type="submit">{{ __('app.correspondence.send_action') }}</button>
+                    </div>
+                </form>
+            </div>
+        @endcan
 
         <ul class="list-inline p-0 m-0">
             @forelse ($correspondences as $message)

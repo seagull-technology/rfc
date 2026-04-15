@@ -14,6 +14,8 @@ class ApplicationAuthorityApproval extends Model
     protected $fillable = [
         'application_id',
         'authority_code',
+        'entity_id',
+        'approval_routing_rule_id',
         'status',
         'note',
         'reviewed_by_user_id',
@@ -37,6 +39,16 @@ class ApplicationAuthorityApproval extends Model
         return $this->belongsTo(User::class, 'reviewed_by_user_id');
     }
 
+    public function entity(): BelongsTo
+    {
+        return $this->belongsTo(Entity::class);
+    }
+
+    public function routingRule(): BelongsTo
+    {
+        return $this->belongsTo(ApprovalRoutingRule::class, 'approval_routing_rule_id');
+    }
+
     public function localizedStatus(): string
     {
         return __('app.approvals.statuses.'.Str::lower($this->status ?: 'pending'));
@@ -44,6 +56,16 @@ class ApplicationAuthorityApproval extends Model
 
     public function localizedAuthority(): string
     {
-        return __('app.applications.required_approval_options.'.$this->authority_code);
+        $approvalName = __('app.applications.required_approval_options.'.$this->authority_code);
+
+        if (! $this->entity) {
+            return $approvalName;
+        }
+
+        if ($approvalName === 'app.applications.required_approval_options.'.$this->authority_code) {
+            return $this->entity->displayName();
+        }
+
+        return $this->entity->displayName().' - '.$approvalName;
     }
 }

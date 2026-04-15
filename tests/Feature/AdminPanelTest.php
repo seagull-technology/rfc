@@ -60,7 +60,56 @@ class AdminPanelTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('href="'.route('admin.dashboard').'"', false)
-            ->assertSee('href="'.route('profile.show', ['variant' => 'foreign_producer']).'"', false);
+            ->assertDontSee('href="'.route('profile.show').'"', false)
+            ->assertDontSee('href="'.route('profile.show', ['variant' => 'foreign_producer']).'"', false);
+    }
+
+    public function test_organization_dashboard_profile_dropdown_only_shows_organization_profile(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $group = Group::query()->where('code', 'organizations')->firstOrFail();
+
+        $entity = Entity::query()->create([
+            'group_id' => $group->getKey(),
+            'code' => 'dropdown-org',
+            'name_en' => 'Dropdown Org',
+            'name_ar' => 'جهة القائمة',
+            'registration_no' => 'DROP-100',
+            'registration_type' => 'company',
+            'status' => 'active',
+            'email' => 'dropdown-org@example.com',
+            'phone' => '065551010',
+        ]);
+
+        $user = User::query()->create([
+            'name' => 'Dropdown Org User',
+            'username' => 'dropdown_org_user',
+            'email' => 'dropdown-org-user@example.com',
+            'national_id' => '7711223344',
+            'phone' => '0791010101',
+            'registration_type' => 'company',
+            'status' => 'active',
+            'password' => Hash::make('Password@123'),
+        ]);
+
+        $entity->users()->attach($user->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        $response = $this
+            ->withSession(['current_entity_id' => $entity->getKey()])
+            ->actingAs($user)
+            ->get(route('dashboard'));
+
+        $response
+            ->assertOk()
+            ->assertSee('href="'.route('profile.show').'"', false)
+            ->assertDontSee('href="'.route('profile.show', ['variant' => 'foreign_producer']).'"', false)
+            ->assertDontSee('href="'.route('admin.dashboard').'"', false);
     }
 
     public function test_seeded_super_admin_can_export_admin_dashboard_summary(): void
@@ -77,6 +126,61 @@ class AdminPanelTest extends TestCase
 
         $this->assertStringContainsString('metrics', $content);
         $this->assertStringContainsString('Configured groups', $content);
+    }
+
+    public function test_rfc_reviewer_is_redirected_to_internal_dashboard_and_sees_only_allowed_menu_items(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $entity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+
+        $user = User::query()->create([
+            'name' => 'RFC Reviewer',
+            'username' => 'rfc_reviewer_panel',
+            'email' => 'rfc.reviewer.panel@example.com',
+            'national_id' => '7755443322',
+            'phone' => '0791116655',
+            'status' => 'active',
+            'registration_type' => 'staff',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $entity->users()->attach($user->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($entity->getKey());
+        $user->assignRole('rfc_reviewer');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $dashboardRedirect = $this
+            ->withSession(['current_entity_id' => $entity->getKey()])
+            ->actingAs($user)
+            ->get(route('dashboard'));
+
+        $dashboardRedirect->assertRedirect(route('admin.dashboard'));
+
+        $response = $this
+            ->withSession(['current_entity_id' => $entity->getKey()])
+            ->actingAs($user)
+            ->get(route('admin.dashboard'));
+
+        $response
+            ->assertOk()
+            ->assertSeeText(__('app.admin.navigation.applications'))
+            ->assertSeeText(__('app.admin.navigation.scouting_requests'))
+            ->assertSeeText(__('app.admin.navigation.contact_center'))
+            ->assertSeeText(__('app.admin.navigation.permits'))
+            ->assertSeeText(__('app.admin.applications.title'))
+            ->assertSeeText(__('app.admin.applications.intro'))
+            ->assertDontSee('href="'.route('admin.users.index').'"', false)
+            ->assertDontSee('href="'.route('admin.entities.index').'"', false)
+            ->assertDontSee('href="'.route('admin.groups.index').'"', false)
+            ->assertDontSee('href="'.route('admin.integrations.index').'"', false)
+            ->assertDontSee(route('admin.reports.export'), false);
     }
 
     public function test_admin_sidebar_shows_live_response_and_inbox_counters(): void
@@ -199,6 +303,118 @@ class AdminPanelTest extends TestCase
             ->assertSee('data-sidebar-counter="applications">1<', false)
             ->assertSee('data-sidebar-counter="scouting_requests">1<', false)
             ->assertSee('data-sidebar-counter="contact_center">1<', false);
+    }
+
+    public function test_assigned_rfc_reviewer_can_open_application_from_notification_and_submit_review(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $rfcEntity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+        $orgGroup = Group::query()->where('code', 'organizations')->firstOrFail();
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+
+        $reviewer = User::query()->create([
+            'name' => 'Assigned Reviewer',
+            'username' => 'assigned_reviewer',
+            'email' => 'assigned-reviewer@example.com',
+            'national_id' => '7766554433',
+            'phone' => '0791112233',
+            'status' => 'active',
+            'registration_type' => 'staff',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $rfcEntity->users()->attach($reviewer->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($rfcEntity->getKey());
+        $reviewer->assignRole('rfc_reviewer');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $applicantEntity = Entity::query()->create([
+            'group_id' => $orgGroup->getKey(),
+            'code' => 'reviewer-test-company',
+            'name_en' => 'Reviewer Test Company',
+            'name_ar' => 'شركة اختبار المراجع',
+            'registration_no' => 'REV-100',
+            'registration_type' => 'company',
+            'status' => 'active',
+            'email' => 'reviewer-test@example.com',
+            'phone' => '065555100',
+        ]);
+
+        $applicant = User::query()->create([
+            'name' => 'Applicant User',
+            'username' => 'applicant_user',
+            'email' => 'applicant-user@example.com',
+            'national_id' => '8080808080',
+            'phone' => '0798080808',
+            'registration_type' => 'company',
+            'status' => 'active',
+            'password' => Hash::make('Password@123'),
+        ]);
+
+        $applicantEntity->users()->attach($applicant->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        $application = Application::query()->create([
+            'code' => 'REQ-REVIEWER-1',
+            'entity_id' => $applicantEntity->getKey(),
+            'submitted_by_user_id' => $applicant->getKey(),
+            'project_name' => 'Reviewer Notification Flow',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'feature_film',
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-07-01',
+            'planned_end_date' => '2026-07-05',
+            'project_summary' => 'Test application for reviewer assignment flow.',
+            'status' => 'submitted',
+            'current_stage' => 'intake',
+            'submitted_at' => now()->subDay(),
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.applications.assign', $application), [
+                'assigned_to_user_id' => $reviewer->getKey(),
+            ])
+            ->assertRedirect(route('admin.applications.show', $application));
+
+        $reviewer->refresh();
+        $notification = $reviewer->notifications()->latest()->first();
+
+        $this->assertNotNull($notification);
+        $this->assertSame('application_assignment', data_get($notification->data, 'type_key'));
+
+        $this->withSession(['current_entity_id' => $rfcEntity->getKey()])
+            ->actingAs($reviewer)
+            ->get(route('notifications.redirect', $notification->getKey()))
+            ->assertRedirect(route('admin.applications.show', $application));
+
+        $this->withSession(['current_entity_id' => $rfcEntity->getKey()])
+            ->actingAs($reviewer)
+            ->get(route('admin.applications.show', $application))
+            ->assertOk()
+            ->assertSeeText(__('app.admin.applications.review_title'));
+
+        $this->withSession(['current_entity_id' => $rfcEntity->getKey()])
+            ->actingAs($reviewer)
+            ->post(route('admin.applications.review', $application), [
+                'decision' => 'under_review',
+                'note' => 'Reviewer accepted the assignment.',
+            ])
+            ->assertRedirect(route('admin.applications.show', $application));
+
+        $application->refresh();
+
+        $this->assertSame('under_review', $application->status);
+        $this->assertSame($reviewer->getKey(), $application->reviewed_by_user_id);
     }
 
     public function test_super_admin_can_create_an_authority_user_with_scoped_role(): void

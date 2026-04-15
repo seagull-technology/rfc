@@ -27,6 +27,7 @@ class AccessControlSeeder extends Seeder
 
         $this->seedGroupRoleMap($groups, $roles);
         $this->seedEntities($groups);
+        $this->call(ApprovalRoutingSeeder::class);
         $this->seedInitialSuperAdmin($roles);
 
         $registrar->forgetCachedPermissions();
@@ -305,6 +306,7 @@ class AccessControlSeeder extends Seeder
                 'reports.export',
             ],
             'rfc_admin' => [
+                'access.admin-panel',
                 'applications.view.all',
                 'applications.assign',
                 'documents.view.all',
@@ -317,6 +319,7 @@ class AccessControlSeeder extends Seeder
                 'audit.view',
             ],
             'rfc_intake_officer' => [
+                'access.admin-panel',
                 'applications.view.all',
                 'applications.review',
                 'applications.request-clarification',
@@ -326,6 +329,7 @@ class AccessControlSeeder extends Seeder
                 'permits.view.all',
             ],
             'rfc_reviewer' => [
+                'access.admin-panel',
                 'applications.view.all',
                 'applications.review',
                 'applications.request-clarification',
@@ -334,6 +338,7 @@ class AccessControlSeeder extends Seeder
                 'permits.view.all',
             ],
             'rfc_approver' => [
+                'access.admin-panel',
                 'applications.view.all',
                 'applications.approve',
                 'applications.reject',

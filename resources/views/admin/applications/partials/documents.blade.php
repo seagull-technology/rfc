@@ -27,16 +27,18 @@
                             <td>
                                 <div class="d-grid gap-2">
                                     <a class="btn btn-sm btn-outline-primary" href="{{ route('admin.applications.documents.download', [$application, $document]) }}">{{ __('app.documents.download_action') }}</a>
-                                    <form method="POST" action="{{ route('admin.applications.documents.review', [$application, $document]) }}" class="d-grid gap-2">
-                                        @csrf
-                                        <select name="status" class="form-select form-select-sm">
-                                            @foreach (['submitted', 'needs_revision', 'approved', 'rejected'] as $status)
-                                                <option value="{{ $status }}" @selected($document->status === $status)>{{ __('app.documents.statuses.'.$status) }}</option>
-                                            @endforeach
-                                        </select>
-                                        <input type="text" name="note" class="form-control form-control-sm" value="{{ $document->note }}" placeholder="{{ __('app.documents.note') }}">
-                                        <button class="btn btn-sm btn-outline-primary" type="submit">{{ __('app.documents.review_action') }}</button>
-                                    </form>
+                                    @can('applications.review')
+                                        <form method="POST" action="{{ route('admin.applications.documents.review', [$application, $document]) }}" class="d-grid gap-2">
+                                            @csrf
+                                            <select name="status" class="form-select form-select-sm">
+                                                @foreach (['submitted', 'needs_revision', 'approved', 'rejected'] as $status)
+                                                    <option value="{{ $status }}" @selected($document->status === $status)>{{ __('app.documents.statuses.'.$status) }}</option>
+                                                @endforeach
+                                            </select>
+                                            <input type="text" name="note" class="form-control form-control-sm" value="{{ $document->note }}" placeholder="{{ __('app.documents.note') }}">
+                                            <button class="btn btn-sm btn-outline-primary" type="submit">{{ __('app.documents.review_action') }}</button>
+                                        </form>
+                                    @endcan
                                 </div>
                             </td>
                         </tr>
