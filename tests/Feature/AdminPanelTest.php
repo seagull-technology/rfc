@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Application;
+use App\Models\ApplicationAuthorityApproval;
+use App\Models\ApprovalRoutingRule;
 use App\Models\Entity;
 use App\Models\Group;
 use App\Models\ScoutingRequest;
@@ -176,6 +178,9 @@ class AdminPanelTest extends TestCase
             ->assertSeeText(__('app.admin.navigation.permits'))
             ->assertSeeText(__('app.admin.applications.title'))
             ->assertSeeText(__('app.admin.applications.intro'))
+            ->assertSeeText(__('app.admin.dashboard.workflow_context_title'))
+            ->assertSeeText(__('app.roles.rfc_reviewer'))
+            ->assertSeeText($entity->displayName())
             ->assertDontSee('href="'.route('admin.users.index').'"', false)
             ->assertDontSee('href="'.route('admin.entities.index').'"', false)
             ->assertDontSee('href="'.route('admin.groups.index').'"', false)
@@ -510,6 +515,49 @@ class AdminPanelTest extends TestCase
 
         $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
         $entity = Entity::query()->where('code', 'ministry-of-interior')->firstOrFail();
+        $organizationGroup = Group::query()->where('code', 'organizations')->firstOrFail();
+        $applicantEntity = Entity::query()->create([
+            'group_id' => $organizationGroup->getKey(),
+            'code' => 'authority-backfill-studio',
+            'name_en' => 'Authority Backfill Studio',
+            'name_ar' => 'شركة اختبار إشعار الجهة',
+            'registration_no' => 'AUTH-BACKFILL-1',
+            'registration_type' => 'company',
+            'status' => 'active',
+            'email' => 'authority-backfill-studio@example.com',
+            'phone' => '065559900',
+        ]);
+        $applicant = User::query()->create([
+            'name' => 'Authority Backfill Applicant',
+            'username' => 'authority-backfill-applicant',
+            'email' => 'authority-backfill-applicant@example.com',
+            'national_id' => '1111222200',
+            'phone' => '0797777022',
+            'status' => 'active',
+            'registration_type' => 'company',
+            'password' => Hash::make('Password@123'),
+        ]);
+        $application = Application::query()->create([
+            'code' => 'REQ-AUTH-BACKFILL',
+            'entity_id' => $applicantEntity->getKey(),
+            'submitted_by_user_id' => $applicant->getKey(),
+            'project_name' => 'Authority Backfill Request',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'feature_film',
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-09-01',
+            'planned_end_date' => '2026-09-03',
+            'project_summary' => 'Open approval should be sent to newly added authority users.',
+            'status' => 'submitted',
+            'current_stage' => 'authority_approvals',
+            'submitted_at' => now()->subHour(),
+        ]);
+        $approval = ApplicationAuthorityApproval::query()->create([
+            'application_id' => $application->getKey(),
+            'authority_code' => 'airports',
+            'entity_id' => $entity->getKey(),
+            'status' => 'pending',
+        ]);
 
         $response = $this->actingAs($admin)->post(route('admin.users.store'), [
             'name' => 'Authority Manager',
@@ -520,7 +568,7 @@ class AdminPanelTest extends TestCase
             'password' => 'Authority@123',
             'password_confirmation' => 'Authority@123',
             'entity_id' => $entity->getKey(),
-            'role' => 'authority_approver',
+            'roles' => ['authority_approver'],
             'job_title' => 'Director',
             'is_primary' => 1,
         ]);
@@ -540,6 +588,99 @@ class AdminPanelTest extends TestCase
         app(PermissionRegistrar::class)->setPermissionsTeamId($entity->getKey());
         $this->assertTrue($user->hasRole('authority_approver'));
         app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $this->assertTrue($user->fresh()->unreadNotifications->contains(
+            fn ($notification): bool => data_get($notification->data, 'type_key') === 'authority_approval_requested'
+                && (int) data_get($notification->data, 'authority_approval_id') === $approval->getKey()
+        ));
+    }
+
+    public function test_super_admin_can_create_user_with_multiple_scoped_roles(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $entity = Entity::query()->where('code', 'ministry-of-interior')->firstOrFail();
+
+        $response = $this->actingAs($admin)->post(route('admin.users.store'), [
+            'name' => 'Authority Team Lead',
+            'username' => 'authority_team_lead',
+            'email' => 'authority.teamlead@example.com',
+            'national_id' => '1111222244',
+            'phone' => '0797777011',
+            'password' => 'Authority@123',
+            'password_confirmation' => 'Authority@123',
+            'entity_id' => $entity->getKey(),
+            'roles' => ['authority_reviewer', 'authority_approver'],
+            'job_title' => 'Team Lead',
+            'is_primary' => 1,
+        ]);
+
+        $response->assertRedirect(route('admin.users.index'));
+
+        $user = User::query()->where('email', 'authority.teamlead@example.com')->firstOrFail();
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($entity->getKey());
+        $this->assertTrue($user->hasRole('authority_reviewer'));
+        $this->assertTrue($user->hasRole('authority_approver'));
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $this->assertDatabaseHas('user_role_assignment_audits', [
+            'user_id' => $user->getKey(),
+            'entity_id' => $entity->getKey(),
+            'role_name' => 'authority_reviewer',
+            'action' => 'added',
+            'changed_by_user_id' => $admin->getKey(),
+        ]);
+
+        $this->assertDatabaseHas('user_role_assignment_audits', [
+            'user_id' => $user->getKey(),
+            'entity_id' => $entity->getKey(),
+            'role_name' => 'authority_approver',
+            'action' => 'added',
+            'changed_by_user_id' => $admin->getKey(),
+        ]);
+    }
+
+    public function test_super_admin_can_add_multiple_roles_to_user_membership(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $entity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+        $user = User::query()->create([
+            'name' => 'RFC Dual Role User',
+            'username' => 'rfc-dual-role-user',
+            'email' => 'rfc-dual-role-user@example.com',
+            'national_id' => '5555666677',
+            'phone' => '0797333222',
+            'status' => 'active',
+            'registration_type' => 'staff',
+            'password' => Hash::make('Password@123'),
+        ]);
+
+        $response = $this->actingAs($admin)->post(route('admin.users.memberships.store', $user->getKey()), [
+            'entity_id' => $entity->getKey(),
+            'roles' => ['rfc_reviewer', 'rfc_approver'],
+            'job_title' => 'Committee Member',
+            'is_primary' => 1,
+        ]);
+
+        $response->assertRedirect(route('admin.users.show', $user->getKey()));
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($entity->getKey());
+        $this->assertTrue($user->fresh()->hasRole('rfc_reviewer'));
+        $this->assertTrue($user->fresh()->hasRole('rfc_approver'));
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $this->assertDatabaseHas('entity_user', [
+            'entity_id' => $entity->getKey(),
+            'user_id' => $user->getKey(),
+            'job_title' => 'Committee Member',
+            'is_primary' => 1,
+        ]);
     }
 
     public function test_seeded_super_admin_can_open_producers_directory(): void
@@ -684,6 +825,530 @@ class AdminPanelTest extends TestCase
             ->assertDontSeeText('Other Entity');
     }
 
+    public function test_super_admin_can_see_authority_entities_in_entities_directory(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+
+        $response = $this->actingAs($admin)->get(route('admin.entities.index'));
+
+        $response
+            ->assertOk()
+            ->assertSeeText('Official and Internal Entities')
+            ->assertSeeText('Authorities')
+            ->assertSeeText('Public Security Directorate');
+    }
+
+    public function test_authority_entity_profile_shows_routing_and_workload_context(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $authorityEntity = Entity::query()->where('code', 'greater-amman-municipality')->firstOrFail();
+        $organizationGroup = Group::query()->where('code', 'organizations')->firstOrFail();
+
+        $applicant = User::query()->create([
+            'name' => 'Authority Profile Applicant',
+            'username' => 'authority_profile_applicant',
+            'email' => 'authority-profile-applicant@example.com',
+            'phone' => '0793666000',
+            'registration_type' => 'company',
+            'status' => 'active',
+            'password' => Hash::make('Password@123'),
+        ]);
+
+        $applicantEntity = Entity::query()->create([
+            'group_id' => $organizationGroup->getKey(),
+            'name_en' => 'Authority Profile Company',
+            'name_ar' => 'شركة ملف الجهة',
+            'registration_no' => 'AUTH-PROFILE-100',
+            'registration_type' => 'company',
+            'status' => 'active',
+            'email' => 'authority-profile-company@example.com',
+            'phone' => '065551212',
+        ]);
+
+        $applicantEntity->users()->attach($applicant->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        $application = Application::query()->create([
+            'code' => 'REQ-AUTH-100',
+            'entity_id' => $applicantEntity->getKey(),
+            'submitted_by_user_id' => $applicant->getKey(),
+            'project_name' => 'Authority Routed Project',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'feature_film',
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-07-01',
+            'planned_end_date' => '2026-07-10',
+            'project_summary' => 'A project routed to an authority profile.',
+            'status' => 'under_review',
+            'current_stage' => 'authority_review',
+            'submitted_at' => now()->subDays(2),
+        ]);
+
+        $rule = ApprovalRoutingRule::query()->create([
+            'name' => 'Municipal Routing Rule',
+            'request_type' => 'application',
+            'approval_code' => 'municipalities',
+            'target_entity_id' => $authorityEntity->getKey(),
+            'conditions' => [],
+            'priority' => 10,
+            'is_active' => true,
+        ]);
+
+        ApplicationAuthorityApproval::query()->create([
+            'application_id' => $application->getKey(),
+            'authority_code' => 'municipalities',
+            'entity_id' => $authorityEntity->getKey(),
+            'approval_routing_rule_id' => $rule->getKey(),
+            'status' => 'in_review',
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('admin.entities.show', $authorityEntity));
+
+        $response
+            ->assertOk()
+            ->assertSeeText('Authority Operations')
+            ->assertSeeText('Municipal Routing Rule')
+            ->assertSeeText('Authority Request Workload')
+            ->assertSeeText('Authority Routed Project');
+    }
+
+    public function test_super_admin_can_create_default_routing_rule_from_authority_entity_profile(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $authorityEntity = Entity::query()->where('code', 'greater-amman-municipality')->firstOrFail();
+
+        $response = $this->actingAs($admin)->post(route('admin.entities.authority-routing.store', $authorityEntity), [
+            'name' => 'Direct Authority Rule',
+            'approval_code' => 'drones',
+            'priority' => 25,
+            'is_active' => 1,
+        ]);
+
+        $response->assertRedirect(route('admin.entities.show', $authorityEntity));
+
+        $this->assertDatabaseHas('approval_routing_rules', [
+            'name' => 'Direct Authority Rule',
+            'request_type' => 'application',
+            'approval_code' => 'drones',
+            'target_entity_id' => $authorityEntity->getKey(),
+            'priority' => 25,
+            'is_active' => true,
+        ]);
+    }
+
+    public function test_super_admin_can_manage_member_roles_from_entity_profile(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $authorityEntity = Entity::query()->where('code', 'greater-amman-municipality')->firstOrFail();
+
+        $member = User::query()->create([
+            'name' => 'Entity Role Member',
+            'username' => 'entity_role_member',
+            'email' => 'entity-role-member@example.com',
+            'phone' => '0793888000',
+            'status' => 'active',
+            'password' => Hash::make('Password@123'),
+        ]);
+
+        $storeResponse = $this->actingAs($admin)->post(route('admin.entities.members.store', $authorityEntity), [
+            'user_id' => $member->getKey(),
+            'roles' => ['authority_reviewer', 'authority_approver'],
+            'job_title' => 'Authority Member',
+            'is_primary' => 1,
+        ]);
+
+        $storeResponse->assertRedirect(route('admin.entities.show', $authorityEntity));
+
+        $this->assertTrue($member->fresh()->roleNamesForEntity($authorityEntity)->contains('authority_reviewer'));
+        $this->assertTrue($member->fresh()->roleNamesForEntity($authorityEntity)->contains('authority_approver'));
+
+        $deleteResponse = $this->actingAs($admin)->post(route('admin.entities.members.roles.delete', [
+            'entity' => $authorityEntity->getKey(),
+            'user' => $member->getKey(),
+            'role' => 'authority_reviewer',
+        ]));
+
+        $deleteResponse->assertRedirect(route('admin.entities.show', $authorityEntity));
+
+        $this->assertFalse($member->fresh()->roleNamesForEntity($authorityEntity)->contains('authority_reviewer'));
+        $this->assertTrue($member->fresh()->roleNamesForEntity($authorityEntity)->contains('authority_approver'));
+    }
+
+    public function test_super_admin_can_manage_member_lifecycle_from_entity_profile(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $authorityEntity = Entity::query()->where('code', 'greater-amman-municipality')->firstOrFail();
+
+        $firstMember = User::query()->create([
+            'name' => 'Entity Lifecycle Member One',
+            'username' => 'entity_lifecycle_member_one',
+            'email' => 'entity-lifecycle-member-one@example.com',
+            'phone' => '0793888111',
+            'status' => 'active',
+            'password' => Hash::make('Password@123'),
+        ]);
+
+        $secondMember = User::query()->create([
+            'name' => 'Entity Lifecycle Member Two',
+            'username' => 'entity_lifecycle_member_two',
+            'email' => 'entity-lifecycle-member-two@example.com',
+            'phone' => '0793888222',
+            'status' => 'active',
+            'password' => Hash::make('Password@123'),
+        ]);
+
+        $this->actingAs($admin)->post(route('admin.entities.members.store', $authorityEntity), [
+            'user_id' => $firstMember->getKey(),
+            'roles' => ['authority_reviewer'],
+            'job_title' => 'First Member',
+            'is_primary' => 1,
+        ]);
+
+        $this->actingAs($admin)->post(route('admin.entities.members.store', $authorityEntity), [
+            'user_id' => $secondMember->getKey(),
+            'roles' => ['authority_approver'],
+            'job_title' => 'Second Member',
+            'is_primary' => 0,
+        ]);
+
+        $primaryResponse = $this->actingAs($admin)->post(route('admin.entities.members.primary', [
+            'entity' => $authorityEntity->getKey(),
+            'user' => $secondMember->getKey(),
+        ]));
+
+        $primaryResponse->assertRedirect(route('admin.entities.show', $authorityEntity));
+
+        $this->assertDatabaseHas('entity_user', [
+            'entity_id' => $authorityEntity->getKey(),
+            'user_id' => $secondMember->getKey(),
+            'is_primary' => true,
+        ]);
+        $this->assertDatabaseHas('entity_user', [
+            'entity_id' => $authorityEntity->getKey(),
+            'user_id' => $firstMember->getKey(),
+            'is_primary' => false,
+        ]);
+
+        $statusResponse = $this->actingAs($admin)->post(route('admin.entities.members.status', [
+            'entity' => $authorityEntity->getKey(),
+            'user' => $firstMember->getKey(),
+        ]), [
+            'status' => 'inactive',
+        ]);
+
+        $statusResponse->assertRedirect(route('admin.entities.show', $authorityEntity));
+
+        $this->assertDatabaseHas('entity_user', [
+            'entity_id' => $authorityEntity->getKey(),
+            'user_id' => $firstMember->getKey(),
+            'status' => 'inactive',
+        ]);
+
+        $deleteResponse = $this->actingAs($admin)->post(route('admin.entities.members.delete', [
+            'entity' => $authorityEntity->getKey(),
+            'user' => $secondMember->getKey(),
+        ]));
+
+        $deleteResponse->assertRedirect(route('admin.entities.show', $authorityEntity));
+
+        $this->assertDatabaseMissing('entity_user', [
+            'entity_id' => $authorityEntity->getKey(),
+            'user_id' => $secondMember->getKey(),
+        ]);
+        $this->assertFalse($secondMember->fresh()->roleNamesForEntity($authorityEntity)->contains('authority_approver'));
+    }
+
+    public function test_super_admin_can_manage_authority_default_delegation_from_entity_profile(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $authorityEntity = Entity::query()->where('code', 'greater-amman-municipality')->firstOrFail();
+
+        $delegate = User::query()->create([
+            'name' => 'Authority Delegate',
+            'username' => 'authority_delegate',
+            'email' => 'authority-delegate@example.com',
+            'phone' => '0793888333',
+            'status' => 'active',
+            'password' => Hash::make('Password@123'),
+        ]);
+
+        $this->actingAs($admin)->post(route('admin.entities.members.store', $authorityEntity), [
+            'user_id' => $delegate->getKey(),
+            'roles' => ['authority_approver'],
+            'job_title' => 'Delegate',
+            'is_primary' => 0,
+        ]);
+
+        $response = $this->actingAs($admin)->post(route('admin.entities.authority-delegation.update', $authorityEntity), [
+            'approval_code' => 'municipalities',
+            'assigned_user_id' => $delegate->getKey(),
+        ]);
+
+        $response->assertRedirect(route('admin.entities.show', $authorityEntity));
+
+        $this->assertSame(
+            $delegate->getKey(),
+            $authorityEntity->fresh()->authorityDelegatedUserIdFor('municipalities'),
+        );
+
+        $showResponse = $this->actingAs($admin)->get(route('admin.entities.show', $authorityEntity));
+
+        $showResponse
+            ->assertOk()
+            ->assertSeeText('Authority Inbox Delegation')
+            ->assertSeeText('Authority Delegate');
+    }
+
+    public function test_super_admin_can_manage_authority_response_times_from_dedicated_page(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $authorityEntity = Entity::query()->where('code', 'greater-amman-municipality')->firstOrFail();
+        $rfcEntity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+
+        $rfcAdmin = User::query()->create([
+            'name' => 'RFC SLA Admin',
+            'username' => 'rfc_sla_admin',
+            'email' => 'rfc-sla-admin@example.com',
+            'phone' => '0793222333',
+            'status' => 'active',
+            'password' => Hash::make('Password@123'),
+        ]);
+
+        $rfcAdmin->entities()->attach($rfcEntity->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($rfcEntity->getKey());
+        $rfcAdmin->assignRole('rfc_admin');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $response = $this->actingAs($admin)->post(route('admin.authority-escalations.update', $authorityEntity), [
+            'response_time_days' => '٢',
+            'escalation_user_ids' => [$admin->getKey()],
+            'escalation_role_names' => ['rfc_admin'],
+        ]);
+
+        $response->assertRedirect(route('admin.authority-escalations.index'));
+
+        $settings = $authorityEntity->fresh()->authoritySlaSettings();
+
+        $this->assertSame(2, $settings['response_time_days']);
+        $this->assertSame([$admin->getKey()], $settings['escalation_user_ids']);
+        $this->assertSame(['rfc_admin'], $settings['escalation_role_names']);
+
+        $pageResponse = $this->actingAs($admin)->get(route('admin.authority-escalations.index'));
+
+        $pageResponse
+            ->assertOk()
+            ->assertSeeText('Authority Response Time Control')
+            ->assertSeeText('Greater Amman Municipality')
+            ->assertSee('inputmode="numeric"', false)
+            ->assertSeeText('RFC Admin');
+    }
+
+    public function test_super_admin_can_open_and_export_authority_escalation_report(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $authorityEntity = Entity::query()->where('code', 'greater-amman-municipality')->firstOrFail();
+        $organizationGroup = Group::query()->where('code', 'organizations')->firstOrFail();
+        $authorityHandler = User::query()->create([
+            'name' => 'Authority Drilldown Owner',
+            'username' => 'authority_drilldown_owner',
+            'email' => 'authority-drilldown-owner@example.com',
+            'national_id' => '8080808080',
+            'phone' => '0795552200',
+            'status' => 'active',
+            'password' => Hash::make('Password@123'),
+        ]);
+        $replacementHandler = User::query()->create([
+            'name' => 'Authority Replacement Owner',
+            'username' => 'authority_replacement_owner',
+            'email' => 'authority-replacement-owner@example.com',
+            'national_id' => '8080808081',
+            'phone' => '0795552201',
+            'status' => 'active',
+            'password' => Hash::make('Password@123'),
+        ]);
+
+        $authorityEntity->users()->attach($authorityHandler->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+        $authorityEntity->users()->attach($replacementHandler->getKey(), [
+            'is_primary' => false,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($authorityEntity->getKey());
+        $authorityHandler->assignRole('authority_approver');
+        $replacementHandler->assignRole('authority_approver');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $authorityEntity->forceFill([
+            'metadata' => [
+                ...($authorityEntity->metadata ?? []),
+                'authority_sla' => [
+                    'response_time_days' => 2,
+                    'escalation_user_ids' => [$admin->getKey()],
+                    'escalation_role_names' => [],
+                ],
+            ],
+        ])->save();
+
+        $applicantEntity = Entity::query()->create([
+            'group_id' => $organizationGroup->getKey(),
+            'code' => 'sla-report-org',
+            'name_en' => 'SLA Report Studio',
+            'name_ar' => 'شركة تقرير الاستجابة',
+            'registration_no' => 'SLA-200',
+            'registration_type' => 'company',
+            'status' => 'active',
+            'email' => 'sla-report-studio@example.com',
+            'phone' => '065551200',
+        ]);
+
+        $applicant = User::query()->create([
+            'name' => 'SLA Report Applicant',
+            'username' => 'sla_report_applicant',
+            'email' => 'sla-report-applicant@example.com',
+            'national_id' => '9090909090',
+            'phone' => '0795551200',
+            'registration_type' => 'company',
+            'status' => 'active',
+            'password' => Hash::make('Password@123'),
+        ]);
+
+        $application = Application::query()->create([
+            'code' => 'REQ-SLA-200',
+            'entity_id' => $applicantEntity->getKey(),
+            'submitted_by_user_id' => $applicant->getKey(),
+            'project_name' => 'Escalation Report Project',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'feature_film',
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-11-01',
+            'planned_end_date' => '2026-11-14',
+            'estimated_crew_count' => 20,
+            'estimated_budget' => 45000,
+            'project_summary' => 'Used to verify the authority SLA report.',
+            'status' => 'submitted',
+            'current_stage' => 'authority_approvals',
+            'submitted_at' => now()->subDays(5),
+        ]);
+
+        $approval = $application->authorityApprovals()->create([
+            'authority_code' => 'municipality',
+            'entity_id' => $authorityEntity->getKey(),
+            'assigned_user_id' => $authorityHandler->getKey(),
+            'assigned_at' => now()->subDays(2),
+            'status' => 'in_review',
+            'escalated_at' => now()->subDay(),
+        ]);
+
+        $approval->forceFill([
+            'created_at' => now()->subDays(4),
+            'updated_at' => now()->subDay(),
+        ])->saveQuietly();
+
+        $application->statusHistory()->create([
+            'user_id' => null,
+            'status' => $application->status,
+            'note' => __('app.workflow.history.authority_escalated', [
+                'authority' => $approval->localizedAuthority(),
+            ]),
+            'metadata' => [
+                'type' => 'authority_escalated',
+                'approval_id' => $approval->getKey(),
+                'authority_code' => $approval->authority_code,
+            ],
+            'happened_at' => now()->subDay(),
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('admin.authority-escalations.report', [
+            'window' => '30',
+            'authority' => $authorityEntity->getKey(),
+        ]));
+
+        $response
+            ->assertOk()
+            ->assertSeeText('Authority SLA Bottleneck Report')
+            ->assertSeeText('Greater Amman Municipality')
+            ->assertSeeText('Most delayed live approvals')
+            ->assertSeeText('Escalation Report Project')
+            ->assertSeeText('Open request')
+            ->assertSeeText('Greater Amman Municipality queue and escalation trail')
+            ->assertSeeText('Live authority queue')
+            ->assertSeeText('Recent escalation activity')
+            ->assertSeeText('Back to all authorities')
+            ->assertSeeText('Open owner')
+            ->assertSeeText('Open authority')
+            ->assertSeeText('Bulk reassignment')
+            ->assertSeeText('Quick reassignment')
+            ->assertSee('action="'.route('admin.applications.approvals.assign', [$application, $approval]).'"', false)
+            ->assertSee('action="'.route('admin.authority-escalations.bulk-assign', $authorityEntity).'"', false)
+            ->assertSee('href="'.route('admin.users.show', $authorityHandler).'"', false)
+            ->assertSee('href="'.route('admin.entities.show', $authorityEntity).'"', false);
+
+        $bulkAssignResponse = $this->actingAs($admin)->post(route('admin.authority-escalations.bulk-assign', $authorityEntity), [
+            'window' => '30',
+            'approval_ids' => [$approval->getKey()],
+            'assigned_user_id' => $replacementHandler->getKey(),
+            'assignment_note' => 'Shift this overdue item to the backup approver.',
+        ]);
+
+        $bulkAssignResponse->assertRedirect(route('admin.authority-escalations.report', [
+            'window' => '30',
+            'authority' => $authorityEntity->getKey(),
+        ]));
+
+        $this->assertDatabaseHas('application_authority_approvals', [
+            'id' => $approval->getKey(),
+            'assigned_user_id' => $replacementHandler->getKey(),
+        ]);
+
+        $exportResponse = $this->actingAs($admin)->get(route('admin.authority-escalations.export', [
+            'window' => '30',
+            'authority' => $authorityEntity->getKey(),
+        ]));
+
+        $exportResponse->assertOk();
+        $content = $exportResponse->streamedContent();
+
+        $this->assertStringContainsString('Greater Amman Municipality', $content);
+        $this->assertStringContainsString('Municipalities', $content);
+    }
+
     public function test_super_admin_can_filter_users_index(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -765,6 +1430,22 @@ class AdminPanelTest extends TestCase
         $this->assertFalse($user->fresh()->hasRole('rfc_reviewer'));
         $this->assertTrue($user->fresh()->hasRole('rfc_approver'));
         app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $this->assertDatabaseHas('user_role_assignment_audits', [
+            'user_id' => $user->getKey(),
+            'entity_id' => $rfcEntity->getKey(),
+            'role_name' => 'rfc_reviewer',
+            'action' => 'removed',
+            'changed_by_user_id' => $admin->getKey(),
+        ]);
+
+        $showResponse = $this->actingAs($admin)->get(route('admin.users.show', $user->getKey()));
+
+        $showResponse
+            ->assertOk()
+            ->assertSeeText('Role Change History')
+            ->assertSeeText(__('app.roles.rfc_reviewer'))
+            ->assertSeeText('Removed');
     }
 
     public function test_users_index_displays_internal_users_without_explicit_registration_type_in_staff_tab(): void
@@ -798,6 +1479,101 @@ class AdminPanelTest extends TestCase
             ->assertOk()
             ->assertSeeText('RFC Reviewer Hidden')
             ->assertSeeText(__('app.registration_types.staff'));
+    }
+
+    public function test_rfc_approver_sees_unresolved_authority_approvals_when_final_decision_is_blocked(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $rfcEntity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+        $targetAuthority = Entity::query()->where('code', 'greater-amman-municipality')->firstOrFail();
+        $orgGroup = Group::query()->where('code', 'organizations')->firstOrFail();
+
+        $approver = User::query()->create([
+            'name' => 'RFC Approver Only',
+            'username' => 'rfc_approver_only',
+            'email' => 'rfc-approver-only@example.com',
+            'national_id' => '7111222233',
+            'phone' => '0797444999',
+            'status' => 'active',
+            'registration_type' => 'staff',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $rfcEntity->users()->attach($approver->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($rfcEntity->getKey());
+        $approver->assignRole('rfc_approver');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $applicantEntity = Entity::query()->create([
+            'group_id' => $orgGroup->getKey(),
+            'code' => 'blocked-decision-company',
+            'name_en' => 'Blocked Decision Company',
+            'name_ar' => 'شركة القرار المعلق',
+            'registration_no' => 'BLK-100',
+            'registration_type' => 'company',
+            'status' => 'active',
+            'email' => 'blocked-decision@example.com',
+            'phone' => '065550901',
+        ]);
+
+        $applicant = User::query()->create([
+            'name' => 'Blocked Decision Applicant',
+            'username' => 'blocked_decision_applicant',
+            'email' => 'blocked-decision-applicant@example.com',
+            'national_id' => '7000000002',
+            'phone' => '0797000002',
+            'registration_type' => 'company',
+            'status' => 'active',
+            'password' => Hash::make('Password@123'),
+        ]);
+
+        $applicantEntity->users()->attach($applicant->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        $application = Application::query()->create([
+            'code' => 'REQ-BLOCK-1',
+            'entity_id' => $applicantEntity->getKey(),
+            'submitted_by_user_id' => $applicant->getKey(),
+            'project_name' => 'Blocked Final Decision',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'feature_film',
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-08-01',
+            'planned_end_date' => '2026-08-05',
+            'project_summary' => 'Still waiting on authority.',
+            'status' => 'under_review',
+            'current_stage' => 'authority_review',
+            'submitted_at' => now()->subDay(),
+        ]);
+
+        ApplicationAuthorityApproval::query()->create([
+            'application_id' => $application->getKey(),
+            'authority_code' => 'municipalities',
+            'entity_id' => $targetAuthority->getKey(),
+            'status' => 'pending',
+            'note' => 'Waiting for authority review.',
+        ]);
+
+        $response = $this->withSession(['current_entity_id' => $rfcEntity->getKey()])
+            ->actingAs($approver)
+            ->get(route('admin.applications.show', $application));
+
+        $response
+            ->assertOk()
+            ->assertSeeText(__('app.final_decision.approver_waiting_hint'))
+            ->assertSeeText(__('app.final_decision.pending_approvals_detail_title'))
+            ->assertSeeText($targetAuthority->displayName())
+            ->assertSeeText(__('app.approvals.statuses.pending'));
     }
 
     public function test_super_admin_can_filter_groups_index(): void
@@ -1197,7 +1973,7 @@ class AdminPanelTest extends TestCase
                 'password' => 'Authority@123',
                 'password_confirmation' => 'Authority@123',
                 'entity_id' => $entity->getKey(),
-                'role' => 'authority_approver',
+                'roles' => ['authority_approver'],
                 'job_title' => 'Director',
                 'is_primary' => 1,
             ]);

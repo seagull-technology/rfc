@@ -7,8 +7,10 @@ use App\Models\Application as FilmApplication;
 use App\Models\ApplicationAuthorityApproval;
 use App\Models\ApplicationCorrespondence;
 use App\Models\ApplicationDocument;
+use App\Models\ApplicationOfficialLetter;
 use App\Models\Entity;
 use App\Notifications\InboxMessageNotification;
+use App\Services\AuthorityEscalationService;
 use App\Support\ApplicationWorkflowRegistry;
 use App\Support\AuthorityApprovalSignal;
 use App\Support\CsvExport;
@@ -24,23 +26,37 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ApplicationInboxController extends Controller
 {
+    public function __construct(
+        private readonly AuthorityEscalationService $authorityEscalationService,
+    ) {
+    }
+
     public function index(Request $request): View
     {
         [$user, $entity, $approvalCodes] = $this->authorityContext($request);
         $filters = $this->directoryFilters($request);
-        $approvals = $this->directoryQuery($filters, $entity, $approvalCodes)->latest()->get();
+        $approvals = $this->directoryQuery($filters, $user->getKey(), $entity, $approvalCodes)->latest()->get();
         $approvalSignals = $approvals
             ->mapWithKeys(fn (ApplicationAuthorityApproval $approval): array => [
                 $approval->getKey() => AuthorityApprovalSignal::forApproval($approval),
             ]);
+        $approvalSlaSignals = $approvals
+            ->mapWithKeys(fn (ApplicationAuthorityApproval $approval): array => [
+                $approval->getKey() => $this->authorityEscalationService->signalForApproval($approval, null, $entity),
+            ]);
         $approvals = $approvals
-            ->sortByDesc(function (ApplicationAuthorityApproval $approval) use ($approvalSignals): int {
+            ->sortByDesc(function (ApplicationAuthorityApproval $approval) use ($approvalSignals, $approvalSlaSignals): int {
                 $signal = $approvalSignals->get($approval->getKey(), [
                     'priority' => 0,
                     'at' => null,
                 ]);
+                $slaSignal = $approvalSlaSignals->get($approval->getKey(), [
+                    'is_overdue' => false,
+                    'is_escalated' => false,
+                ]);
 
-                return ((int) ($signal['priority'] ?? 0) * 1_000_000_000_000)
+                return (((int) ($slaSignal['is_overdue'] ?? false) * 10) + ((int) ($slaSignal['is_escalated'] ?? false) * 5)) * 1_000_000_000_000_000
+                    + ((int) ($signal['priority'] ?? 0) * 1_000_000_000_000)
                     + (int) (($signal['at'] ?? null)?->timestamp ?? $approval->updated_at?->timestamp ?? 0);
             })
             ->values();
@@ -50,25 +66,32 @@ class ApplicationInboxController extends Controller
             'entity' => $entity,
             'approvals' => $approvals,
             'approvalSignals' => $approvalSignals,
+            'approvalSlaSignals' => $approvalSlaSignals,
             'filters' => [
                 'q' => $filters['q'] ?? '',
                 'status' => $filters['status'] ?? 'all',
+                'ownership' => $filters['ownership'] ?? 'all',
             ],
             'stats' => [
                 'total' => $approvals->count(),
+                'my_assigned' => $approvals->where('assigned_user_id', $user->getKey())->count(),
+                'shared_inbox' => $approvals->whereNull('assigned_user_id')->count(),
                 'pending' => $approvals->where('status', 'pending')->count(),
                 'in_review' => $approvals->where('status', 'in_review')->count(),
                 'resolved' => $approvals->whereIn('status', ['approved', 'rejected'])->count(),
                 'updates' => $approvalSignals->where('key', 'request_update')->count(),
+                'official_books' => $approvalSignals->where('key', 'official_book_issued')->count(),
+                'overdue' => $approvalSlaSignals->where('is_overdue', true)->count(),
+                'escalated' => $approvals->whereNotNull('escalated_at')->count(),
             ],
         ]);
     }
 
     public function export(Request $request): StreamedResponse
     {
-        [, $entity, $approvalCodes] = $this->authorityContext($request);
+        [$user, $entity, $approvalCodes] = $this->authorityContext($request);
         $filters = $this->directoryFilters($request);
-        $approvals = $this->directoryQuery($filters, $entity, $approvalCodes)->latest()->get();
+        $approvals = $this->directoryQuery($filters, $user->getKey(), $entity, $approvalCodes)->latest()->get();
 
         $rows = $approvals->map(fn (ApplicationAuthorityApproval $approval): array => [
             $approval->application?->code ?? '',
@@ -98,17 +121,31 @@ class ApplicationInboxController extends Controller
     public function show(Request $request, string $application): View
     {
         [$user, $entity, $approvalCodes] = $this->authorityContext($request);
-        $record = $this->findAuthorityApplication($application, $entity, $approvalCodes);
+        $record = $this->findAuthorityApplication($application, $user->getKey(), $entity, $approvalCodes);
         $record->load([
             'statusHistory.user',
             'documents.uploadedBy',
             'documents.reviewedBy',
             'correspondences.createdBy',
             'authorityApprovals.reviewedBy',
+            'officialLetters.targetEntity',
+            'officialLetters.createdBy',
+            'officialLetters.authorityApproval.entity',
         ]);
         $currentApproval = $this->currentApprovalForEntity($record, $entity, $approvalCodes);
 
         abort_unless($currentApproval, 404);
+
+        $officialLetters = $record->officialLetters
+            ->filter(fn (ApplicationOfficialLetter $letter): bool => $letter->status === 'issued')
+            ->filter(function (ApplicationOfficialLetter $letter) use ($currentApproval, $entity): bool {
+                if ((int) $letter->application_authority_approval_id === (int) $currentApproval->getKey()) {
+                    return true;
+                }
+
+                return (int) $letter->target_entity_id === (int) $entity->getKey();
+            })
+            ->values();
 
         return view('authority.applications.show', [
             'user' => $user,
@@ -116,17 +153,19 @@ class ApplicationInboxController extends Controller
             'application' => $record,
             'currentApproval' => $currentApproval,
             'approvalSignal' => AuthorityApprovalSignal::forApproval($currentApproval),
+            'approvalSlaSignal' => $this->authorityEscalationService->signalForApproval($currentApproval, null, $entity),
             'statusHistory' => $record->statusHistory,
             'documents' => $record->documents,
             'correspondences' => $record->correspondences,
             'authorityApprovals' => $record->authorityApprovals,
+            'officialLetters' => $officialLetters,
         ]);
     }
 
     public function updateApproval(Request $request, string $application): RedirectResponse
     {
         [$user, $entity, $approvalCodes] = $this->authorityContext($request);
-        $record = $this->findAuthorityApplication($application, $entity, $approvalCodes);
+        $record = $this->findAuthorityApplication($application, $user->getKey(), $entity, $approvalCodes);
         $approval = $this->currentApprovalForEntity($record, $entity, $approvalCodes);
 
         abort_unless($approval, 404);
@@ -135,6 +174,10 @@ class ApplicationInboxController extends Controller
             'status' => ['required', Rule::in(['pending', 'in_review', 'approved', 'rejected'])],
             'note' => ['nullable', 'string', 'max:2000'],
         ]);
+
+        if (in_array($validated['status'], ['approved', 'rejected'], true)) {
+            abort_unless($user->can('applications.approve'), 403);
+        }
 
         $approval->forceFill([
             'status' => $validated['status'],
@@ -157,6 +200,17 @@ class ApplicationInboxController extends Controller
                 'authority' => $approval->localizedAuthority(),
                 'status' => $approval->localizedStatus(),
             ]),
+            'metadata' => [
+                'type' => 'authority_status_updated',
+                'approval_id' => $approval->getKey(),
+                'authority_code' => $approval->authority_code,
+                'authority_label' => $approval->localizedAuthority(),
+                'approval_status' => $approval->status,
+                'approval_status_label' => $approval->localizedStatus(),
+                'assigned_user_id' => $approval->assigned_user_id,
+                'assigned_user_name' => $approval->assignedTo?->displayName(),
+                'reason' => $validated['note'] ?: null,
+            ],
             'happened_at' => now(),
         ]);
 
@@ -194,7 +248,7 @@ class ApplicationInboxController extends Controller
     public function storeCorrespondence(Request $request, string $application): RedirectResponse
     {
         [$user, $entity, $approvalCodes] = $this->authorityContext($request);
-        $record = $this->findAuthorityApplication($application, $approvalCodes);
+        $record = $this->findAuthorityApplication($application, $user->getKey(), $entity, $approvalCodes);
 
         $validated = $request->validate([
             'subject' => ['nullable', 'string', 'max:255'],
@@ -257,8 +311,8 @@ class ApplicationInboxController extends Controller
 
     public function downloadDocument(Request $request, string $application, string $document): StreamedResponse|RedirectResponse
     {
-        [, $entity, $approvalCodes] = $this->authorityContext($request);
-        $record = $this->findAuthorityApplication($application, $entity, $approvalCodes);
+        [$user, $entity, $approvalCodes] = $this->authorityContext($request);
+        $record = $this->findAuthorityApplication($application, $user->getKey(), $entity, $approvalCodes);
         $documentRecord = ApplicationDocument::query()
             ->where('application_id', $record->getKey())
             ->findOrFail($document);
@@ -274,8 +328,8 @@ class ApplicationInboxController extends Controller
 
     public function downloadCorrespondenceAttachment(Request $request, string $application, string $correspondence): StreamedResponse|RedirectResponse
     {
-        [, $entity, $approvalCodes] = $this->authorityContext($request);
-        $record = $this->findAuthorityApplication($application, $entity, $approvalCodes);
+        [$user, $entity, $approvalCodes] = $this->authorityContext($request);
+        $record = $this->findAuthorityApplication($application, $user->getKey(), $entity, $approvalCodes);
         $message = ApplicationCorrespondence::query()
             ->where('application_id', $record->getKey())
             ->findOrFail($correspondence);
@@ -307,11 +361,11 @@ class ApplicationInboxController extends Controller
     /**
      * @param  array<int, string>  $approvalCodes
      */
-    private function findAuthorityApplication(string $application, Entity $entity, array $approvalCodes): FilmApplication
+    private function findAuthorityApplication(string $application, int $userId, Entity $entity, array $approvalCodes): FilmApplication
     {
         return FilmApplication::query()
-            ->with(['entity.group', 'submittedBy', 'reviewedBy', 'assignedTo', 'authorityApprovals.reviewedBy', 'authorityApprovals.entity'])
-            ->whereHas('authorityApprovals', fn (Builder $query): Builder => $this->restrictApprovalsToAuthority($query, $entity, $approvalCodes))
+            ->with(['entity.group', 'submittedBy', 'reviewedBy', 'assignedTo', 'authorityApprovals.reviewedBy', 'authorityApprovals.assignedTo', 'authorityApprovals.entity'])
+            ->whereHas('authorityApprovals', fn (Builder $query): Builder => $this->restrictApprovalsToAuthority($query, $userId, $entity, $approvalCodes))
             ->findOrFail($application);
     }
 
@@ -323,11 +377,13 @@ class ApplicationInboxController extends Controller
         $validated = $request->validate([
             'q' => ['nullable', 'string', 'max:255'],
             'status' => ['nullable', Rule::in(['all', 'pending', 'in_review', 'approved', 'rejected'])],
+            'ownership' => ['nullable', Rule::in(['all', 'mine', 'shared'])],
         ]);
 
         return [
             'q' => $validated['q'] ?? '',
             'status' => $validated['status'] ?? 'all',
+            'ownership' => $validated['ownership'] ?? 'all',
         ];
     }
 
@@ -335,19 +391,20 @@ class ApplicationInboxController extends Controller
      * @param  array{q:string,status:string}  $filters
      * @param  array<int, string>  $approvalCodes
      */
-    private function directoryQuery(array $filters, Entity $entity, array $approvalCodes): Builder
+    private function directoryQuery(array $filters, int $userId, Entity $entity, array $approvalCodes): Builder
     {
         $query = ApplicationAuthorityApproval::query()
             ->with([
                 'application' => fn ($builder) => $builder
-                    ->with(['entity', 'submittedBy'])
+                    ->with(['entity', 'submittedBy', 'officialLetters'])
                     ->withMax([
                         'correspondences as last_external_correspondence_at' => fn (Builder $query): Builder => $query->whereIn('sender_type', ['admin', 'applicant']),
                     ], 'created_at'),
+                'assignedTo',
                 'reviewedBy',
                 'entity',
             ])
-            ->where(fn (Builder $builder): Builder => $this->restrictApprovalsToAuthority($builder, $entity, $approvalCodes));
+            ->where(fn (Builder $builder): Builder => $this->restrictApprovalsToAuthority($builder, $userId, $entity, $approvalCodes));
 
         if (filled($filters['q'])) {
             $search = trim($filters['q']);
@@ -366,13 +423,21 @@ class ApplicationInboxController extends Controller
             $query->where('status', $filters['status']);
         }
 
+        if (($filters['ownership'] ?? 'all') === 'mine') {
+            $query->where('assigned_user_id', $userId);
+        }
+
+        if (($filters['ownership'] ?? 'all') === 'shared') {
+            $query->whereNull('assigned_user_id');
+        }
+
         return $query;
     }
 
     /**
      * @param  array<int, string>  $approvalCodes
      */
-    private function restrictApprovalsToAuthority(Builder $query, Entity $entity, array $approvalCodes): Builder
+    private function restrictApprovalsToAuthority(Builder $query, int $userId, Entity $entity, array $approvalCodes): Builder
     {
         return $query->where(function (Builder $builder) use ($entity, $approvalCodes): void {
             $builder->where('entity_id', $entity->getKey());
@@ -384,6 +449,10 @@ class ApplicationInboxController extends Controller
                         ->whereIn('authority_code', $approvalCodes);
                 });
             }
+        })->where(function (Builder $builder) use ($userId): void {
+            $builder
+                ->whereNull('assigned_user_id')
+                ->orWhere('assigned_user_id', $userId);
         });
     }
 
@@ -392,6 +461,8 @@ class ApplicationInboxController extends Controller
      */
     private function currentApprovalForEntity(FilmApplication $application, Entity $entity, array $approvalCodes): ?ApplicationAuthorityApproval
     {
+        $userId = request()->user()?->getKey();
+
         return $application->authorityApprovals
             ->filter(function (ApplicationAuthorityApproval $approval) use ($entity, $approvalCodes): bool {
                 if ($approval->entity_id === $entity->getKey()) {
@@ -400,6 +471,7 @@ class ApplicationInboxController extends Controller
 
                 return $approval->entity_id === null && in_array($approval->authority_code, $approvalCodes, true);
             })
+            ->filter(fn (ApplicationAuthorityApproval $approval): bool => $approval->assigned_user_id === null || $approval->assigned_user_id === $userId)
             ->sortBy(fn (ApplicationAuthorityApproval $approval): int => match ($approval->status) {
                 'pending' => 0,
                 'in_review' => 1,

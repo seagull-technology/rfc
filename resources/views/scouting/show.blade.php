@@ -52,9 +52,11 @@
         }
 
         .scouting-show-layout .profile-tab {
-            gap: 0.5rem;
-            flex-wrap: wrap;
-            justify-content: flex-end;
+            flex-wrap: nowrap;
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
         }
 
         .scouting-show-layout .profile-tab .nav-link {
@@ -223,7 +225,6 @@
                                     </form>
                                 @endif
                             </div>
-                        </div>
                         </div>
                     </div>
                 </div>

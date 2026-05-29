@@ -2,6 +2,7 @@
     $resolvedApprovals = $authorityApprovals->whereNotIn('status', ['pending', 'in_review'])->count();
     $pendingApprovals = $authorityApprovals->whereIn('status', ['pending', 'in_review'])->count();
     $rejectedApprovals = $authorityApprovals->where('status', 'rejected')->count();
+    $unresolvedApprovals = $authorityApprovals->whereIn('status', ['pending', 'in_review'])->values();
 @endphp
 
 <div class="card">
@@ -45,7 +46,33 @@
         @endif
 
         @if (! $application->canBeFinallyDecided())
-            <div class="alert alert-warning mb-0">{{ __('app.final_decision.not_ready') }}</div>
+            <div class="alert alert-warning mb-4">{{ __('app.final_decision.not_ready') }}</div>
+
+            @if ($unresolvedApprovals->isNotEmpty())
+                <div class="border rounded p-3">
+                    <div class="fw-semibold mb-3">{{ __('app.final_decision.pending_approvals_detail_title') }}</div>
+                    <div class="table-responsive">
+                        <table class="table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>{{ __('app.admin.applications.authority') }}</th>
+                                    <th>{{ __('app.applications.status') }}</th>
+                                    <th>{{ __('app.admin.applications.review_note') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($unresolvedApprovals as $approval)
+                                    <tr>
+                                        <td>{{ $approval->localizedAuthority() }}</td>
+                                        <td><span class="badge bg-{{ in_array($approval->status, ['pending'], true) ? 'secondary' : 'warning' }}">{{ $approval->localizedStatus() }}</span></td>
+                                        <td>{{ $approval->note ?: __('app.dashboard.not_available') }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @endif
         @else
             @if ($rejectedApprovals > 0)
                 <div class="alert alert-warning">{{ __('app.final_decision.rejected_approval_warning') }}</div>

@@ -9,6 +9,7 @@ use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\Admin\AdminDashboardController;
+use App\Http\Controllers\Admin\AuthorityEscalationController;
 use App\Http\Controllers\Admin\ApprovalRoutingRuleController;
 use App\Http\Controllers\Admin\ApplicationManagementController;
 use App\Http\Controllers\Admin\ContactCenterController as AdminContactCenterController;
@@ -21,6 +22,7 @@ use App\Http\Controllers\Admin\ScoutingRequestManagementController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Authority\ApplicationInboxController;
 use App\Http\Controllers\ContactCenterController;
+use App\Http\Controllers\CurrentEntityController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\NotificationRedirectController;
 use App\Http\Controllers\PermitVerificationController;
@@ -75,6 +77,7 @@ Route::group([
 
     Route::middleware('auth')->group(function (): void {
         Route::get('/dashboard', DashboardController::class)->name('dashboard');
+        Route::post('/context/entity', CurrentEntityController::class)->name('context.entity.update');
         Route::get('/registration/complete', [RegistrationCompletionController::class, 'edit'])->name('registration.completion.edit');
         Route::post('/registration/complete', [RegistrationCompletionController::class, 'update'])->name('registration.completion.update');
         Route::get('/profile', ProfileController::class)->name('profile.show');
@@ -166,8 +169,11 @@ Route::group([
                     ->middleware('permission:applications.assign')
                     ->name('applications.assign');
                 Route::post('/applications/{application}/approvals/{approval}/update', [ApplicationManagementController::class, 'updateApproval'])
-                    ->middleware('permission:applications.review')
+                    ->middleware('permission:applications.review|applications.approve')
                     ->name('applications.approvals.update');
+                Route::post('/applications/{application}/approvals/{approval}/assign', [ApplicationManagementController::class, 'assignApproval'])
+                    ->middleware('permission:applications.assign')
+                    ->name('applications.approvals.assign');
                 Route::post('/applications/{application}/documents/{document}/review', [ApplicationManagementController::class, 'reviewDocument'])
                     ->middleware('permission:applications.review')
                     ->name('applications.documents.review');
@@ -177,6 +183,12 @@ Route::group([
                 Route::post('/applications/{application}/correspondence', [ApplicationManagementController::class, 'storeCorrespondence'])
                     ->middleware('permission:applications.review')
                     ->name('applications.correspondence.store');
+                Route::post('/applications/{application}/official-letters', [ApplicationManagementController::class, 'storeOfficialLetter'])
+                    ->middleware('permission:applications.review')
+                    ->name('applications.official-letters.store');
+                Route::put('/applications/{application}/official-letters/{letter}', [ApplicationManagementController::class, 'updateOfficialLetter'])
+                    ->middleware('permission:applications.review')
+                    ->name('applications.official-letters.update');
                 Route::get('/applications/{application}/correspondence/{correspondence}/download', [ApplicationManagementController::class, 'downloadCorrespondenceAttachment'])
                     ->middleware('permission:applications.view.all')
                     ->name('applications.correspondence.download');
@@ -246,6 +258,21 @@ Route::group([
                 Route::get('/approval-routing', [ApprovalRoutingRuleController::class, 'index'])
                     ->middleware('permission:settings.manage')
                     ->name('approval-routing.index');
+                Route::get('/authority-escalations', [AuthorityEscalationController::class, 'index'])
+                    ->middleware('permission:settings.manage')
+                    ->name('authority-escalations.index');
+                Route::get('/authority-escalations/report', [AuthorityEscalationController::class, 'report'])
+                    ->middleware('permission:settings.manage')
+                    ->name('authority-escalations.report');
+                Route::get('/authority-escalations/export', [AuthorityEscalationController::class, 'export'])
+                    ->middleware('permission:settings.manage')
+                    ->name('authority-escalations.export');
+                Route::post('/authority-escalations/{entity}/bulk-assign', [AuthorityEscalationController::class, 'bulkAssign'])
+                    ->middleware('permission:applications.assign')
+                    ->name('authority-escalations.bulk-assign');
+                Route::post('/authority-escalations/{entity}', [AuthorityEscalationController::class, 'update'])
+                    ->middleware('permission:settings.manage')
+                    ->name('authority-escalations.update');
                 Route::get('/approval-routing/create', [ApprovalRoutingRuleController::class, 'create'])
                     ->middleware('permission:settings.manage')
                     ->name('approval-routing.create');
@@ -310,6 +337,30 @@ Route::group([
                 Route::post('/entities/{entity}/members', [EntityManagementController::class, 'storeMember'])
                     ->middleware('permission:entities.manage')
                     ->name('entities.members.store');
+                Route::post('/entities/{entity}/members/{user}/primary', [EntityManagementController::class, 'setPrimaryMember'])
+                    ->middleware('permission:entities.manage')
+                    ->name('entities.members.primary');
+                Route::post('/entities/{entity}/members/{user}/status', [EntityManagementController::class, 'updateMemberStatus'])
+                    ->middleware('permission:entities.manage')
+                    ->name('entities.members.status');
+                Route::post('/entities/{entity}/members/{user}/delete', [EntityManagementController::class, 'destroyMember'])
+                    ->middleware('permission:entities.manage')
+                    ->name('entities.members.delete');
+                Route::post('/entities/{entity}/members/{user}/roles/{role}/delete', [EntityManagementController::class, 'destroyMemberRole'])
+                    ->middleware('permission:entities.manage')
+                    ->name('entities.members.roles.delete');
+                Route::post('/entities/{entity}/authority-delegation', [EntityManagementController::class, 'updateAuthorityDelegation'])
+                    ->middleware('permission:entities.manage')
+                    ->name('entities.authority-delegation.update');
+                Route::post('/entities/{entity}/authority-routing', [EntityManagementController::class, 'storeAuthorityRouting'])
+                    ->middleware('permission:settings.manage')
+                    ->name('entities.authority-routing.store');
+                Route::post('/entities/{entity}/authority-routing/{approvalRouting}/status', [EntityManagementController::class, 'updateAuthorityRoutingStatus'])
+                    ->middleware('permission:settings.manage')
+                    ->name('entities.authority-routing.status');
+                Route::post('/entities/{entity}/authority-routing/{approvalRouting}/delete', [EntityManagementController::class, 'destroyAuthorityRouting'])
+                    ->middleware('permission:settings.manage')
+                    ->name('entities.authority-routing.delete');
 
                 Route::get('/users', [UserManagementController::class, 'index'])
                     ->middleware('permission:users.view')

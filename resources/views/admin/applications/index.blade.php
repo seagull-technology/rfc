@@ -66,6 +66,19 @@
             margin-top: .35rem;
             white-space: normal;
         }
+
+        .admin-applications-index-layout .responsibility-stack {
+            display: grid;
+            gap: .5rem;
+        }
+
+        .admin-applications-index-layout .responsibility-row {
+            white-space: normal;
+        }
+
+        .admin-applications-index-layout .responsibility-row .badge {
+            margin-top: .2rem;
+        }
     </style>
 @endpush
 
@@ -135,6 +148,15 @@
         <div class="col-lg-3 col-md-6">
             <div class="card">
                 <div class="card-body text-center">
+                    <div class="text-muted">{{ __('app.admin.authority_escalations.metrics.overdue_requests') }}</div>
+                    <h2 class="counter text-danger">{{ $stats['overdue_authorities'] }}</h2>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6">
+            <div class="card">
+                <div class="card-body text-center">
                     <div class="text-muted">{{ __('app.admin.workflow_states.ready_final_decision') }}</div>
                     <h2 class="counter">{{ $stats['ready_final_decision'] }}</h2>
                 </div>
@@ -169,6 +191,7 @@
                                                     <th>{{ __('app.admin.applications.application') }}</th>
                                                     <th>{{ __('app.applications.project_name') }}</th>
                                                     <th>{{ __('app.admin.applications.applicant') }}</th>
+                                                    <th>{{ __('app.admin.applications.responsibility_title') }}</th>
                                                     <th>{{ __('app.admin.dashboard.workflow_checkpoint') }}</th>
                                                     <th>{{ __('app.applications.updated_at') }}</th>
                                                     <th>{{ __('app.applications.status') }}</th>
@@ -179,6 +202,7 @@
                                                 @forelse ($rows as $application)
                                                     @php($checkpoint = $checkpointMeta($application))
                                                     @php($applicantResponse = $applicantResponses[$application->getKey()] ?? ['active' => false])
+                                                    @php($responsibility = $responsibilitySummaries[$application->getKey()] ?? ['rfc_owner' => __('app.workflow.unassigned'), 'authority_items' => collect()])
                                                     <tr>
                                                         <td>{{ $loop->iteration }}</td>
                                                         <td>{{ $application->code ?: __('app.dashboard.not_available') }}</td>
@@ -193,6 +217,36 @@
                                                             @endif
                                                         </td>
                                                         <td>{{ $application->submittedBy?->displayName() ?? __('app.dashboard.not_available') }}</td>
+                                                        <td>
+                                                            <div class="responsibility-stack">
+                                                                <div class="responsibility-row">
+                                                                    <span class="fw-semibold">{{ __('app.admin.applications.responsibility_rfc') }}:</span>
+                                                                    <span class="text-muted">{{ $responsibility['rfc_owner'] }}</span>
+                                                                </div>
+                                                                <div class="responsibility-row">
+                                                                    <span class="fw-semibold">{{ __('app.admin.applications.responsibility_authorities') }}:</span>
+                                                                    @if ($responsibility['authority_items']->isNotEmpty())
+                                                                        <div class="mt-1">
+                                                                            @foreach ($responsibility['authority_items'] as $authorityItem)
+                                                                                <div class="text-muted">
+                                                                                    {{ $authorityItem['authority'] }}:
+                                                                                    {{ $authorityItem['owner'] }}
+                                                                                    <span class="badge bg-{{ $authorityItem['is_shared'] ? 'primary' : 'warning' }}">{{ $authorityItem['status'] }}</span>
+                                                                                    @if ($authorityItem['signal_label'])
+                                                                                        <span class="badge bg-{{ $authorityItem['is_overdue'] ? 'danger' : 'secondary' }}">{{ $authorityItem['signal_label'] }}</span>
+                                                                                    @endif
+                                                                                    @if ($authorityItem['is_escalated'])
+                                                                                        <span class="badge bg-dark">{{ __('app.admin.authority_escalations.escalated_badge') }}</span>
+                                                                                    @endif
+                                                                                </div>
+                                                                            @endforeach
+                                                                        </div>
+                                                                    @else
+                                                                        <span class="text-muted">{{ __('app.admin.applications.responsibility_authorities_resolved') }}</span>
+                                                                    @endif
+                                                                </div>
+                                                            </div>
+                                                        </td>
                                                         <td><span class="badge bg-{{ $checkpointClass($checkpoint['key']) }}">{{ $checkpoint['label'] }}</span></td>
                                                         <td>{{ optional($application->submitted_at ?? $application->created_at)->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
                                                         <td><span class="badge bg-{{ $statusClass($application->status) }}">{{ $application->localizedStatus() }}</span></td>
@@ -208,7 +262,7 @@
                                                     </tr>
                                                 @empty
                                                     <tr>
-                                                        <td colspan="8">{{ __('app.admin.applications.empty_state') }}</td>
+                                                        <td colspan="9">{{ __('app.admin.applications.empty_state') }}</td>
                                                     </tr>
                                                 @endforelse
                                             </tbody>

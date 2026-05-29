@@ -8,6 +8,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Entity;
 use App\Models\ScoutingRequest;
 use App\Models\User;
+use App\Models\UserRoleAssignmentAudit;
+use App\Services\AuthorityApprovalNotificationService;
 use App\Services\RoleAssignmentService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,12 +17,14 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class UserManagementController extends Controller
 {
     public function __construct(
         private readonly RoleAssignmentService $roleAssignmentService,
+        private readonly AuthorityApprovalNotificationService $authorityApprovalNotificationService,
     ) {
     }
 
@@ -115,15 +119,17 @@ class UserManagementController extends Controller
             'phone' => ['required', 'string', 'max:255', 'unique:users,phone'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'entity_id' => ['required', 'exists:entities,id'],
-            'role' => ['required', 'string'],
+            'roles' => ['required', 'array', 'min:1'],
+            'roles.*' => ['nullable', 'string'],
             'job_title' => ['nullable', 'string', 'max:255'],
             'is_primary' => ['nullable', 'boolean'],
         ]);
 
         $entity = Entity::query()->with('group.roles')->findOrFail($validated['entity_id']);
+        $roles = $this->validatedRolesForEntity($entity, $validated['roles'] ?? []);
         $isPrimary = (bool) ($validated['is_primary'] ?? true);
 
-        DB::transaction(function () use ($validated, $entity, $isPrimary): void {
+        $user = DB::transaction(function () use ($request, $validated, $entity, $roles, $isPrimary): User {
             $user = User::query()->create([
                 'name' => $validated['name'],
                 'username' => $validated['username'],
@@ -142,8 +148,25 @@ class UserManagementController extends Controller
                 'joined_at' => now(),
             ]);
 
-            $this->roleAssignmentService->assignToEntity($user, $entity, $validated['role']);
+            foreach ($roles as $roleName) {
+                $this->roleAssignmentService->assignToEntity($user, $entity, $roleName);
+                $this->logRoleAssignmentAudit(
+                    user: $user,
+                    entity: $entity,
+                    roleName: $roleName,
+                    action: 'added',
+                    changedByUserId: $request->user()?->getKey(),
+                );
+            }
+
+            return $user;
         });
+
+        $this->authorityApprovalNotificationService->notifyUserAboutOpenApprovals(
+            $user,
+            $entity,
+            $request->user()?->getKey(),
+        );
 
         return redirect()
             ->route('admin.users.index')
@@ -254,6 +277,10 @@ class UserManagementController extends Controller
                     'entity' => $entity,
                     'roles' => $user->roleNamesForEntity($entity),
                 ]),
+            'roleAssignmentAudits' => $user->roleAssignmentAudits()
+                ->with(['entity.group', 'changedBy'])
+                ->take(20)
+                ->get(),
             'userApplications' => $applications,
             'userAnalytics' => [
                 'stats' => [
@@ -369,15 +396,17 @@ class UserManagementController extends Controller
 
         $validated = $request->validate([
             'entity_id' => ['required', 'exists:entities,id'],
-            'role' => ['required', 'string'],
+            'roles' => ['required', 'array', 'min:1'],
+            'roles.*' => ['nullable', 'string'],
             'job_title' => ['nullable', 'string', 'max:255'],
             'is_primary' => ['nullable', 'boolean'],
         ]);
 
         $entity = Entity::query()->with('group.roles')->findOrFail($validated['entity_id']);
+        $roles = $this->validatedRolesForEntity($entity, $validated['roles'] ?? []);
         $isPrimary = (bool) ($validated['is_primary'] ?? false);
 
-        DB::transaction(function () use ($user, $entity, $validated, $isPrimary): void {
+        DB::transaction(function () use ($request, $user, $entity, $validated, $roles, $isPrimary): void {
             if ($isPrimary) {
                 DB::table('entity_user')
                     ->where('user_id', $user->getKey())
@@ -399,8 +428,27 @@ class UserManagementController extends Controller
                 ]);
             }
 
-            $this->roleAssignmentService->assignToEntity($user, $entity, $validated['role']);
+            foreach ($roles as $roleName) {
+                $hadRole = $this->userHasEntityRole($user, $entity, $roleName);
+                $this->roleAssignmentService->assignToEntity($user, $entity, $roleName);
+
+                if (! $hadRole) {
+                    $this->logRoleAssignmentAudit(
+                        user: $user,
+                        entity: $entity,
+                        roleName: $roleName,
+                        action: 'added',
+                        changedByUserId: $request->user()?->getKey(),
+                    );
+                }
+            }
         });
+
+        $this->authorityApprovalNotificationService->notifyUserAboutOpenApprovals(
+            $user->refresh(),
+            $entity,
+            $request->user()?->getKey(),
+        );
 
         return redirect()
             ->route('admin.users.show', $user)
@@ -414,7 +462,18 @@ class UserManagementController extends Controller
 
         abort_unless($record->entities()->whereKey($entityRecord->getKey())->exists(), 404);
 
+        $hadRole = $this->userHasEntityRole($record, $entityRecord, $role);
         $this->roleAssignmentService->removeFromEntity($record, $entityRecord, $role);
+
+        if ($hadRole) {
+            $this->logRoleAssignmentAudit(
+                user: $record,
+                entity: $entityRecord,
+                roleName: $role,
+                action: 'removed',
+                changedByUserId: request()->user()?->getKey(),
+            );
+        }
 
         return redirect()
             ->route('admin.users.show', $record)
@@ -437,5 +496,56 @@ class UserManagementController extends Controller
             'rfc', 'admins', 'authorities' => 'staff',
             default => $entity->registration_type,
         };
+    }
+
+    private function userHasEntityRole(User $user, Entity $entity, string $roleName): bool
+    {
+        return $user->roleNamesForEntity($entity)->contains($roleName);
+    }
+
+    /**
+     * @param  array<int, string|null>  $roles
+     * @return array<int, string>
+     */
+    private function validatedRolesForEntity(Entity $entity, array $roles): array
+    {
+        $normalizedRoles = collect($roles)
+            ->map(fn (mixed $role): string => trim((string) $role))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($normalizedRoles === []) {
+            throw ValidationException::withMessages([
+                'roles' => __('app.admin.users.roles_required'),
+            ]);
+        }
+
+        $allowedRoles = $this->roleAssignmentService
+            ->allowedRolesForEntity($entity)
+            ->pluck('name')
+            ->all();
+
+        $invalidRoles = array_values(array_diff($normalizedRoles, $allowedRoles));
+
+        if ($invalidRoles !== []) {
+            throw ValidationException::withMessages([
+                'roles' => __('app.admin.users.invalid_roles_for_entity'),
+            ]);
+        }
+
+        return $normalizedRoles;
+    }
+
+    private function logRoleAssignmentAudit(User $user, Entity $entity, string $roleName, string $action, ?int $changedByUserId): void
+    {
+        UserRoleAssignmentAudit::query()->create([
+            'user_id' => $user->getKey(),
+            'entity_id' => $entity->getKey(),
+            'changed_by_user_id' => $changedByUserId,
+            'role_name' => $roleName,
+            'action' => $action,
+        ]);
     }
 }

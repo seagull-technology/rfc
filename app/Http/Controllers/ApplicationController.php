@@ -8,6 +8,7 @@ use App\Models\ApplicationCorrespondence;
 use App\Models\ApplicationDocument;
 use App\Models\Entity;
 use App\Notifications\InboxMessageNotification;
+use App\Services\AuthorityApprovalNotificationService;
 use App\Services\ApprovalRoutingService;
 use App\Support\ApplicantRequestOverview;
 use App\Support\NotificationRecipients;
@@ -25,6 +26,7 @@ class ApplicationController extends Controller
 {
     public function __construct(
         private readonly ApprovalRoutingService $approvalRoutingService,
+        private readonly AuthorityApprovalNotificationService $authorityApprovalNotificationService,
     ) {
     }
 
@@ -105,6 +107,7 @@ class ApplicationController extends Controller
             'formAction' => route('applications.store'),
             'formMethod' => 'POST',
             'submitLabel' => __('app.applications.save_draft_action'),
+            'approvalRoutePreviewRules' => $this->approvalRoutingService->applicationRoutingPreviewRules(),
         ]);
     }
 
@@ -146,6 +149,8 @@ class ApplicationController extends Controller
             'documents.uploadedBy',
             'documents.reviewedBy',
             'correspondences.createdBy',
+            'officialLetters.targetEntity',
+            'officialLetters.createdBy',
         ]);
 
         return view('applications.show', [
@@ -157,6 +162,7 @@ class ApplicationController extends Controller
             'authorityApprovals' => $record->authorityApprovals,
             'documents' => $record->documents,
             'correspondences' => $record->correspondences,
+            'officialLetters' => $record->officialLetters->where('status', 'issued')->values(),
         ]);
     }
 
@@ -175,6 +181,7 @@ class ApplicationController extends Controller
             'formAction' => route('applications.update', $record),
             'formMethod' => 'POST',
             'submitLabel' => __('app.applications.update_draft_action'),
+            'approvalRoutePreviewRules' => $this->approvalRoutingService->applicationRoutingPreviewRules(),
         ]);
     }
 
@@ -247,20 +254,8 @@ class ApplicationController extends Controller
             )));
 
         $record->authorityApprovals
-            ->each(function (ApplicationAuthorityApproval $approval) use ($record, $user): void {
-                NotificationRecipients::except(NotificationRecipients::authorityUsersForApproval($approval), $user->getKey())
-                    ->each(fn ($recipient) => $recipient->notify(new InboxMessageNotification(
-                        typeKey: 'authority_approval_requested',
-                        title: $record->project_name,
-                        body: __('app.notifications.authority_approval_requested_body', [
-                            'authority' => $approval->localizedAuthority(),
-                            'code' => $record->code,
-                        ]),
-                        routeName: 'authority.applications.show',
-                        routeParameters: ['application' => $record->getKey()],
-                        meta: WorkflowMessageMetadata::application($record),
-                    )));
-            });
+            ->each(fn (ApplicationAuthorityApproval $approval): int => $this->authorityApprovalNotificationService
+                ->notifyRecipientsForApproval($approval, $user->getKey()));
 
         return redirect()
             ->route('applications.show', $record)
@@ -541,8 +536,45 @@ class ApplicationController extends Controller
             'director_profile_url' => ['nullable', 'url', 'max:500'],
             'international_producer_name' => ['nullable', 'string', 'max:255'],
             'international_producer_company' => ['nullable', 'string', 'max:255'],
-            'required_approvals' => ['nullable', 'array'],
-            'required_approvals.*' => [Rule::in(['public_security', 'digital_economy', 'environment', 'municipalities', 'airports', 'drones', 'heritage'])],
+            'work_content_summary_synopsis' => ['nullable', 'string', 'max:5000'],
+            'work_content_summary_sensitive_notes' => ['nullable', 'string', 'max:3000'],
+            'work_content_summary_confirmed' => ['nullable', 'boolean'],
+            'cast_crew' => ['nullable', 'array'],
+            'cast_crew.*.name' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.role' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.nationality' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.identity_number' => ['nullable', 'string', 'max:255'],
+            'filming_locations' => ['nullable', 'array'],
+            'filming_locations.*.governorate' => ['nullable', 'string', 'max:100'],
+            'filming_locations.*.location_name' => ['nullable', 'string', 'max:255'],
+            'filming_locations.*.location_type' => ['nullable', 'string', 'max:255'],
+            'filming_locations.*.start_date' => ['nullable', 'date'],
+            'filming_locations.*.end_date' => ['nullable', 'date'],
+            'filming_locations.*.notes' => ['nullable', 'string', 'max:1000'],
+            'safety_guidelines_acknowledged' => ['nullable', 'boolean'],
+            'safety_guidelines_notes' => ['nullable', 'string', 'max:3000'],
+            'imported_equipment' => ['nullable', 'array'],
+            'imported_equipment.*.item' => ['nullable', 'string', 'max:255'],
+            'imported_equipment.*.serial_number' => ['nullable', 'string', 'max:255'],
+            'imported_equipment.*.quantity' => ['nullable', 'integer', 'min:0', 'max:100000'],
+            'imported_equipment.*.origin_country' => ['nullable', 'string', 'max:255'],
+            'imported_equipment.*.entry_point' => ['nullable', 'string', 'max:255'],
+            'imported_equipment.*.arrival_date' => ['nullable', 'date'],
+            'military_border_equipment' => ['nullable', 'array'],
+            'military_border_equipment.*.location_name' => ['nullable', 'string', 'max:255'],
+            'military_border_equipment.*.equipment' => ['nullable', 'string', 'max:255'],
+            'military_border_equipment.*.security_need' => ['nullable', 'string', 'max:255'],
+            'military_border_equipment.*.notes' => ['nullable', 'string', 'max:1000'],
+            'airport_filming_airport_name' => ['nullable', 'string', 'max:255'],
+            'airport_filming_area' => ['nullable', 'string', 'max:255'],
+            'airport_filming_date' => ['nullable', 'date'],
+            'airport_filming_crew_count' => ['nullable', 'integer', 'min:0', 'max:100000'],
+            'airport_filming_notes' => ['nullable', 'string', 'max:3000'],
+            'governmental_scenes' => ['nullable', 'array'],
+            'governmental_scenes.*.site_name' => ['nullable', 'string', 'max:255'],
+            'governmental_scenes.*.authority' => ['nullable', 'string', 'max:255'],
+            'governmental_scenes.*.scene_description' => ['nullable', 'string', 'max:1000'],
+            'governmental_scenes.*.filming_date' => ['nullable', 'date'],
             'supporting_notes' => ['nullable', 'string', 'max:3000'],
         ]);
     }
@@ -587,11 +619,59 @@ class ApplicationController extends Controller
                     'international_producer_company' => $validated['international_producer_company'] ?: null,
                 ],
                 'requirements' => [
-                    'required_approvals' => array_values($validated['required_approvals'] ?? []),
-                    'supporting_notes' => $validated['supporting_notes'] ?: null,
+                    'required_approvals' => [],
+                    'supporting_notes' => ($validated['supporting_notes'] ?? null) ?: null,
+                ],
+                'annex' => [
+                    'work_content_summary' => [
+                        'synopsis' => ($validated['work_content_summary_synopsis'] ?? null) ?: null,
+                        'sensitive_notes' => ($validated['work_content_summary_sensitive_notes'] ?? null) ?: null,
+                        'confirmed' => (bool) ($validated['work_content_summary_confirmed'] ?? false),
+                    ],
+                    'cast_crew' => $this->filledRows((array) ($validated['cast_crew'] ?? []), ['name', 'role', 'nationality', 'identity_number']),
+                    'filming_locations' => $this->filledRows((array) ($validated['filming_locations'] ?? []), ['governorate', 'location_name', 'location_type', 'start_date', 'end_date', 'notes']),
+                    'safety_guidelines' => [
+                        'acknowledged' => (bool) ($validated['safety_guidelines_acknowledged'] ?? false),
+                        'notes' => ($validated['safety_guidelines_notes'] ?? null) ?: null,
+                    ],
+                    'imported_equipment' => $this->filledRows((array) ($validated['imported_equipment'] ?? []), ['item', 'serial_number', 'quantity', 'origin_country', 'entry_point', 'arrival_date']),
+                    'military_border_equipment' => $this->filledRows((array) ($validated['military_border_equipment'] ?? []), ['location_name', 'equipment', 'security_need', 'notes']),
+                    'airport_filming' => [
+                        'airport_name' => ($validated['airport_filming_airport_name'] ?? null) ?: null,
+                        'area' => ($validated['airport_filming_area'] ?? null) ?: null,
+                        'filming_date' => ($validated['airport_filming_date'] ?? null) ?: null,
+                        'crew_count' => ($validated['airport_filming_crew_count'] ?? null) ?: null,
+                        'notes' => ($validated['airport_filming_notes'] ?? null) ?: null,
+                    ],
+                    'governmental_scenes' => $this->filledRows((array) ($validated['governmental_scenes'] ?? []), ['site_name', 'authority', 'scene_description', 'filming_date']),
                 ],
             ],
         ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<int, string>  $keys
+     * @return array<int, array<string, mixed>>
+     */
+    private function filledRows(array $rows, array $keys): array
+    {
+        return collect($rows)
+            ->map(function (array $row) use ($keys): array {
+                $normalized = [];
+
+                foreach ($keys as $key) {
+                    $value = $row[$key] ?? null;
+                    $normalized[$key] = is_string($value) ? trim($value) : $value;
+                }
+
+                return $normalized;
+            })
+            ->filter(fn (array $row): bool => collect($row)
+                ->filter(fn ($value): bool => filled($value))
+                ->isNotEmpty())
+            ->values()
+            ->all();
     }
 
     private function nextCode(): string
@@ -614,9 +694,25 @@ class ApplicationController extends Controller
     private function syncAuthorityApprovals(FilmApplication $application): void
     {
         $routes = $this->approvalRoutingService->routesForApplication($application);
+        $metadata = $application->metadata ?? [];
+
+        data_set(
+            $metadata,
+            'requirements.required_approvals',
+            $routes->pluck('approval_code')->unique()->values()->all(),
+        );
+
+        $application->forceFill(['metadata' => $metadata])->save();
+
         $wantedKeys = $routes
             ->map(fn (array $route): string => $route['approval_code'].'|'.($route['target_entity_id'] ?? 'none'))
             ->all();
+        $existingApprovals = $application->authorityApprovals()->get()
+            ->keyBy(fn (ApplicationAuthorityApproval $approval): string => $approval->authority_code.'|'.($approval->entity_id ?? 'none'));
+        $targetEntities = Entity::query()
+            ->whereIn('id', $routes->pluck('target_entity_id')->filter()->unique()->all())
+            ->get()
+            ->keyBy(fn (Entity $entity): int => $entity->getKey());
 
         $application->authorityApprovals()
             ->get()
@@ -629,21 +725,57 @@ class ApplicationController extends Controller
             ->delete();
 
         foreach ($routes as $route) {
-            ApplicationAuthorityApproval::query()->updateOrCreate(
-                [
+            $approvalKey = $route['approval_code'].'|'.($route['target_entity_id'] ?? 'none');
+            $approval = $existingApprovals->get($approvalKey)
+                ?? new ApplicationAuthorityApproval([
                     'application_id' => $application->getKey(),
                     'authority_code' => $route['approval_code'],
                     'entity_id' => $route['target_entity_id'],
-                ],
-                [
-                    'approval_routing_rule_id' => $route['approval_routing_rule_id'],
-                    'status' => 'pending',
-                    'note' => null,
-                    'reviewed_by_user_id' => null,
-                    'decided_at' => null,
-                ],
-            );
+                ]);
+            $targetEntity = filled($route['target_entity_id'])
+                ? $targetEntities->get((int) $route['target_entity_id'])
+                : null;
+            $resolvedAssignedUserId = $this->resolveAuthorityApprovalAssigneeId($targetEntity, $route['approval_code']);
+            $shouldRefreshAssignment = ! $approval->exists
+                || ! $this->entityHasActiveMember($targetEntity, (int) ($approval->assigned_user_id ?? 0));
+
+            $approval->forceFill([
+                'approval_routing_rule_id' => $route['approval_routing_rule_id'],
+                'status' => 'pending',
+                'note' => null,
+                'reviewed_by_user_id' => null,
+                'decided_at' => null,
+                'escalated_at' => null,
+                'assigned_user_id' => $shouldRefreshAssignment ? $resolvedAssignedUserId : $approval->assigned_user_id,
+                'assigned_at' => $shouldRefreshAssignment && $resolvedAssignedUserId
+                    ? now()
+                    : ($shouldRefreshAssignment ? null : $approval->assigned_at),
+            ])->save();
         }
+    }
+
+    private function resolveAuthorityApprovalAssigneeId(?Entity $entity, string $approvalCode): ?int
+    {
+        if (! $entity || $entity->group?->code !== 'authorities') {
+            return null;
+        }
+
+        $candidateUserId = $entity->authorityDelegatedUserIdFor($approvalCode);
+
+        return $this->entityHasActiveMember($entity, $candidateUserId) ? $candidateUserId : null;
+    }
+
+    private function entityHasActiveMember(?Entity $entity, ?int $userId): bool
+    {
+        if (! $entity || ! $userId) {
+            return false;
+        }
+
+        return $entity->users()
+            ->where('users.id', $userId)
+            ->where('users.status', 'active')
+            ->wherePivot('status', 'active')
+            ->exists();
     }
 
     private function requeueAfterApplicantClarification(FilmApplication $application): bool

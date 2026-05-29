@@ -248,6 +248,10 @@ class ApprovalRoutingRuleController extends Controller
             'draft.conditions.work_categories.*' => [Rule::in(['feature_film', 'documentary', 'series', 'commercial', 'tv_program', 'student_project'])],
             'draft.conditions.release_methods' => ['nullable', 'array'],
             'draft.conditions.release_methods.*' => [Rule::in(['cinema', 'television', 'streaming', 'festival', 'digital'])],
+            'draft.conditions.annex_flags' => ['nullable', 'array'],
+            'draft.conditions.annex_flags.*' => [Rule::in($this->annexFlagCodes())],
+            'draft.conditions.governorates' => ['nullable', 'array'],
+            'draft.conditions.governorates.*' => [Rule::in($this->governorateCodes())],
         ]);
 
         $applicationOptionsQuery = Application::query()
@@ -300,11 +304,7 @@ class ApprovalRoutingRuleController extends Controller
             'draftSimulationRoutes' => $draftSimulationRoutes,
             'draftSimulation' => $draftSimulation,
             'simulationChanges' => $simulationChanges,
-            'conditionOptions' => [
-                'project_nationalities' => ['jordanian', 'international'],
-                'work_categories' => ['feature_film', 'documentary', 'series', 'commercial', 'tv_program', 'student_project'],
-                'release_methods' => ['cinema', 'television', 'streaming', 'festival', 'digital'],
-            ],
+            'conditionOptions' => $this->conditionOptions(),
             'authorityEntities' => $this->authorityEntities(),
             'approvalCodes' => $this->approvalCodes(),
             'filters' => [
@@ -449,11 +449,7 @@ class ApprovalRoutingRuleController extends Controller
             'rule' => $rule,
             'authorityEntities' => $this->authorityEntities(),
             'approvalCodes' => $this->approvalCodes(),
-            'conditionOptions' => [
-                'project_nationalities' => ['jordanian', 'international'],
-                'work_categories' => ['feature_film', 'documentary', 'series', 'commercial', 'tv_program', 'student_project'],
-                'release_methods' => ['cinema', 'television', 'streaming', 'festival', 'digital'],
-            ],
+            'conditionOptions' => $this->conditionOptions(),
         ];
     }
 
@@ -489,13 +485,13 @@ class ApprovalRoutingRuleController extends Controller
             'conditions.work_categories.*' => [Rule::in(['feature_film', 'documentary', 'series', 'commercial', 'tv_program', 'student_project'])],
             'conditions.release_methods' => ['nullable', 'array'],
             'conditions.release_methods.*' => [Rule::in(['cinema', 'television', 'streaming', 'festival', 'digital'])],
+            'conditions.annex_flags' => ['nullable', 'array'],
+            'conditions.annex_flags.*' => [Rule::in($this->annexFlagCodes())],
+            'conditions.governorates' => ['nullable', 'array'],
+            'conditions.governorates.*' => [Rule::in($this->governorateCodes())],
         ]);
 
-        $conditions = [
-            'project_nationalities' => $this->normalizeConditionValues($validated['conditions']['project_nationalities'] ?? []),
-            'work_categories' => $this->normalizeConditionValues($validated['conditions']['work_categories'] ?? []),
-            'release_methods' => $this->normalizeConditionValues($validated['conditions']['release_methods'] ?? []),
-        ];
+        $conditions = $this->normalizedConditions((array) ($validated['conditions'] ?? []));
 
         $isActive = (bool) ($validated['is_active'] ?? false);
         $this->ensureNoDuplicateActiveRule(
@@ -534,7 +530,45 @@ class ApprovalRoutingRuleController extends Controller
      */
     private function approvalCodes(): array
     {
-        return ['public_security', 'digital_economy', 'environment', 'municipalities', 'airports', 'drones', 'heritage'];
+        return ['public_security', 'digital_economy', 'environment', 'municipalities', 'airports', 'drones', 'heritage', 'customs', 'military_border'];
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    private function conditionOptions(): array
+    {
+        return [
+            'project_nationalities' => ['jordanian', 'international'],
+            'work_categories' => ['feature_film', 'documentary', 'series', 'commercial', 'tv_program', 'student_project'],
+            'release_methods' => ['cinema', 'television', 'streaming', 'festival', 'digital'],
+            'annex_flags' => $this->annexFlagCodes(),
+            'governorates' => $this->governorateCodes(),
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function annexFlagCodes(): array
+    {
+        return [
+            'work_content_confirmed',
+            'filming_locations',
+            'safety_guidelines',
+            'imported_equipment',
+            'military_border_equipment',
+            'airport_filming',
+            'governmental_scenes',
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function governorateCodes(): array
+    {
+        return array_keys((array) __('app.scouting.governorate_options'));
     }
 
     /**
@@ -578,12 +612,8 @@ class ApprovalRoutingRuleController extends Controller
                 ->with(['entity', 'submittedBy'])
                 ->latest()
                 ->get()
-                ->filter(function (Application $application) use ($approvalCode, $conditions): bool {
-                    return in_array(
-                        $approvalCode,
-                        (array) data_get($application->metadata, 'requirements.required_approvals', []),
-                        true
-                    ) && $this->approvalRoutingService->matchesConditions($conditions, $application);
+                ->filter(function (Application $application) use ($conditions): bool {
+                    return $this->approvalRoutingService->matchesConditions($conditions, $application);
                 })
                 ->values();
         }
@@ -667,11 +697,7 @@ class ApprovalRoutingRuleController extends Controller
         return [
             'approval_code' => $approvalCode,
             'target_entity' => $targetEntity,
-            'conditions' => [
-                'project_nationalities' => $this->normalizeConditionValues((array) $request->input('conditions.project_nationalities', [])),
-                'work_categories' => $this->normalizeConditionValues((array) $request->input('conditions.work_categories', [])),
-                'release_methods' => $this->normalizeConditionValues((array) $request->input('conditions.release_methods', [])),
-            ],
+            'conditions' => $this->normalizedConditions((array) $request->input('conditions', [])),
             'current_rule_id' => $currentRuleId,
         ];
     }
@@ -701,11 +727,7 @@ class ApprovalRoutingRuleController extends Controller
             'target_entity_id' => $targetEntity?->getKey(),
             'target_entity_name' => $targetEntity?->displayName(),
             'priority' => max(1, (int) $request->input('draft.priority', 100)),
-            'conditions' => [
-                'project_nationalities' => $this->normalizeConditionValues((array) $request->input('draft.conditions.project_nationalities', [])),
-                'work_categories' => $this->normalizeConditionValues((array) $request->input('draft.conditions.work_categories', [])),
-                'release_methods' => $this->normalizeConditionValues((array) $request->input('draft.conditions.release_methods', [])),
-            ],
+            'conditions' => $this->normalizedConditions((array) $request->input('draft.conditions', [])),
         ];
     }
 
@@ -782,11 +804,11 @@ class ApprovalRoutingRuleController extends Controller
      */
     private function normalizedConditions(array $conditions): array
     {
-        return [
-            'project_nationalities' => $this->normalizeConditionValues((array) data_get($conditions, 'project_nationalities', [])),
-            'work_categories' => $this->normalizeConditionValues((array) data_get($conditions, 'work_categories', [])),
-            'release_methods' => $this->normalizeConditionValues((array) data_get($conditions, 'release_methods', [])),
-        ];
+        return collect(array_keys($this->conditionOptions()))
+            ->mapWithKeys(fn (string $key): array => [
+                $key => $this->normalizeConditionValues((array) data_get($conditions, $key, [])),
+            ])
+            ->all();
     }
 
     /**

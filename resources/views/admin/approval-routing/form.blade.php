@@ -70,6 +70,22 @@
                             @endforeach
                         </select>
                     </div>
+                    <div class="col-xl-6">
+                        <label for="conditions-annex-flags" class="form-label">{{ __('app.admin.approval_routing.annex_flags_condition') }}</label>
+                        <select id="conditions-annex-flags" name="conditions[annex_flags][]" class="form-select" multiple size="7">
+                            @foreach ($conditionOptions['annex_flags'] as $option)
+                                <option value="{{ $option }}" @selected(in_array($option, (array) data_get($ruleConditions, 'annex_flags', []), true))>{{ __('app.admin.approval_routing.annex_flag_options.'.$option) }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-xl-6">
+                        <label for="conditions-governorates" class="form-label">{{ __('app.admin.approval_routing.governorates_condition') }}</label>
+                        <select id="conditions-governorates" name="conditions[governorates][]" class="form-select" multiple size="7">
+                            @foreach ($conditionOptions['governorates'] as $option)
+                                <option value="{{ $option }}" @selected(in_array($option, (array) data_get($ruleConditions, 'governorates', []), true))>{{ __('app.scouting.governorate_options.'.$option) }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                     <div class="col-12">
                         <div class="text-muted small">{{ __('app.admin.approval_routing.conditions_help') }}</div>
                     </div>

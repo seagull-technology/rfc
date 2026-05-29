@@ -14,6 +14,7 @@ class NotificationPresenter
         return [
             'contact_center_message',
             'application_correspondence',
+            'official_letter_issued',
             'scouting_correspondence',
         ];
     }
@@ -64,7 +65,7 @@ class NotificationPresenter
                 'url' => route('notifications.redirect', $notification->getKey()),
                 ...$highlight,
             ],
-            'contact_center_message', 'application_correspondence', 'scouting_correspondence' => [
+            'contact_center_message', 'application_correspondence', 'official_letter_issued', 'scouting_correspondence' => [
                 'title' => (string) data_get($notification->data, 'title', __('app.contact_center.title')),
                 'body' => $body,
                 'url' => route('notifications.redirect', $notification->getKey()),

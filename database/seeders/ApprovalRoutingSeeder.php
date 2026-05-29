@@ -4,15 +4,16 @@ namespace Database\Seeders;
 
 use App\Models\ApprovalRoutingRule;
 use App\Models\Entity;
+use App\Support\ApplicationWorkflowRegistry;
 use Illuminate\Database\Seeder;
 
 class ApprovalRoutingSeeder extends Seeder
 {
     public function run(): void
     {
-        foreach ((array) config('application_workflow.approval_authority_map', []) as $approvalCode => $entityCodes) {
-            foreach ((array) $entityCodes as $entityCode) {
-                $entity = Entity::query()->where('code', $entityCode)->first();
+        foreach (array_keys(ApplicationWorkflowRegistry::approvalAuthorityMap()) as $approvalCode) {
+            foreach (ApplicationWorkflowRegistry::approvalAuthorityEntriesForApproval((string) $approvalCode) as $entry) {
+                $entity = Entity::query()->where('code', $entry['entity_code'])->first();
 
                 if (! $entity) {
                     continue;
@@ -23,24 +24,15 @@ class ApprovalRoutingSeeder extends Seeder
                         'request_type' => 'application',
                         'approval_code' => $approvalCode,
                         'target_entity_id' => $entity->getKey(),
-                        'name' => $this->defaultRuleName($approvalCode, $entity),
+                        'name' => $entry['name'],
                     ],
                     [
-                        'conditions' => [],
-                        'priority' => 100,
+                        'conditions' => $entry['conditions'],
+                        'priority' => $entry['priority'],
                         'is_active' => true,
                     ],
                 );
             }
         }
-    }
-
-    private function defaultRuleName(string $approvalCode, Entity $entity): string
-    {
-        return sprintf(
-            'Application %s -> %s',
-            str($approvalCode)->replace('_', ' ')->title()->toString(),
-            $entity->name_en ?: $entity->name_ar ?: $entity->code
-        );
     }
 }

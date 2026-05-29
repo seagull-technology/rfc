@@ -50,10 +50,24 @@
             padding-bottom: 0;
         }
 
+        .foreign-producer-profile-layout .card-dashboard .card-header {
+            padding-top: 1.5rem;
+        }
+
+        .foreign-producer-profile-layout .table-responsive.rounded.py-4 {
+            padding-top: 1.5rem !important;
+            padding-bottom: 1.5rem !important;
+        }
+
         .foreign-producer-profile-layout table.table thead th,
         .foreign-producer-profile-layout table.table tbody td {
             white-space: nowrap;
             vertical-align: middle;
+        }
+
+        .foreign-producer-profile-layout .foreign-producer-declaration {
+            font-size: 1rem;
+            line-height: 1.85;
         }
     </style>
 @endpush
@@ -107,7 +121,13 @@
                                             <td>{{ $application->submitted_at?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
                                             <td><span class="badge bg-{{ $statusClass($application->status) }}">{{ $application->localizedStatus() }}</span></td>
                                             <td>
-                                                <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ route('applications.show', $application) }}">
+                                                <a
+                                                    class="btn btn-sm btn-icon btn-info-subtle rounded"
+                                                    href="#"
+                                                    data-bs-toggle="offcanvas"
+                                                    data-bs-target="#foreign-producer-application-{{ $application->getKey() }}"
+                                                    aria-controls="foreign-producer-application-{{ $application->getKey() }}"
+                                                >
                                                     <span class="btn-inner"><i class="ph ph-eye fs-6"></i></span>
                                                 </a>
                                             </td>
@@ -159,7 +179,13 @@
                                             <td>{{ $scoutingRequest->submitted_at?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
                                             <td><span class="badge bg-{{ $statusClass($scoutingRequest->status) }}">{{ $scoutingRequest->localizedStatus() }}</span></td>
                                             <td>
-                                                <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ route('scouting-requests.show', $scoutingRequest) }}">
+                                                <a
+                                                    class="btn btn-sm btn-icon btn-info-subtle rounded"
+                                                    href="#"
+                                                    data-bs-toggle="offcanvas"
+                                                    data-bs-target="#foreign-producer-scouting-{{ $scoutingRequest->getKey() }}"
+                                                    aria-controls="foreign-producer-scouting-{{ $scoutingRequest->getKey() }}"
+                                                >
                                                     <span class="btn-inner"><i class="ph ph-eye fs-6"></i></span>
                                                 </a>
                                             </td>
@@ -177,4 +203,64 @@
             </div>
         </div>
     </div>
+
+    @foreach ($entityApplications as $application)
+        <div class="offcanvas offcanvas-end offcanvas-width-80" tabindex="-1" id="foreign-producer-application-{{ $application->getKey() }}">
+            <div class="offcanvas-header">
+                <h2 class="episode-playlist-title wp-heading-inline">
+                    <span class="position-relative">{{ __('app.profile.foreign_producer_declaration_title') }}</span>
+                </h2>
+                <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+            </div>
+            <div class="offcanvas-body">
+                <div class="foreign-producer-declaration">
+                    {{ __('app.profile.foreign_producer_declaration_body') }}
+                </div>
+                <div class="mt-4">
+                    <div class="fw-semibold">{{ __('app.applications.request_number') }}: {{ $application->code }}</div>
+                    <div class="text-muted">{{ $application->project_name }}</div>
+                </div>
+            </div>
+            <div class="offcanvas-footer border-top">
+                <div class="d-flex gap-3 p-3 justify-content-end">
+                    <a class="btn btn-danger d-flex align-items-center gap-2" href="{{ route('applications.show', $application) }}">
+                        <i class="ph ph-eye"></i>{{ __('app.profile.foreign_producer_open_request') }}
+                    </a>
+                    <button type="button" class="btn btn-outline-primary d-flex align-items-center gap-2" data-bs-dismiss="offcanvas" aria-label="Close">
+                        <i class="ph ph-caret-double-left"></i>{{ __('app.profile.foreign_producer_close') }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endforeach
+
+    @foreach ($scoutingRequests as $scoutingRequest)
+        <div class="offcanvas offcanvas-end offcanvas-width-80" tabindex="-1" id="foreign-producer-scouting-{{ $scoutingRequest->getKey() }}">
+            <div class="offcanvas-header">
+                <h2 class="episode-playlist-title wp-heading-inline">
+                    <span class="position-relative">{{ __('app.profile.foreign_producer_declaration_title') }}</span>
+                </h2>
+                <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+            </div>
+            <div class="offcanvas-body">
+                <div class="foreign-producer-declaration">
+                    {{ __('app.profile.foreign_producer_declaration_body') }}
+                </div>
+                <div class="mt-4">
+                    <div class="fw-semibold">{{ __('app.applications.request_number') }}: {{ $scoutingRequest->code }}</div>
+                    <div class="text-muted">{{ $scoutingRequest->project_name }}</div>
+                </div>
+            </div>
+            <div class="offcanvas-footer border-top">
+                <div class="d-flex gap-3 p-3 justify-content-end">
+                    <a class="btn btn-danger d-flex align-items-center gap-2" href="{{ route('scouting-requests.show', $scoutingRequest) }}">
+                        <i class="ph ph-eye"></i>{{ __('app.profile.foreign_producer_open_request') }}
+                    </a>
+                    <button type="button" class="btn btn-outline-primary d-flex align-items-center gap-2" data-bs-dismiss="offcanvas" aria-label="Close">
+                        <i class="ph ph-caret-double-left"></i>{{ __('app.profile.foreign_producer_close') }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endforeach
 @endsection

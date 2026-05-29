@@ -16,6 +16,11 @@
         'in_review' => 'warning',
         default => 'secondary',
     };
+    $canResolveAuthorityDecision = auth()->user()?->can('applications.approve') ?? false;
+    $authorityDecisionStatuses = $canResolveAuthorityDecision
+        ? ['pending', 'in_review', 'approved', 'rejected']
+        : ['pending', 'in_review'];
+    $approvalIsResolved = in_array($currentApproval->status, ['approved', 'rejected'], true);
 @endphp
 
 @extends('layouts.authority-dashboard', ['title' => $title])
@@ -36,14 +41,36 @@
             padding-bottom: 0;
         }
 
-        .authority-request-show-layout .profile-tab {
-            gap: 0.5rem;
-            flex-wrap: wrap;
-            justify-content: flex-end;
+        .authority-request-show-layout .profile-content .tab-pane {
+            transform: none !important;
         }
 
-        .authority-request-show-layout .profile-tab .nav-link {
+        .authority-request-show-layout .profile-tab,
+        .authority-hero-card .profile-tab {
+            flex-wrap: nowrap;
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
+        }
+
+        .authority-request-show-layout .profile-tab .nav-link,
+        .authority-hero-card .profile-tab .nav-link {
             white-space: nowrap;
+        }
+
+        .authority-request-show-layout .table-responsive {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        [dir="rtl"] .authority-request-show-layout .table-responsive {
+            direction: ltr;
+        }
+
+        [dir="rtl"] .authority-request-show-layout .table-responsive > .table {
+            direction: rtl;
         }
 
         .authority-request-show-layout .documents-table {
@@ -82,6 +109,19 @@
             background: var(--bs-warning-bg-subtle);
         }
 
+        .authority-request-show-layout .approval-sla-banner {
+            border: 1px solid rgba(17, 24, 39, 0.08);
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .authority-request-show-layout .approval-sla-banner.overdue {
+            border-color: var(--bs-danger-border-subtle);
+            background: var(--bs-danger-bg-subtle);
+        }
+
         @media (max-width: 991.98px) {
             .authority-request-show-layout .authority-hero-card {
                 margin: 0 .75rem 1rem;
@@ -115,6 +155,9 @@
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" data-bs-toggle="tab" href="#authority-documents" role="tab" aria-selected="false">{{ __('app.documents.tab') }}</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#authority-official-letters" role="tab" aria-selected="false">{{ __('app.official_letters.tab') }}</a>
                     </li>
                 </ul>
             </div>
@@ -252,6 +295,9 @@
                                             <span class="fw-600 d-block mb-2">{{ __('app.applications.supporting_notes') }}</span>
                                             <div>{{ data_get($requirements, 'supporting_notes', __('app.applications.annex_empty_state')) }}</div>
                                         </div>
+                                        <div class="border-top mt-4 pt-4">
+                                            @include('applications.partials.annex-summary', ['application' => $application])
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -319,6 +365,10 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <div id="authority-official-letters" class="tab-pane fade">
+                                @include('authority.applications.partials.official-letters', ['officialLetters' => $officialLetters])
+                            </div>
                         </div>
                     </div>
 
@@ -347,6 +397,33 @@
                                         </div>
                                     </div>
                                 @endif
+                                <div class="approval-sla-banner {{ ($approvalSlaSignal['is_overdue'] ?? false) ? 'overdue' : '' }}">
+                                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+                                        <div>
+                                            @if ($approvalSlaSignal['label'] ?? null)
+                                                <span class="badge bg-{{ ($approvalSlaSignal['is_overdue'] ?? false) ? 'danger' : 'secondary' }}">{{ $approvalSlaSignal['label'] }}</span>
+                                            @else
+                                                <span class="badge bg-light text-dark">{{ __('app.admin.authority_escalations.unconfigured_badge') }}</span>
+                                            @endif
+                                            @if ($approvalSlaSignal['is_escalated'] ?? false)
+                                                <span class="badge bg-dark">{{ __('app.admin.authority_escalations.escalated_badge') }}</span>
+                                            @endif
+                                            <div class="small mt-2">{{ __('app.authority.applications.sla_banner_summary') }}</div>
+                                        </div>
+                                        @if ($approvalSlaSignal['due_at'] ?? null)
+                                            <div>
+                                                <div class="small text-muted">{{ __('app.admin.authority_escalations.due_at_label', ['date' => $approvalSlaSignal['due_at']->format('Y-m-d h:i A')]) }}</div>
+                                                <div
+                                                    class="small text-muted mt-1"
+                                                    data-sla-countdown
+                                                    data-due-at="{{ $approvalSlaSignal['due_at']->toIso8601String() }}"
+                                                    data-remaining-template="{{ __('app.admin.authority_escalations.countdown_remaining') }}"
+                                                    data-overdue-template="{{ __('app.admin.authority_escalations.countdown_overdue') }}"
+                                                ></div>
+                                            </div>
+                                        @endif
+                                    </div>
+                                </div>
                                 <div class="mb-3">
                                     <span class="badge bg-{{ $decisionBadgeClass }}">{{ $currentApproval->localizedStatus() }}</span>
                                     @if ($currentApproval->decided_at)
@@ -356,24 +433,28 @@
                                 @if ($currentApproval->note)
                                     <div class="mb-3">{{ $currentApproval->note }}</div>
                                 @endif
-                                <form method="POST" action="{{ route('authority.applications.approval.update', $application) }}" class="row g-3">
-                                    @csrf
-                                    <div class="col-12">
-                                        <label class="form-label" for="status">{{ __('app.applications.status') }}</label>
-                                        <select id="status" name="status" class="form-control select2-basic-single" required>
-                                            @foreach (['pending', 'in_review', 'approved', 'rejected'] as $status)
-                                                <option value="{{ $status }}" @selected($currentApproval->status === $status)>{{ __('app.approvals.statuses.'.$status) }}</option>
-                                            @endforeach
-                                        </select>
-                                    </div>
-                                    <div class="col-12">
-                                        <label class="form-label" for="note">{{ __('app.authority.applications.approval_note') }}</label>
-                                        <textarea id="note" name="note" rows="6" class="form-control">{{ old('note', $currentApproval->note) }}</textarea>
-                                    </div>
-                                    <div class="col-12">
-                                        <button class="btn btn-danger" type="submit">{{ __('app.authority.applications.save_decision') }}</button>
-                                    </div>
-                                </form>
+                                @if (! $canResolveAuthorityDecision && $approvalIsResolved)
+                                    <div class="alert alert-secondary mb-0">{{ __('app.authority.applications.reviewer_decision_locked') }}</div>
+                                @else
+                                    <form method="POST" action="{{ route('authority.applications.approval.update', $application) }}" class="row g-3">
+                                        @csrf
+                                        <div class="col-12">
+                                            <label class="form-label" for="status">{{ __('app.applications.status') }}</label>
+                                            <select id="status" name="status" class="form-control select2-basic-single" required>
+                                                @foreach ($authorityDecisionStatuses as $status)
+                                                    <option value="{{ $status }}" @selected($currentApproval->status === $status)>{{ __('app.approvals.statuses.'.$status) }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label" for="note">{{ __('app.authority.applications.approval_note') }}</label>
+                                            <textarea id="note" name="note" rows="6" class="form-control">{{ old('note', $currentApproval->note) }}</textarea>
+                                        </div>
+                                        <div class="col-12">
+                                            <button class="btn btn-danger" type="submit">{{ __('app.authority.applications.save_decision') }}</button>
+                                        </div>
+                                    </form>
+                                @endif
                             </div>
                         </div>
 
@@ -438,3 +519,7 @@
         </div>
     </div>
 @endsection
+
+@push('scripts')
+    @include('partials.sla-countdown-script')
+@endpush

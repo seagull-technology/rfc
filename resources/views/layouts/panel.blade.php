@@ -249,7 +249,7 @@
             @endif
 
             @if ($errors->any())
-                <div class="alert" style="background: #fdecec; color: #8d1f1f;">{{ $errors->first() }}</div>
+                <div class="alert" style="background: #eee8e7; color: #5e1d19;">{{ $errors->first() }}</div>
             @endif
 
             @yield('content')

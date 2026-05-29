@@ -1,5 +1,4 @@
 @php
-    $isArabic = app()->getLocale() === 'ar';
     $metricPercent = static fn (int $value, int $total): int => $total > 0 ? (int) round(($value / $total) * 100) : 0;
     $statusClass = static fn (?string $status): string => match ($status) {
         'draft' => 'secondary',
@@ -13,21 +12,21 @@
 
     $productionMetrics = [
         [
-            'label' => $isArabic ? 'عدد طلبات الانتاج' : 'Production requests',
+            'label' => __('app.dashboard.metrics.production_requests'),
             'value' => $applicationStats['total'],
             'percent' => $metricPercent($applicationStats['total'], max($applicationStats['total'], 1)),
             'card_color' => 'danger',
             'progress_color' => 'danger',
         ],
         [
-            'label' => $isArabic ? 'عدد طلبات الانتاج قيد الدراسة' : 'Production requests in review',
+            'label' => __('app.dashboard.metrics.production_requests_in_review'),
             'value' => $applicationStats['active_reviews'],
             'percent' => $metricPercent($applicationStats['active_reviews'], max($applicationStats['total'], 1)),
             'card_color' => 'warning',
             'progress_color' => 'warning',
         ],
         [
-            'label' => $isArabic ? 'عدد طلبات الانتاج الموافق عليها' : 'Approved production requests',
+            'label' => __('app.dashboard.metrics.production_requests_approved'),
             'value' => $applicationStats['approved'],
             'percent' => $metricPercent($applicationStats['approved'], max($applicationStats['total'], 1)),
             'card_color' => 'success',
@@ -37,19 +36,19 @@
 
     $inquiryMetrics = [
         [
-            'label' => $isArabic ? 'عدد طلبات الاستقصاء' : 'Scouting requests',
+            'label' => __('app.dashboard.metrics.scouting_requests'),
             'value' => $scoutingStats['total'],
             'text_color' => 'danger',
             'card_color' => 'danger-subtle',
         ],
         [
-            'label' => $isArabic ? 'عدد طلبات الاستقصاء قيد الدراسة' : 'Scouting requests in review',
+            'label' => __('app.dashboard.metrics.scouting_requests_in_review'),
             'value' => $scoutingStats['active_reviews'],
             'text_color' => 'warning',
             'card_color' => 'warning-subtle',
         ],
         [
-            'label' => $isArabic ? 'عدد طلبات الاستقصاء الموافق عليها' : 'Approved scouting requests',
+            'label' => __('app.dashboard.metrics.scouting_requests_approved'),
             'value' => $scoutingStats['approved'],
             'text_color' => 'success',
             'card_color' => 'success-subtle',
@@ -70,7 +69,7 @@
         .organization-dashboard-layout .portal-organization-hero {
             border: 0;
             border-radius: .5rem;
-            margin-bottom: 0;
+            margin-bottom: 1.5rem;
             overflow: hidden;
         }
 
@@ -91,6 +90,16 @@
 
         .organization-dashboard-layout .card {
             margin-bottom: 1.5rem;
+        }
+
+        .organization-dashboard-layout .dashboard-metric-card .card-body {
+            min-height: 205px;
+        }
+
+        .organization-dashboard-layout .dashboard-scout-card .card-body {
+            min-height: 132px;
+            display: flex;
+            align-items: center;
         }
 
         .organization-dashboard-layout .card-header {
@@ -115,6 +124,17 @@
         .organization-dashboard-layout table.table tbody td {
             white-space: nowrap;
             vertical-align: middle;
+        }
+
+        .organization-dashboard-layout .dashboard-metric-card img,
+        .organization-dashboard-layout .dashboard-scout-card img {
+            width: 64px;
+            height: 64px;
+            object-fit: contain;
+        }
+
+        .organization-dashboard-layout .dashboard-scout-card {
+            border-radius: .5rem;
         }
 
         @media (max-width: 767.98px) {
@@ -149,7 +169,7 @@
     <div class="row">
         @foreach ($productionMetrics as $metric)
             <div class="col-lg-4 col-md-6">
-                <div class="card">
+                <div class="card dashboard-metric-card">
                     <div class="card-body">
                         <div class="text-center">{{ $metric['label'] }}</div>
                         <div class="d-flex align-items-center justify-content-between mt-3">
@@ -188,10 +208,10 @@
                                 <thead>
                                     <tr class="ligth">
                                         <th>#</th>
-                                        <th>{{ $isArabic ? 'رقم الطلب' : 'Request number' }}</th>
-                                        <th>{{ $isArabic ? 'اسم المشروع' : 'Project name' }}</th>
-                                        <th>{{ $isArabic ? 'اسم مقدم الطلب' : 'Applicant name' }}</th>
-                                        <th>{{ $isArabic ? 'تاريخ تقديم الطلب' : 'Submission date' }}</th>
+                                        <th>{{ __('app.dashboard.tables.request_number') }}</th>
+                                        <th>{{ __('app.applications.project_name') }}</th>
+                                        <th>{{ __('app.dashboard.tables.applicant_name') }}</th>
+                                        <th>{{ __('app.dashboard.tables.submission_date') }}</th>
                                         <th>{{ __('app.applications.status') }}</th>
                                         <th>{{ __('app.applications.actions') }}</th>
                                     </tr>
@@ -230,7 +250,7 @@
     <div class="row">
         @foreach ($inquiryMetrics as $metric)
             <div class="col-lg-4 col-md-6">
-                <div class="card bg-{{ $metric['card_color'] }} rounded p-3">
+                <div class="card dashboard-scout-card bg-{{ $metric['card_color'] }} rounded p-3">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between">
                             <div>
@@ -252,9 +272,9 @@
             <div class="card card-dashboard">
                 <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4">
                     <h2 class="episode-playlist-title wp-heading-inline">
-                        <span class="position-relative">{{ $isArabic ? 'طلبات استقصاء' : 'Scouting requests' }}</span>
+                        <span class="position-relative">{{ __('app.dashboard.sections.scouting_requests') }}</span>
                     </h2>
-                    <a class="btn btn-danger" href="{{ route('scouting-requests.create') }}"><i class="fa-solid fa-plus me-2"></i>{{ $isArabic ? 'تقديم طلب استقصاء' : 'Submit scouting request' }}</a>
+                    <a class="btn btn-danger" href="{{ route('scouting-requests.create') }}"><i class="fa-solid fa-plus me-2"></i>{{ __('app.scouting.create_action') }}</a>
                 </div>
                 <div class="card-body pt-0">
                     <div class="mt-4 table-responsive">
@@ -263,10 +283,10 @@
                                 <thead>
                                     <tr class="ligth">
                                         <th>#</th>
-                                        <th>{{ $isArabic ? 'رقم الطلب' : 'Request number' }}</th>
-                                        <th>{{ $isArabic ? 'اسم المشروع' : 'Project name' }}</th>
-                                        <th>{{ $isArabic ? 'اسم مقدم الطلب' : 'Applicant name' }}</th>
-                                        <th>{{ $isArabic ? 'تاريخ تقديم الطلب' : 'Submission date' }}</th>
+                                        <th>{{ __('app.dashboard.tables.request_number') }}</th>
+                                        <th>{{ __('app.applications.project_name') }}</th>
+                                        <th>{{ __('app.dashboard.tables.applicant_name') }}</th>
+                                        <th>{{ __('app.dashboard.tables.submission_date') }}</th>
                                         <th>{{ __('app.applications.status') }}</th>
                                         <th>{{ __('app.applications.actions') }}</th>
                                     </tr>
@@ -290,7 +310,7 @@
                                         </tr>
                                     @empty
                                         <tr>
-                                            <td colspan="7">{{ $isArabic ? 'لا توجد طلبات استقصاء متاحة حالياً.' : 'There are no scouting requests available yet.' }}</td>
+                                            <td colspan="7">{{ __('app.scouting.empty_state') }}</td>
                                         </tr>
                                     @endforelse
                                 </tbody>

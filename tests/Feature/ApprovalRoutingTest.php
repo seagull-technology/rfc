@@ -8,6 +8,7 @@ use App\Models\ApprovalRoutingRuleAudit;
 use App\Models\Entity;
 use App\Models\Group;
 use App\Models\User;
+use App\Support\ApplicationWorkflowRegistry;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -38,6 +39,8 @@ class ApprovalRoutingTest extends TestCase
                 'project_nationalities' => ['jordanian'],
                 'work_categories' => ['feature_film'],
                 'release_methods' => ['cinema'],
+                'annex_flags' => ['airport_filming'],
+                'governorates' => ['aqaba'],
             ],
         ]);
 
@@ -56,6 +59,13 @@ class ApprovalRoutingTest extends TestCase
             'action' => 'created',
             'changed_by_user_id' => $admin->getKey(),
         ]);
+        $this->assertSame([
+            'project_nationalities' => ['jordanian'],
+            'work_categories' => ['feature_film'],
+            'release_methods' => ['cinema'],
+            'annex_flags' => ['airport_filming'],
+            'governorates' => ['aqaba'],
+        ], ApprovalRoutingRule::query()->where('name', 'Public security to GAM')->firstOrFail()->conditions);
     }
 
     public function test_application_submission_uses_dynamic_target_entity_for_authority_approval(): void
@@ -72,6 +82,11 @@ class ApprovalRoutingTest extends TestCase
             'email' => 'psd-reviewer@example.com',
             'username' => 'psd-reviewer',
         ]);
+
+        ApprovalRoutingRule::query()
+            ->where('request_type', 'application')
+            ->where('approval_code', '!=', 'public_security')
+            ->update(['is_active' => false]);
 
         ApprovalRoutingRule::query()
             ->where('request_type', 'application')
@@ -121,6 +136,179 @@ class ApprovalRoutingTest extends TestCase
         $this->assertFalse($defaultAuthorityUser->fresh()->unreadNotifications->contains(
             fn ($notification) => data_get($notification->data, 'type_key') === 'authority_approval_requested'
         ));
+    }
+
+    public function test_application_submission_can_route_authority_approval_from_annex_conditions(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$applicant] = $this->createApplicantContext();
+        $targetEntity = Entity::query()->where('code', 'ministry-of-interior')->firstOrFail();
+
+        ApprovalRoutingRule::query()
+            ->where('request_type', 'application')
+            ->update(['is_active' => false]);
+
+        $rule = ApprovalRoutingRule::query()->create([
+            'name' => 'Airport annex route',
+            'request_type' => 'application',
+            'approval_code' => 'airports',
+            'target_entity_id' => $targetEntity->getKey(),
+            'conditions' => [
+                'annex_flags' => ['airport_filming'],
+                'governorates' => ['aqaba'],
+            ],
+            'priority' => 10,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
+            'project_name' => 'Airport Annex Shoot',
+            'filming_locations' => [[
+                'governorate' => 'aqaba',
+                'location_name' => 'King Hussein International Airport',
+                'location_type' => 'airport terminal',
+                'start_date' => '2026-05-02',
+                'end_date' => '2026-05-03',
+                'notes' => 'Exterior and terminal filming.',
+            ]],
+            'airport_filming_airport_name' => 'King Hussein International Airport',
+            'airport_filming_area' => 'Terminal and apron',
+            'airport_filming_date' => '2026-05-02',
+            'airport_filming_crew_count' => 18,
+            'airport_filming_notes' => 'Requires airport coordination.',
+        ]));
+
+        $application = Application::query()->where('project_name', 'Airport Annex Shoot')->firstOrFail();
+
+        $response = $this->actingAs($applicant)->post(route('applications.submit', $application));
+
+        $response->assertRedirect(route('applications.show', $application));
+
+        $this->assertDatabaseHas('application_authority_approvals', [
+            'application_id' => $application->getKey(),
+            'authority_code' => 'airports',
+            'entity_id' => $targetEntity->getKey(),
+            'approval_routing_rule_id' => $rule->getKey(),
+            'status' => 'pending',
+        ]);
+
+        $this->assertSame(['airports'], data_get($application->fresh()->metadata, 'requirements.required_approvals'));
+
+        $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
+            'project_name' => 'Non Airport Annex Shoot',
+            'filming_locations' => [[
+                'governorate' => 'amman',
+                'location_name' => 'Downtown Amman',
+                'location_type' => 'street',
+                'start_date' => '2026-05-04',
+                'end_date' => '2026-05-05',
+                'notes' => 'No airport activity.',
+            ]],
+        ]));
+
+        $nonMatchingApplication = Application::query()->where('project_name', 'Non Airport Annex Shoot')->firstOrFail();
+
+        $this->actingAs($applicant)->post(route('applications.submit', $nonMatchingApplication));
+
+        $this->assertDatabaseMissing('application_authority_approvals', [
+            'application_id' => $nonMatchingApplication->getKey(),
+            'authority_code' => 'airports',
+            'entity_id' => $targetEntity->getKey(),
+        ]);
+        $this->assertSame([], data_get($nonMatchingApplication->fresh()->metadata, 'requirements.required_approvals'));
+    }
+
+    public function test_access_control_seed_creates_default_annex_conditional_routing_rules(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $customsEntity = Entity::query()->where('code', 'jordan-customs')->firstOrFail();
+        $militaryEntity = Entity::query()->where('code', 'military-media-directorate')->firstOrFail();
+
+        $customsRule = ApprovalRoutingRule::query()
+            ->where('approval_code', 'customs')
+            ->where('target_entity_id', $customsEntity->getKey())
+            ->firstOrFail();
+        $militaryRule = ApprovalRoutingRule::query()
+            ->where('approval_code', 'military_border')
+            ->where('target_entity_id', $militaryEntity->getKey())
+            ->firstOrFail();
+
+        $this->assertTrue($customsRule->is_active);
+        $this->assertSame(80, (int) $customsRule->priority);
+        $this->assertSame(['annex_flags' => ['imported_equipment']], $customsRule->conditions);
+        $this->assertSame(['annex_flags' => ['military_border_equipment']], $militaryRule->conditions);
+        $this->assertSame(['jordan-customs'], ApplicationWorkflowRegistry::entityCodesForApproval('customs'));
+        $this->assertContains('military_border', ApplicationWorkflowRegistry::approvalCodesForEntity($militaryEntity));
+    }
+
+    public function test_application_workflow_approval_map_uses_one_structured_shape(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+
+        foreach (ApplicationWorkflowRegistry::approvalAuthorityMap() as $approvalCode => $entries) {
+            $this->assertIsArray($entries, "Approval {$approvalCode} must be a list of structured entries.");
+
+            foreach ($entries as $entry) {
+                $this->assertIsArray($entry, "Approval {$approvalCode} contains a non-structured mapping entry.");
+                $this->assertArrayHasKey('entity_code', $entry);
+                $this->assertArrayHasKey('name', $entry);
+                $this->assertArrayHasKey('conditions', $entry);
+                $this->assertArrayHasKey('priority', $entry);
+                $this->assertIsString($entry['entity_code']);
+                $this->assertNotSame('', trim($entry['entity_code']));
+                $this->assertIsString($entry['name']);
+                $this->assertNotSame('', trim($entry['name']));
+                $this->assertIsArray($entry['conditions']);
+                $this->assertIsInt($entry['priority']);
+            }
+        }
+    }
+
+    public function test_seeded_customs_rule_routes_imported_equipment_annex(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$applicant] = $this->createApplicantContext();
+        $customsEntity = Entity::query()->where('code', 'jordan-customs')->firstOrFail();
+        $customsRule = ApprovalRoutingRule::query()
+            ->where('approval_code', 'customs')
+            ->where('target_entity_id', $customsEntity->getKey())
+            ->firstOrFail();
+
+        ApprovalRoutingRule::query()
+            ->where('request_type', 'application')
+            ->where('approval_code', '!=', 'customs')
+            ->update(['is_active' => false]);
+
+        $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
+            'project_name' => 'Customs Equipment Shoot',
+            'imported_equipment' => [[
+                'item' => 'Stabilized camera crane',
+                'serial_number' => 'CRANE-1001',
+                'quantity' => 1,
+                'origin_country' => 'Germany',
+                'entry_point' => 'Queen Alia Airport',
+                'arrival_date' => '2026-05-01',
+            ]],
+        ]));
+
+        $application = Application::query()->where('project_name', 'Customs Equipment Shoot')->firstOrFail();
+
+        $this->actingAs($applicant)->post(route('applications.submit', $application));
+
+        $this->assertDatabaseHas('application_authority_approvals', [
+            'application_id' => $application->getKey(),
+            'authority_code' => 'customs',
+            'entity_id' => $customsEntity->getKey(),
+            'approval_routing_rule_id' => $customsRule->getKey(),
+            'status' => 'pending',
+        ]);
+        $this->assertSame(['customs'], data_get($application->fresh()->metadata, 'requirements.required_approvals'));
     }
 
     public function test_targeted_authority_can_open_inbox_for_non_default_routing_entity(): void

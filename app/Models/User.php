@@ -6,6 +6,7 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -75,12 +76,49 @@ class User extends Authenticatable
             ->withTimestamps();
     }
 
+    public function roleAssignmentAudits(): HasMany
+    {
+        return $this->hasMany(UserRoleAssignmentAudit::class)->latest();
+    }
+
+    public function roleAssignmentChangesMade(): HasMany
+    {
+        return $this->hasMany(UserRoleAssignmentAudit::class, 'changed_by_user_id')->latest();
+    }
+
     public function primaryEntity(): ?Entity
     {
+        $contextEntityId = app(PermissionRegistrar::class)->getPermissionsTeamId();
+
+        if ($contextEntityId !== null) {
+            $contextEntity = $this->entities()
+                ->wherePivot('status', 'active')
+                ->whereKey($contextEntityId)
+                ->first();
+
+            if ($contextEntity) {
+                return $contextEntity;
+            }
+        }
+
         return $this->entities()
+            ->wherePivot('status', 'active')
             ->orderByDesc('entity_user.is_primary')
             ->orderBy('entities.name_en')
             ->first();
+    }
+
+    /**
+     * @return Collection<int, Entity>
+     */
+    public function availableEntities(): Collection
+    {
+        return $this->entities()
+            ->with('group')
+            ->wherePivot('status', 'active')
+            ->orderByDesc('entity_user.is_primary')
+            ->orderBy('entities.name_en')
+            ->get();
     }
 
     public function displayName(): string

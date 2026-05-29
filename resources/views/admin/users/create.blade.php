@@ -65,7 +65,7 @@
                         </div>
                         <div class="col-md-6">
                             <label for="entity_id" class="form-label">{{ __('app.admin.users.initial_entity') }}</label>
-                            <select id="entity_id" name="entity_id" class="form-select" required>
+                            <select id="entity_id" name="entity_id" class="form-select select2-basic-single" required>
                                 <option value="">{{ __('app.admin.select_placeholder') }}</option>
                                 @foreach ($entities as $entity)
                                     <option value="{{ $entity->id }}" data-roles="{{ $entity->group->roles->pluck('name')->join(',') }}" @selected(old('entity_id') == $entity->id)>
@@ -75,9 +75,8 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label for="role" class="form-label">{{ __('app.admin.users.initial_role') }}</label>
-                            <select id="role" name="role" class="form-select" required>
-                                <option value="">{{ __('app.admin.select_entity_first') }}</option>
+                            <label for="roles" class="form-label">{{ __('app.admin.users.initial_roles') }}</label>
+                            <select id="roles" name="roles[]" class="form-select select2-basic-multiple" multiple required disabled data-placeholder="{{ __('app.admin.select_placeholder') }}">
                             </select>
                         </div>
                         <div class="col-12">
@@ -98,37 +97,5 @@
 @endsection
 
 @push('scripts')
-    <script>
-        (() => {
-            const entitySelect = document.getElementById('entity_id');
-            const roleSelect = document.getElementById('role');
-            const selectedRole = @json(old('role'));
-            const labels = @json($entities->flatMap(fn ($entity) => $entity->group->roles->pluck('name'))->unique()->mapWithKeys(fn ($roleName) => [$roleName => __('app.roles.'.$roleName)]));
-
-            const populateRoles = () => {
-                const selectedOption = entitySelect.options[entitySelect.selectedIndex];
-                const roles = (selectedOption?.dataset.roles || '').split(',').filter(Boolean);
-
-                roleSelect.innerHTML = '';
-
-                if (!roles.length) {
-                    roleSelect.innerHTML = `<option value="">{{ __('app.admin.select_entity_first') }}</option>`;
-                    return;
-                }
-
-                roleSelect.innerHTML = `<option value="">{{ __('app.admin.select_placeholder') }}</option>`;
-
-                roles.forEach((roleName) => {
-                    const option = document.createElement('option');
-                    option.value = roleName;
-                    option.textContent = labels[roleName] || roleName;
-                    option.selected = selectedRole === roleName;
-                    roleSelect.appendChild(option);
-                });
-            };
-
-            entitySelect.addEventListener('change', populateRoles);
-            populateRoles();
-        })();
-    </script>
+    @include('admin.users.partials.role-picker-script', ['entities' => $entities])
 @endpush

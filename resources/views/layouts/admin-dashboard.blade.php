@@ -4,6 +4,7 @@
     $layoutNotificationCount = $layoutUnreadNotifications->count();
     $layoutNotificationItems = $notificationItems ?? ($currentAdmin?->notifications()->latest()->take(5)->get() ?? collect());
     $currentAdminEntity = $currentAdmin?->primaryEntity();
+    $adminAvailableEntities = $currentAdmin?->availableEntities() ?? collect();
     $layoutProfileEntityName = $profileEntityName ?? $currentAdmin?->primaryEntity()?->displayName() ?? __('app.dashboard.no_entity');
     $layoutProfileEmail = $profileEmail ?? $currentAdmin?->email ?? '';
     $layoutSidebarCounters = $layoutSidebarCounters ?? ['applications' => 0, 'scouting_requests' => 0, 'contact_center' => 0];
@@ -174,6 +175,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.authority-escalations.*') ? 'active' : '' }}" href="{{ route('admin.authority-escalations.index') }}">
+                                <i class="icon"><i class="ph ph-timer fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.authority_escalations') }}</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link {{ request()->routeIs('admin.integrations.*') ? 'active' : '' }}" href="{{ route('admin.integrations.index') }}">
                                 <i class="icon"><i class="ph ph-plugs-connected fs-4"></i></i>
                                 <span class="item-name">{{ __('app.admin.navigation.integrations') }}</span>
@@ -296,6 +303,24 @@
                                     @foreach ($adminProfileLinks as $adminProfileLink)
                                         <li><a class="dropdown-item" href="{{ $adminProfileLink['url'] }}">{{ $adminProfileLink['label'] }}</a></li>
                                     @endforeach
+                                    @if ($adminAvailableEntities->count() > 1)
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><h6 class="dropdown-header">{{ __('app.portal.switch_entity_title') }}</h6></li>
+                                        @foreach ($adminAvailableEntities as $adminEntityOption)
+                                            <li>
+                                                <form method="POST" action="{{ route('context.entity.update') }}">
+                                                    @csrf
+                                                    <input type="hidden" name="entity_id" value="{{ $adminEntityOption->getKey() }}">
+                                                    <button type="submit" class="dropdown-item d-flex justify-content-between align-items-center">
+                                                        <span>{{ $adminEntityOption->displayName() }}</span>
+                                                        @if ((int) $adminEntityOption->getKey() === (int) $currentAdminEntity?->getKey())
+                                                            <span class="badge bg-primary">{{ __('app.portal.current_entity_badge') }}</span>
+                                                        @endif
+                                                    </button>
+                                                </form>
+                                            </li>
+                                        @endforeach
+                                    @endif
                                     <li><hr class="dropdown-divider"></li>
                                     <li>
                                         <form method="POST" action="{{ route('logout') }}">

@@ -4,6 +4,8 @@
             'project_nationalities' => __('app.applications.project_nationalities.'.$value),
             'work_categories' => __('app.applications.work_categories.'.$value),
             'release_methods' => __('app.applications.release_methods.'.$value),
+            'annex_flags' => __('app.admin.approval_routing.annex_flag_options.'.$value),
+            'governorates' => __('app.scouting.governorate_options.'.$value),
             default => $value,
         };
     };

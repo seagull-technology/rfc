@@ -13,6 +13,13 @@
         ->mapWithKeys(fn (string $type): array => [
             $type => $entities->filter(fn ($entity) => $entity->registration_type === $type)->values(),
         ]);
+    $internalGroups = $groups
+        ->filter(fn ($group) => in_array($group->code, ['authorities', 'rfc', 'admins'], true))
+        ->values();
+    $internalEntitiesByGroup = $internalGroups
+        ->mapWithKeys(fn ($group): array => [
+            $group->code => $entities->filter(fn ($entity) => $entity->group?->code === $group->code)->values(),
+        ]);
 @endphp
 
 @extends('layouts.admin-dashboard', ['title' => $title])
@@ -39,6 +46,11 @@
 
         .admin-entities-index-layout .nav-pills .nav-link {
             white-space: nowrap;
+        }
+
+        .admin-entities-index-layout .section-title {
+            font-size: 1.1rem;
+            font-weight: 600;
         }
 
         .admin-entities-index-layout table thead th,
@@ -182,11 +194,17 @@
         @endif
 
         <div class="col-12">
+            <div class="d-flex justify-content-between align-items-end gap-3 flex-wrap mb-3">
+                <div>
+                    <h3 class="section-title mb-1">{{ __('app.admin.entities.registration_directory_title') }}</h3>
+                    <div class="text-muted">{{ __('app.admin.entities.registration_directory_intro') }}</div>
+                </div>
+            </div>
             <ul class="nav nav-pills mb-0 nav-fill" id="pills-tab-producers" role="tablist">
                 @foreach (['student', 'company', 'ngo', 'school'] as $type)
                     <li class="nav-item">
                         <a class="nav-link p-3 fontSize20 {{ $loop->first ? 'active' : '' }}" data-bs-toggle="pill" href="#{{ $type }}">
-                            {{ __('app.registration_types.'.$type) }}
+                            {{ __('app.registration_types.'.$type) }} ({{ $typedEntities[$type]->count() }})
                         </a>
                     </li>
                 @endforeach
@@ -240,6 +258,87 @@
                                                 @empty
                                                     <tr>
                                                         <td colspan="6">{{ __('app.admin.entities.review_queue_empty') }}</td>
+                                                    </tr>
+                                                @endforelse
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-end gap-3 flex-wrap mb-3">
+                <div>
+                    <h3 class="section-title mb-1">{{ __('app.admin.entities.internal_directory_title') }}</h3>
+                    <div class="text-muted">{{ __('app.admin.entities.internal_directory_intro') }}</div>
+                </div>
+            </div>
+            <ul class="nav nav-pills mb-0 nav-fill" id="pills-tab-internal-entities" role="tablist">
+                @foreach ($internalGroups as $group)
+                    <li class="nav-item">
+                        <a class="nav-link p-3 fontSize20 {{ $loop->first ? 'active' : '' }}" data-bs-toggle="pill" href="#internal-{{ $group->code }}">
+                            {{ $group->displayName() }} ({{ $internalEntitiesByGroup[$group->code]->count() }})
+                        </a>
+                    </li>
+                @endforeach
+            </ul>
+            <div class="tab-content" id="pills-tabContent-internal-entities">
+                @foreach ($internalGroups as $group)
+                    @php($rows = $internalEntitiesByGroup[$group->code])
+                    <div class="tab-pane fade {{ $loop->first ? 'show active' : '' }} border p-5" id="internal-{{ $group->code }}" role="tabpanel">
+                        <div class="row">
+                            <div class="col-sm-12">
+                                <div class="streamit-wraper-table">
+                                    <div class="table-view table-space">
+                                        <table id="entities-table-group-{{ $group->code }}" class="data-tables table custom-table data-table-one custom-table-height" role="grid" data-toggle="data-table">
+                                            <thead>
+                                                <tr class="ligth">
+                                                    <th>#</th>
+                                                    <th>{{ __('app.admin.entities.code') }}</th>
+                                                    <th>{{ __('app.admin.entities.name') }}</th>
+                                                    <th>{{ __('app.admin.entities.owner') }}</th>
+                                                    <th>{{ __('app.admin.entities.members_count') }}</th>
+                                                    <th>{{ __('app.admin.entities.status') }}</th>
+                                                    <th>{{ __('app.admin.entities.actions') }}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @forelse ($rows as $entity)
+                                                    @php($owner = $primaryOwner($entity))
+                                                    <tr>
+                                                        <td>{{ $loop->iteration }}</td>
+                                                        <td>{{ $entity->code ?: ($entity->registration_no ?: __('app.dashboard.not_available')) }}</td>
+                                                        <td>
+                                                            {{ $entity->displayName() }}<br>
+                                                            <span class="text-muted">{{ $entity->email ?: __('app.dashboard.not_available') }}</span>
+                                                        </td>
+                                                        <td>
+                                                            {{ $owner?->displayName() ?? __('app.dashboard.not_available') }}<br>
+                                                            <span class="text-muted">{{ $owner?->email ?: __('app.dashboard.not_available') }}</span>
+                                                        </td>
+                                                        <td>{{ $entity->users_count ?? $entity->users->count() }}</td>
+                                                        <td>
+                                                            <span class="badge bg-{{ $entityStatusClass($entity->status) }}">{{ $entity->localizedStatus() }}</span>
+                                                            @if ($entity->trashed())
+                                                                <br><span class="badge bg-danger mt-2">{{ __('app.admin.entities.deleted_label') }}</span>
+                                                            @endif
+                                                        </td>
+                                                        <td>
+                                                            <div class="flex align-items-center list-user-action">
+                                                                <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ route('admin.entities.show', $entity->getKey()) }}">
+                                                                    <i class="ph ph-eye fs-6"></i>
+                                                                </a>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                @empty
+                                                    <tr>
+                                                        <td colspan="7">{{ __('app.admin.entities.group_empty') }}</td>
                                                     </tr>
                                                 @endforelse
                                             </tbody>

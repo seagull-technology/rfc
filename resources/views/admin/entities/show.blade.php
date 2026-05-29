@@ -29,6 +29,10 @@
         ->map(fn (array $row): array => ['label' => $translateOrFallback('app.applications.required_approval_options.'.$row['code'], $formatFallback($row['code'])), 'value' => $row['average_hours']])
         ->values();
     $memberSinceYear = optional($entity->created_at)->format('Y') ?: now()->format('Y');
+    $routingStatusClass = static fn (bool $isActive): string => $isActive ? 'success' : 'secondary';
+    $canManageAuthorityRouting = auth()->user()?->can('settings.manage') ?? false;
+    $canManageEntityMembers = auth()->user()?->can('entities.manage') ?? false;
+    $delegationMembersById = $authorityDelegationMembers->keyBy('id');
 @endphp
 
 @extends('layouts.admin-dashboard', ['title' => $title])
@@ -119,6 +123,26 @@
             </div>
         @endforeach
     </div>
+
+    @if ($isAuthorityEntity)
+        <div class="row mt-3 g-3">
+            @foreach ([
+                ['label' => __('app.admin.entities.authority_metrics.routing_rules_total'), 'value' => $authorityOperations['routing_rules_total']],
+                ['label' => __('app.admin.entities.authority_metrics.routing_rules_active'), 'value' => $authorityOperations['routing_rules_active']],
+                ['label' => __('app.admin.entities.authority_metrics.approvals_total'), 'value' => $authorityOperations['approvals_total']],
+                ['label' => __('app.admin.entities.authority_metrics.approvals_pending'), 'value' => $authorityOperations['approvals_pending']],
+            ] as $metric)
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-body">
+                            <h6>{{ $metric['label'] }}</h6>
+                            <h3>{{ $metric['value'] }}</h3>
+                        </div>
+                    </div>
+                </div>
+            @endforeach
+        </div>
+    @endif
 
     <div class="row mt-4 g-3">
         <div class="col-md-6">
@@ -281,6 +305,35 @@
                     </div>
                 </div>
             </div>
+
+            @if ($isAuthorityEntity)
+                <div class="card">
+                    <div class="card-header">
+                        <div class="iq-header-title">
+                            <h3 class="card-title">{{ __('app.admin.entities.authority_ops_title') }}</h3>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="text-muted mb-3">{{ __('app.admin.entities.authority_ops_intro') }}</div>
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.admin.entities.authority_metrics.average_hours') }}</small>
+                                <div>
+                                    {{ $authorityOperations['average_hours'] !== null ? number_format((float) $authorityOperations['average_hours'], 1) : __('app.dashboard.not_available') }}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.admin.entities.members_count') }}</small>
+                                <div>{{ $members->count() }}</div>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <a class="btn btn-outline-primary" href="{{ route('admin.approval-routing.index', ['target_entity_id' => $entity->getKey()]) }}">{{ __('app.admin.entities.open_routing_rules_action') }}</a>
+                            <a class="btn btn-outline-secondary" href="{{ route('admin.approval-routing.index', ['target_entity_id' => $entity->getKey(), 'is_active' => '1']) }}">{{ __('app.admin.entities.open_active_routing_rules_action') }}</a>
+                        </div>
+                    </div>
+                </div>
+            @endif
 
             @if ($entity->isRegistrationReviewable())
                 <div class="card">
@@ -500,51 +553,285 @@
                 </div>
             @endif
 
-            <div class="card">
-                <div class="card-header">
-                    <div class="iq-header-title">
-                        <h3 class="card-title">{{ __('app.admin.entities.add_member_title') }}</h3>
+            @if ($canManageEntityMembers)
+                <div class="card">
+                    <div class="card-header">
+                        <div class="iq-header-title">
+                            <h3 class="card-title">{{ __('app.admin.entities.add_member_title') }}</h3>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" action="{{ route('admin.entities.members.store', $entity->getKey()) }}" class="row g-3">
+                            @csrf
+                            <div class="col-md-6">
+                                <label for="user_id" class="form-label">{{ __('app.admin.entities.member_user') }}</label>
+                                <select id="user_id" name="user_id" class="form-select" required>
+                                    <option value="">{{ __('app.admin.select_placeholder') }}</option>
+                                    @foreach ($users as $user)
+                                        <option value="{{ $user->id }}" @selected(old('user_id') == $user->id)>{{ $user->displayName() }} - {{ $user->email }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="roles" class="form-label">{{ __('app.admin.entities.member_roles') }}</label>
+                                <select id="roles" name="roles[]" class="form-select select2-basic-multiple" multiple required>
+                                    @foreach ($allowedRoles as $role)
+                                        <option value="{{ $role->name }}" @selected(in_array($role->name, old('roles', []), true))>{{ __('app.roles.'.$role->name) }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="job_title" class="form-label">{{ __('app.admin.entities.member_job_title') }}</label>
+                                <input id="job_title" name="job_title" type="text" class="form-control" value="{{ old('job_title') }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="is_primary" class="form-label">{{ __('app.admin.entities.member_primary') }}</label>
+                                <select id="is_primary" name="is_primary" class="form-select">
+                                    <option value="0" @selected(old('is_primary', '0') === '0')>{{ __('app.admin.no') }}</option>
+                                    <option value="1" @selected(old('is_primary') === '1')>{{ __('app.admin.yes') }}</option>
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <button class="btn btn-danger" type="submit">{{ __('app.admin.entities.add_member_action') }}</button>
+                            </div>
+                        </form>
                     </div>
                 </div>
-                <div class="card-body">
-                    <form method="POST" action="{{ route('admin.entities.members.store', $entity->getKey()) }}" class="row g-3">
-                        @csrf
-                        <div class="col-md-6">
-                            <label for="user_id" class="form-label">{{ __('app.admin.entities.member_user') }}</label>
-                            <select id="user_id" name="user_id" class="form-select" required>
-                                <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                @foreach ($users as $user)
-                                    <option value="{{ $user->id }}" @selected(old('user_id') == $user->id)>{{ $user->displayName() }} - {{ $user->email }}</option>
-                                @endforeach
-                            </select>
+            @endif
+        </div>
+
+        @if ($isAuthorityEntity)
+            @if ($canManageEntityMembers)
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="iq-header-title">
+                                <h3 class="card-title">{{ __('app.admin.entities.authority_delegation_title') }}</h3>
+                            </div>
                         </div>
-                        <div class="col-md-6">
-                            <label for="role" class="form-label">{{ __('app.admin.entities.member_role') }}</label>
-                            <select id="role" name="role" class="form-select" required>
-                                <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                @foreach ($allowedRoles as $role)
-                                    <option value="{{ $role->name }}" @selected(old('role') === $role->name)>{{ __('app.roles.'.$role->name) }}</option>
-                                @endforeach
-                            </select>
+                        <div class="card-body">
+                            <div class="text-muted mb-4">{{ __('app.admin.entities.authority_delegation_intro') }}</div>
+                            <div class="table-responsive border rounded py-3">
+                                <table class="table mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>{{ __('app.admin.approval_routing.approval_code') }}</th>
+                                            <th>{{ __('app.admin.entities.authority_delegation_current') }}</th>
+                                            <th>{{ __('app.admin.entities.authority_delegation_update') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @forelse ($authorityDelegationCodes as $approvalCode)
+                                            @php($currentDelegate = $delegationMembersById->get($authorityDelegationMap[$approvalCode] ?? null))
+                                            <tr>
+                                                <td>{{ __('app.applications.required_approval_options.'.$approvalCode) }}</td>
+                                                <td>
+                                                    @if ($currentDelegate)
+                                                        {{ $currentDelegate->displayName() }}<br>
+                                                        <span class="text-muted">{{ $currentDelegate->email }}</span>
+                                                    @else
+                                                        <span class="text-muted">{{ __('app.admin.entities.authority_delegation_shared_inbox') }}</span>
+                                                    @endif
+                                                </td>
+                                                <td>
+                                                    <form method="POST" action="{{ route('admin.entities.authority-delegation.update', $entity->getKey()) }}" class="row g-2 align-items-center">
+                                                        @csrf
+                                                        <input type="hidden" name="approval_code" value="{{ $approvalCode }}">
+                                                        <div class="col-md-8">
+                                                            <select name="assigned_user_id" class="form-select">
+                                                                <option value="">{{ __('app.admin.entities.authority_delegation_shared_inbox') }}</option>
+                                                                @foreach ($authorityDelegationMembers as $member)
+                                                                    <option value="{{ $member->getKey() }}" @selected((int) old('assigned_user_id', $authorityDelegationMap[$approvalCode] ?? 0) === $member->getKey())>{{ $member->displayName() }} - {{ $member->email }}</option>
+                                                                @endforeach
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-4">
+                                                            <button class="btn btn-outline-primary w-100" type="submit">{{ __('app.admin.entities.authority_delegation_save_action') }}</button>
+                                                        </div>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                        @empty
+                                            <tr>
+                                                <td colspan="3">{{ __('app.admin.entities.authority_delegation_empty') }}</td>
+                                            </tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
-                        <div class="col-md-6">
-                            <label for="job_title" class="form-label">{{ __('app.admin.entities.member_job_title') }}</label>
-                            <input id="job_title" name="job_title" type="text" class="form-control" value="{{ old('job_title') }}">
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="iq-header-title">
+                                <h3 class="card-title">{{ __('app.admin.entities.authority_quick_rule_title') }}</h3>
+                            </div>
                         </div>
-                        <div class="col-md-6">
-                            <label for="is_primary" class="form-label">{{ __('app.admin.entities.member_primary') }}</label>
-                            <select id="is_primary" name="is_primary" class="form-select">
-                                <option value="0" @selected(old('is_primary', '0') === '0')>{{ __('app.admin.no') }}</option>
-                                <option value="1" @selected(old('is_primary') === '1')>{{ __('app.admin.yes') }}</option>
-                            </select>
+                        <div class="card-body">
+                            <div class="text-muted mb-4">{{ __('app.admin.entities.authority_quick_rule_intro') }}</div>
+                            <form method="POST" action="{{ route('admin.entities.authority-routing.store', $entity->getKey()) }}" class="row g-3">
+                                @csrf
+                                <div class="col-md-5">
+                                    <label for="authority-rule-name" class="form-label">{{ __('app.admin.approval_routing.name') }}</label>
+                                    <input id="authority-rule-name" name="name" type="text" class="form-control" value="{{ old('name') }}" required>
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="authority-rule-approval" class="form-label">{{ __('app.admin.approval_routing.approval_code') }}</label>
+                                    <select id="authority-rule-approval" name="approval_code" class="form-select" required>
+                                        <option value="">{{ __('app.admin.select_placeholder') }}</option>
+                                        @foreach (['public_security', 'digital_economy', 'environment', 'municipalities', 'airports', 'drones', 'heritage', 'customs', 'military_border'] as $approvalCode)
+                                            <option value="{{ $approvalCode }}" @selected(old('approval_code') === $approvalCode)>{{ __('app.applications.required_approval_options.'.$approvalCode) }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label for="authority-rule-priority" class="form-label">{{ __('app.admin.approval_routing.priority') }}</label>
+                                    <input id="authority-rule-priority" name="priority" type="number" min="1" max="9999" class="form-control" value="{{ old('priority', 100) }}" required>
+                                </div>
+                                <div class="col-md-2">
+                                    <label for="authority-rule-active" class="form-label">{{ __('app.admin.approval_routing.status') }}</label>
+                                    <select id="authority-rule-active" name="is_active" class="form-select">
+                                        <option value="1" @selected(old('is_active', '1') === '1')>{{ __('app.admin.approval_routing.active_label') }}</option>
+                                        <option value="0" @selected(old('is_active') === '0')>{{ __('app.statuses.inactive') }}</option>
+                                    </select>
+                                </div>
+                                <div class="col-12 d-flex gap-2 flex-wrap">
+                                    <button class="btn btn-danger" type="submit">{{ __('app.admin.approval_routing.create_action') }}</button>
+                                    <a class="btn btn-outline-secondary" href="{{ route('admin.approval-routing.create') }}">{{ __('app.admin.entities.authority_open_advanced_routing_action') }}</a>
+                                </div>
+                            </form>
                         </div>
-                        <div class="col-12">
-                            <button class="btn btn-danger" type="submit">{{ __('app.admin.entities.add_member_action') }}</button>
+                    </div>
+                </div>
+            @endif
+
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="iq-header-title">
+                            <h3 class="card-title">{{ __('app.admin.entities.authority_routing_title') }}</h3>
                         </div>
-                    </form>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive border rounded py-3">
+                            <table class="table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>{{ __('app.admin.approval_routing.name') }}</th>
+                                        <th>{{ __('app.admin.approval_routing.approval_code') }}</th>
+                                        <th>{{ __('app.admin.approval_routing.priority') }}</th>
+                                        <th>{{ __('app.admin.approval_routing.status') }}</th>
+                                        <th>{{ __('app.admin.entities.authority_usage_count') }}</th>
+                                        <th>{{ __('app.admin.entities.authority_last_used_at') }}</th>
+                                        <th>{{ __('app.admin.entities.actions') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @forelse ($authorityRoutingRules as $rule)
+                                        <tr>
+                                            <td>
+                                                <a href="{{ route('admin.approval-routing.show', $rule) }}">{{ $rule->name }}</a><br>
+                                                <span class="text-muted">
+                                                    {{ __('app.admin.approval_routing.audit_by_label') }}:
+                                                    {{ $rule->latestAudit?->changedBy?->displayName() ?? __('app.dashboard.not_available') }}
+                                                </span>
+                                            </td>
+                                            <td>{{ $rule->localizedApproval() }}</td>
+                                            <td>{{ $rule->priority }}</td>
+                                            <td><span class="badge bg-{{ $routingStatusClass((bool) $rule->is_active) }}">{{ $rule->is_active ? __('app.admin.approval_routing.active_label') : __('app.statuses.inactive') }}</span></td>
+                                            <td>{{ $rule->authority_approvals_count }}</td>
+                                            <td>
+                                                {{ filled($rule->authority_approvals_max_updated_at)
+                                                    ? \Illuminate\Support\Carbon::parse($rule->authority_approvals_max_updated_at)->format('Y-m-d H:i')
+                                                    : __('app.dashboard.not_available') }}
+                                            </td>
+                                            <td>
+                                                <div class="d-flex gap-2 flex-wrap">
+                                                    <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.approval-routing.show', $rule) }}">{{ __('app.admin.dashboard.table_action') }}</a>
+                                                    <a class="btn btn-sm btn-outline-primary" href="{{ route('admin.approval-routing.edit', $rule) }}">{{ __('app.admin.approval_routing.update_action') }}</a>
+                                                    @if ($canManageAuthorityRouting)
+                                                        <form method="POST" action="{{ route('admin.entities.authority-routing.status', [$entity->getKey(), $rule]) }}">
+                                                            @csrf
+                                                            <input type="hidden" name="is_active" value="{{ $rule->is_active ? 0 : 1 }}">
+                                                            <button class="btn btn-sm btn-outline-warning" type="submit">
+                                                                {{ $rule->is_active ? __('app.admin.approval_routing.deactivate_action') : __('app.admin.approval_routing.activate_action') }}
+                                                            </button>
+                                                        </form>
+                                                        <form method="POST" action="{{ route('admin.entities.authority-routing.delete', [$entity->getKey(), $rule]) }}">
+                                                            @csrf
+                                                            <button class="btn btn-sm btn-outline-danger" type="submit">{{ __('app.admin.approval_routing.delete_action') }}</button>
+                                                        </form>
+                                                    @endif
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="7">{{ __('app.admin.entities.authority_routing_empty') }}</td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
+
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="iq-header-title">
+                            <h3 class="card-title">{{ __('app.admin.entities.authority_workload_title') }}</h3>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive border rounded py-3">
+                            <table class="table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>{{ __('app.authority.applications.application') }}</th>
+                                        <th>{{ __('app.admin.approval_routing.approval_code') }}</th>
+                                        <th>{{ __('app.admin.entities.authority_delegation_current') }}</th>
+                                        <th>{{ __('app.applications.status') }}</th>
+                                        <th>{{ __('app.applications.updated_at') }}</th>
+                                        <th>{{ __('app.admin.entities.reviewed_by') }}</th>
+                                        <th>{{ __('app.admin.entities.actions') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @forelse ($recentAuthorityApprovals as $approval)
+                                        <tr>
+                                            <td>
+                                                <a href="{{ route('admin.applications.show', $approval->application) }}">{{ $approval->application?->project_name ?? __('app.dashboard.not_available') }}</a><br>
+                                                <span class="text-muted">{{ $approval->application?->entity?->displayName() ?? __('app.dashboard.not_available') }}</span>
+                                            </td>
+                                            <td>
+                                                {{ __('app.applications.required_approval_options.'.$approval->authority_code) }}<br>
+                                                <span class="text-muted">{{ $approval->routingRule?->name ?? __('app.dashboard.not_available') }}</span>
+                                            </td>
+                                            <td>{{ $approval->assignedTo?->displayName() ?? __('app.workflow.unassigned') }}</td>
+                                            <td><span class="badge bg-{{ $statusClass($approval->status) }}">{{ $approval->localizedStatus() }}</span></td>
+                                            <td>{{ optional($approval->updated_at)->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</td>
+                                            <td>{{ $approval->reviewedBy?->displayName() ?? __('app.dashboard.not_available') }}</td>
+                                            <td>
+                                                <a class="btn btn-sm btn-outline-primary" href="{{ route('admin.applications.show', $approval->application) }}">{{ __('app.authority.applications.open_action') }}</a>
+                                            </td>
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="7">{{ __('app.admin.entities.authority_workload_empty') }}</td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
 
         @if ($entity->isRegistrationReviewable())
             <div class="col-12">
@@ -600,6 +887,7 @@
                                 <tr>
                                     <th>{{ __('app.admin.users.name') }}</th>
                                     <th>{{ __('app.admin.entities.member_role') }}</th>
+                                    <th>{{ __('app.admin.entities.member_membership') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -611,16 +899,116 @@
                                             <span class="text-muted">{{ $member['user']->pivot?->job_title ?: __('app.dashboard.not_available') }}</span>
                                         </td>
                                         <td>
-                                            @forelse ($member['roles'] as $roleName)
-                                                <span class="badge bg-primary-subtle text-dark">{{ __('app.roles.'.$roleName) }}</span>
-                                            @empty
-                                                {{ __('app.dashboard.no_roles') }}
-                                            @endforelse
-                                            <br>
+                                            <div class="d-flex gap-2 flex-wrap">
+                                                @forelse ($member['roles'] as $roleName)
+                                                    <div class="d-inline-flex align-items-center gap-2">
+                                                        <span class="badge bg-primary-subtle text-dark">{{ __('app.roles.'.$roleName) }}</span>
+                                                        @if ($canManageEntityMembers)
+                                                            <form method="POST" action="{{ route('admin.entities.members.roles.delete', [$entity->getKey(), $member['user']->getKey(), $roleName]) }}">
+                                                                @csrf
+                                                                <button class="btn btn-sm btn-outline-danger py-0 px-2" type="submit">{{ __('app.admin.entities.remove_role_action') }}</button>
+                                                            </form>
+                                                        @endif
+                                                    </div>
+                                                @empty
+                                                    {{ __('app.dashboard.no_roles') }}
+                                                @endforelse
+                                            </div>
                                             <span class="text-muted d-inline-block mt-2">{{ $member['user']->pivot?->is_primary ? __('app.admin.yes') : __('app.admin.no') }}</span>
+                                        </td>
+                                        <td>
+                                            <div>
+                                                <span class="badge bg-{{ ($member['user']->pivot?->status ?? 'active') === 'active' ? 'success' : 'secondary' }}">
+                                                    {{ __('app.statuses.'.($member['user']->pivot?->status ?? 'active')) }}
+                                                </span>
+                                            </div>
+                                            <div class="text-muted small mt-2">
+                                                {{ __('app.admin.entities.member_joined_at') }}:
+                                                {{ filled($member['user']->pivot?->joined_at)
+                                                    ? \Illuminate\Support\Carbon::parse($member['user']->pivot?->joined_at)->format('Y-m-d')
+                                                    : __('app.dashboard.not_available') }}
+                                            </div>
+                                            <div class="text-muted small">
+                                                {{ __('app.admin.entities.member_left_at') }}:
+                                                {{ filled($member['user']->pivot?->left_at)
+                                                    ? \Illuminate\Support\Carbon::parse($member['user']->pivot?->left_at)->format('Y-m-d')
+                                                    : __('app.dashboard.not_available') }}
+                                            </div>
+                                            @if ($canManageEntityMembers)
+                                                <div class="d-flex gap-2 flex-wrap mt-3">
+                                                    @if (! $member['user']->pivot?->is_primary)
+                                                        <form method="POST" action="{{ route('admin.entities.members.primary', [$entity->getKey(), $member['user']->getKey()]) }}">
+                                                            @csrf
+                                                            <button class="btn btn-sm btn-outline-primary" type="submit">{{ __('app.admin.entities.set_primary_action') }}</button>
+                                                        </form>
+                                                    @endif
+                                                    <form method="POST" action="{{ route('admin.entities.members.status', [$entity->getKey(), $member['user']->getKey()]) }}">
+                                                        @csrf
+                                                        <input type="hidden" name="status" value="{{ ($member['user']->pivot?->status ?? 'active') === 'active' ? 'inactive' : 'active' }}">
+                                                        <button class="btn btn-sm btn-outline-warning" type="submit">
+                                                            {{ ($member['user']->pivot?->status ?? 'active') === 'active'
+                                                                ? __('app.admin.entities.deactivate_member_action')
+                                                                : __('app.admin.entities.activate_member_action') }}
+                                                        </button>
+                                                    </form>
+                                                    <form method="POST" action="{{ route('admin.entities.members.delete', [$entity->getKey(), $member['user']->getKey()]) }}">
+                                                        @csrf
+                                                        <button class="btn btn-sm btn-outline-danger" type="submit">{{ __('app.admin.entities.remove_member_action') }}</button>
+                                                    </form>
+                                                </div>
+                                            @endif
                                         </td>
                                     </tr>
                                 @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <div class="iq-header-title">
+                        <h3 class="card-title">{{ __('app.admin.entities.role_history_title') }}</h3>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive border rounded py-3">
+                        <table class="table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>{{ __('app.admin.entities.member_role') }}</th>
+                                    <th>{{ __('app.admin.users.name') }}</th>
+                                    <th>{{ __('app.admin.entities.role_history_action') }}</th>
+                                    <th>{{ __('app.admin.entities.role_history_by') }}</th>
+                                    <th>{{ __('app.admin.entities.role_history_at') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse ($roleAssignmentAudits as $audit)
+                                    <tr>
+                                        <td><span class="badge bg-primary-subtle text-dark">{{ __('app.roles.'.$audit->role_name) }}</span></td>
+                                        <td>
+                                            @if ($audit->user)
+                                                <a href="{{ route('admin.users.show', $audit->user->getKey()) }}">{{ $audit->user->displayName() }}</a><br>
+                                                <span class="text-muted">{{ $audit->user->email ?: __('app.dashboard.not_available') }}</span>
+                                            @else
+                                                {{ __('app.dashboard.not_available') }}
+                                            @endif
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-{{ $audit->action === 'added' ? 'success' : 'danger' }}">{{ $audit->localizedAction() }}</span>
+                                        </td>
+                                        <td>{{ $audit->changedBy?->displayName() ?? __('app.dashboard.not_available') }}</td>
+                                        <td>{{ optional($audit->created_at)->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="5" class="text-center text-muted py-4">{{ __('app.admin.entities.role_history_empty') }}</td>
+                                    </tr>
+                                @endforelse
                             </tbody>
                         </table>
                     </div>
@@ -638,7 +1026,7 @@
             }
 
             const chartNoDataText = @json(__('app.admin.dashboard.chart_no_data'));
-            const palette = ['#ce0812', '#b70710', '#89050c', '#2e0204', '#f97316', '#06b6d4'];
+            const palette = ['#5e1d19', '#4b1714', '#38120f', '#1f0908', '#7a2a21', '#06b6d4'];
 
             const renderEmptyState = function (selector) {
                 const element = document.querySelector(selector);
@@ -689,7 +1077,7 @@
                 chart: { type: 'bar', height: 260, toolbar: { show: false } },
                 series: [{ name: budgetSeriesLabel, data: budgetData.map(item => item.value) }],
                 xaxis: { categories: budgetData.map(item => item.label) },
-                colors: ['#ce0812'],
+                colors: ['#5e1d19'],
                 plotOptions: { bar: { borderRadius: 6, columnWidth: '45%' } },
                 dataLabels: { enabled: false }
             });
@@ -698,7 +1086,7 @@
                 chart: { type: 'area', height: 260, toolbar: { show: false } },
                 series: [{ name: requestsSeriesLabel, data: monthCounts }],
                 xaxis: { categories: monthLabels },
-                colors: ['#89050c'],
+                colors: ['#38120f'],
                 stroke: { curve: 'smooth', width: 3 },
                 dataLabels: { enabled: false },
                 fill: {
@@ -711,7 +1099,7 @@
                 chart: { type: 'bar', height: 260, toolbar: { show: false } },
                 series: [{ name: crewSeriesLabel, data: crewData.map(item => item.value) }],
                 xaxis: { categories: crewData.map(item => item.label) },
-                colors: ['#f97316'],
+                colors: ['#7a2a21'],
                 plotOptions: { bar: { borderRadius: 6, columnWidth: '45%' } },
                 dataLabels: { enabled: false }
             });
@@ -720,7 +1108,7 @@
                 chart: { type: 'bar', height: 260, toolbar: { show: false } },
                 series: [{ name: authoritySeriesLabel, data: authorityData.map(item => item.value) }],
                 xaxis: { categories: authorityData.map(item => item.label) },
-                colors: ['#2e0204'],
+                colors: ['#1f0908'],
                 plotOptions: { bar: { horizontal: true, borderRadius: 6, barHeight: '45%' } },
                 dataLabels: { enabled: false }
             });

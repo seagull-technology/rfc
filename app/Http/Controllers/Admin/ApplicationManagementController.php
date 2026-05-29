@@ -7,16 +7,20 @@ use App\Models\Application as FilmApplication;
 use App\Models\ApplicationAuthorityApproval;
 use App\Models\ApplicationCorrespondence;
 use App\Models\ApplicationDocument;
+use App\Models\ApplicationOfficialLetter;
+use App\Models\Entity;
 use App\Models\Permit;
 use App\Models\User;
 use App\Notifications\FinalDecisionIssuedNotification;
 use App\Notifications\InboxMessageNotification;
+use App\Services\AuthorityEscalationService;
 use App\Services\FinalDecisionDeliveryService;
 use App\Support\AdminApplicantResponseState;
 use App\Support\AdminWorkflowState;
 use App\Support\CsvExport;
 use App\Support\NotificationRecipients;
 use App\Support\WorkflowMessageMetadata;
+use Illuminate\Support\Collection;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,12 +28,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ApplicationManagementController extends Controller
 {
     public function __construct(
         private readonly FinalDecisionDeliveryService $finalDecisionDeliveryService,
+        private readonly AuthorityEscalationService $authorityEscalationService,
     ) {
     }
 
@@ -39,6 +45,33 @@ class ApplicationManagementController extends Controller
         $applications = $this->directoryQuery($filters)
             ->latest()
             ->get();
+        $responsibilitySummaries = $applications
+            ->mapWithKeys(function (FilmApplication $application): array {
+                $authorityItems = $application->authorityApprovals
+                    ->whereIn('status', ['pending', 'in_review'])
+                    ->map(function (ApplicationAuthorityApproval $approval): array {
+                        $signal = $this->authorityEscalationService->signalForApproval($approval);
+
+                        return [
+                            'authority' => $approval->localizedAuthority(),
+                            'owner' => $approval->assignedTo?->displayName() ?? __('app.admin.applications.authority_shared_inbox'),
+                            'status' => $approval->localizedStatus(),
+                            'is_shared' => blank($approval->assigned_user_id),
+                            'signal_label' => $signal['label'],
+                            'is_overdue' => $signal['is_overdue'],
+                            'is_escalated' => $signal['is_escalated'],
+                        ];
+                    })
+                    ->values();
+
+                return [
+                    $application->getKey() => [
+                        'rfc_owner' => $application->assignedTo?->displayName() ?? __('app.workflow.unassigned'),
+                        'authority_items' => $authorityItems,
+                        'has_overdue_authority' => $authorityItems->contains(fn (array $item): bool => $item['is_overdue']),
+                    ],
+                ];
+            });
         $checkpointStats = $applications
             ->map(fn (FilmApplication $application): string => AdminWorkflowState::applicationCheckpoint($application)['key'])
             ->countBy();
@@ -47,6 +80,7 @@ class ApplicationManagementController extends Controller
             'applications' => $applications,
             'openApplications' => $applications->whereNotIn('status', ['approved', 'rejected'])->values(),
             'closedApplications' => $applications->whereIn('status', ['approved', 'rejected'])->values(),
+            'responsibilitySummaries' => $responsibilitySummaries,
             'applicantResponses' => $applications
                 ->mapWithKeys(fn (FilmApplication $application): array => [$application->getKey() => AdminApplicantResponseState::application($application)]),
             'filters' => [
@@ -61,6 +95,7 @@ class ApplicationManagementController extends Controller
                 'assign_reviewer' => $checkpointStats->get('assign_reviewer', 0),
                 'waiting_on_applicant' => $checkpointStats->get('waiting_on_applicant', 0),
                 'waiting_authorities' => $checkpointStats->get('waiting_authorities', 0),
+                'overdue_authorities' => $responsibilitySummaries->where('has_overdue_authority', true)->count(),
                 'ready_final_decision' => $checkpointStats->get('ready_final_decision', 0),
             ],
         ]);
@@ -108,21 +143,40 @@ class ApplicationManagementController extends Controller
             'documents.uploadedBy',
             'documents.reviewedBy',
             'correspondences.createdBy',
+            'officialLetters.createdBy',
+            'officialLetters.updatedBy',
+            'officialLetters.targetEntity',
+            'officialLetters.authorityApproval.entity',
         ]);
-        $reviewers = User::query()
-            ->where('status', 'active')
-            ->whereHas('entities.group', fn (Builder $query): Builder => $query->whereIn('code', ['rfc', 'admins']))
-            ->with('entities.group')
-            ->orderBy('name')
-            ->get();
+        $reviewers = $this->workflowAssignableUsers();
+        $authorityApprovals = $record->authorityApprovals()->with(['reviewedBy', 'assignedTo', 'entity'])->get();
+        $authorityApprovalSignals = $authorityApprovals
+            ->mapWithKeys(fn (ApplicationAuthorityApproval $approval): array => [
+                $approval->getKey() => $this->authorityEscalationService->signalForApproval($approval),
+            ]);
 
         return view('admin.applications.show', [
             'application' => $record,
             'statusHistory' => $record->statusHistory,
-            'authorityApprovals' => $record->authorityApprovals()->with(['reviewedBy', 'entity'])->get(),
+            'authorityApprovals' => $authorityApprovals,
+            'authorityApprovalSignals' => $authorityApprovalSignals,
+            'authorityApprovalSignalStats' => [
+                'live' => $authorityApprovals->whereIn('status', ['pending', 'in_review'])->count(),
+                'overdue' => $authorityApprovalSignals->where('is_overdue', true)->count(),
+                'escalated' => $authorityApprovals->whereNotNull('escalated_at')->count(),
+            ],
+            'authorityApprovalDelegates' => $authorityApprovals
+                ->mapWithKeys(fn (ApplicationAuthorityApproval $approval): array => [
+                    $approval->getKey() => $this->authorityApprovalAssignableUsers($approval),
+                ]),
+            'authorityAuditTrail' => $record->statusHistory
+                ->filter(fn ($event): bool => in_array((string) data_get($event->metadata, 'type'), ['authority_status_updated', 'authority_reassigned', 'authority_escalated'], true))
+                ->values(),
             'reviewers' => $reviewers,
             'documents' => $record->documents,
             'correspondences' => $record->correspondences,
+            'officialLetters' => $record->officialLetters,
+            'officialLetterApprovals' => $this->officialLetterApprovalTargets($record),
             'applicantResponse' => AdminApplicantResponseState::application($record),
         ]);
     }
@@ -298,6 +352,12 @@ class ApplicationManagementController extends Controller
 
         $assignee = User::query()->findOrFail($validated['assigned_to_user_id']);
 
+        if (! $this->isWorkflowAssignableUser($assignee)) {
+            return redirect()
+                ->route('admin.applications.show', $record)
+                ->withErrors(['assigned_to_user_id' => __('app.workflow.invalid_assignee')]);
+        }
+
         $record->forceFill([
             'assigned_to_user_id' => $assignee->getKey(),
             'assigned_at' => now(),
@@ -339,6 +399,15 @@ class ApplicationManagementController extends Controller
             'note' => ['nullable', 'string', 'max:2000'],
         ]);
 
+        if (
+            in_array($validated['status'], ['approved', 'rejected'], true)
+            && ! $request->user()?->can('applications.approve')
+        ) {
+            return redirect()
+                ->route('admin.applications.show', $record)
+                ->withErrors(['status' => __('app.workflow.approver_required')]);
+        }
+
         $approval->forceFill([
             'status' => $validated['status'],
             'note' => $validated['note'] ?: null,
@@ -361,6 +430,17 @@ class ApplicationManagementController extends Controller
                 'authority' => $approval->localizedAuthority(),
                 'status' => $approval->localizedStatus(),
             ]),
+            'metadata' => [
+                'type' => 'authority_status_updated',
+                'approval_id' => $approval->getKey(),
+                'authority_code' => $approval->authority_code,
+                'authority_label' => $approval->localizedAuthority(),
+                'approval_status' => $approval->status,
+                'approval_status_label' => $approval->localizedStatus(),
+                'assigned_user_id' => $approval->assigned_user_id,
+                'assigned_user_name' => $approval->assignedTo?->displayName(),
+                'reason' => $validated['note'] ?: null,
+            ],
             'happened_at' => now(),
         ]);
 
@@ -393,6 +473,96 @@ class ApplicationManagementController extends Controller
         return redirect()
             ->route('admin.applications.show', $record)
             ->with('status', __('app.workflow.approval_updated'));
+    }
+
+    public function assignApproval(Request $request, string $application, ApplicationAuthorityApproval $approval): RedirectResponse
+    {
+        $record = $this->findApplication($application);
+        abort_unless($approval->application_id === $record->getKey(), 404);
+
+        if (! in_array($approval->status, ['pending', 'in_review'], true)) {
+            return redirect()
+                ->route('admin.applications.show', $record)
+                ->withErrors(['assigned_user_id' => __('app.admin.applications.authority_assignment_locked')]);
+        }
+
+        $assignableUsers = $this->authorityApprovalAssignableUsers($approval);
+
+        if ($assignableUsers->isEmpty()) {
+            return redirect()
+                ->route('admin.applications.show', $record)
+                ->withErrors(['assigned_user_id' => __('app.admin.applications.authority_assignment_unavailable')]);
+        }
+
+        $validated = $request->validate([
+            'assigned_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'assignment_note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $assignedUserId = filled($validated['assigned_user_id'] ?? null)
+            ? (int) $validated['assigned_user_id']
+            : null;
+
+        if ($assignedUserId !== null && ! $assignableUsers->contains(fn (User $user): bool => $user->getKey() === $assignedUserId)) {
+            return redirect()
+                ->route('admin.applications.show', $record)
+                ->withErrors(['assigned_user_id' => __('app.admin.applications.authority_assignment_invalid')]);
+        }
+
+        $previousAssignedUserId = $approval->assigned_user_id;
+        $previousAssignedUserName = $approval->assignedTo?->displayName()
+            ?? ($previousAssignedUserId ? User::query()->find($previousAssignedUserId)?->displayName() : null);
+
+        $assignedUser = $assignedUserId
+            ? $assignableUsers->first(fn (User $user): bool => $user->getKey() === $assignedUserId)
+            : null;
+
+        $approval->forceFill([
+            'assigned_user_id' => $assignedUserId,
+            'assigned_at' => $assignedUserId ? now() : null,
+        ])->save();
+
+        $record->statusHistory()->create([
+            'user_id' => $request->user()?->getKey(),
+            'status' => $record->status,
+            'note' => __('app.workflow.history.authority_reassigned', [
+                'authority' => $approval->localizedAuthority(),
+                'assignee' => $assignedUser?->displayName() ?? __('app.admin.applications.authority_shared_inbox'),
+            ]),
+            'metadata' => [
+                'type' => 'authority_reassigned',
+                'approval_id' => $approval->getKey(),
+                'authority_code' => $approval->authority_code,
+                'authority_label' => $approval->localizedAuthority(),
+                'from_user_id' => $previousAssignedUserId,
+                'from_user_name' => $previousAssignedUserName,
+                'to_user_id' => $assignedUser?->getKey(),
+                'to_user_name' => $assignedUser?->displayName(),
+                'reason' => $validated['assignment_note'] ?: null,
+            ],
+            'happened_at' => now(),
+        ]);
+
+        if ($assignedUser) {
+            NotificationRecipients::except(collect([$assignedUser]), $request->user()?->getKey())
+                ->each(fn (User $recipient) => $recipient->notify(new InboxMessageNotification(
+                    typeKey: 'authority_approval_requested',
+                    title: $record->project_name,
+                    body: __('app.notifications.authority_approval_requested_body', [
+                        'authority' => $approval->localizedAuthority(),
+                        'code' => $record->code,
+                    ]),
+                    routeName: 'authority.applications.show',
+                    routeParameters: ['application' => $record->getKey()],
+                    meta: WorkflowMessageMetadata::application($record),
+                )));
+        }
+
+        return redirect()
+            ->route('admin.applications.show', $record)
+            ->with('status', $assignedUser
+                ? __('app.admin.applications.authority_assignment_saved')
+                : __('app.admin.applications.authority_assignment_cleared'));
     }
 
     public function reviewDocument(Request $request, string $application, string $document): RedirectResponse
@@ -522,6 +692,93 @@ class ApplicationManagementController extends Controller
             ->with('status', __('app.correspondence.sent'));
     }
 
+    public function storeOfficialLetter(Request $request, string $application): RedirectResponse
+    {
+        $record = $this->findApplication($application);
+        $validated = $this->validateOfficialLetter($request);
+        $approvalTargets = $this->officialLetterApprovalTargets($record);
+
+        if ($approvalTargets->isEmpty()) {
+            return redirect()
+                ->route('admin.applications.show', $record)
+                ->withErrors(['official_letters' => __('app.official_letters.no_routed_authorities')]);
+        }
+
+        $letters = DB::transaction(function () use ($record, $validated, $approvalTargets, $request): Collection {
+            $createdLetters = $approvalTargets
+                ->map(fn (ApplicationAuthorityApproval $approval): ApplicationOfficialLetter => $record->officialLetters()->create([
+                    ...$validated,
+                    'application_authority_approval_id' => $approval->getKey(),
+                    'target_entity_id' => $approval->entity_id,
+                    'created_by_user_id' => $request->user()?->getKey(),
+                    'updated_by_user_id' => $request->user()?->getKey(),
+                    'issued_at' => $validated['status'] === 'issued' ? now() : null,
+                ]))
+                ->values();
+
+            $record->statusHistory()->create([
+                'user_id' => $request->user()?->getKey(),
+                'status' => $record->status,
+                'note' => __('app.official_letters.history.created', ['subject' => $validated['subject']]),
+                'happened_at' => now(),
+                'metadata' => [
+                    'type' => 'official_letter_created',
+                    'official_letter_id' => $createdLetters->first()?->getKey(),
+                    'official_letter_ids' => $createdLetters->pluck('id')->all(),
+                ],
+            ]);
+
+            return $createdLetters;
+        });
+
+        if ($validated['status'] === 'issued') {
+            $this->notifyOfficialLettersIssued($record, $letters, $request->user()?->getKey());
+        }
+
+        return redirect()
+            ->route('admin.applications.show', $record)
+            ->with('status', __('app.official_letters.created'));
+    }
+
+    public function updateOfficialLetter(Request $request, string $application, string $letter): RedirectResponse
+    {
+        $record = $this->findApplication($application);
+        $officialLetter = $this->findOfficialLetter($letter, $record);
+        $validated = $this->validateOfficialLetter($request);
+        $wasIssued = $officialLetter->status === 'issued';
+        $issuedAt = $officialLetter->issued_at;
+
+        if ($validated['status'] === 'issued' && ! $issuedAt) {
+            $issuedAt = now();
+        }
+
+        if ($validated['status'] !== 'issued') {
+            $issuedAt = null;
+        }
+
+        $officialLetter->forceFill([
+            ...$validated,
+            'updated_by_user_id' => $request->user()?->getKey(),
+            'issued_at' => $issuedAt,
+        ])->save();
+
+        $record->statusHistory()->create([
+            'user_id' => $request->user()?->getKey(),
+            'status' => $record->status,
+            'note' => __('app.official_letters.history.updated', ['subject' => $officialLetter->subject]),
+            'happened_at' => now(),
+            'metadata' => ['type' => 'official_letter_updated', 'official_letter_id' => $officialLetter->getKey()],
+        ]);
+
+        if (! $wasIssued && $officialLetter->status === 'issued') {
+            $this->notifyOfficialLettersIssued($record, collect([$officialLetter->fresh()]), $request->user()?->getKey());
+        }
+
+        return redirect()
+            ->route('admin.applications.show', $record)
+            ->with('status', __('app.official_letters.updated'));
+    }
+
     public function downloadCorrespondenceAttachment(string $application, string $correspondence): StreamedResponse|RedirectResponse
     {
         $record = $this->findApplication($application);
@@ -593,7 +850,7 @@ class ApplicationManagementController extends Controller
     private function directoryQuery(array $filters): Builder
     {
         $query = FilmApplication::query()->with(['entity', 'submittedBy', 'reviewedBy', 'assignedTo']);
-        $query->with('authorityApprovals');
+        $query->with(['authorityApprovals.assignedTo', 'authorityApprovals.entity']);
         $query->withMax([
             'statusHistory as last_clarification_at' => fn (Builder $builder): Builder => $builder->where('status', 'needs_clarification'),
         ], 'happened_at');
@@ -634,6 +891,133 @@ class ApplicationManagementController extends Controller
             ->findOrFail($correspondence);
     }
 
+    private function findOfficialLetter(string $letter, FilmApplication $application): ApplicationOfficialLetter
+    {
+        return ApplicationOfficialLetter::query()
+            ->where('application_id', $application->getKey())
+            ->findOrFail($letter);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validateOfficialLetter(Request $request): array
+    {
+        $validated = $request->validate([
+            'letter_date' => ['nullable', 'date'],
+            'serial_number' => ['nullable', 'string', 'max:100'],
+            'recipient_prefix' => ['nullable', 'string', 'max:100'],
+            'recipient_name' => ['required', 'string', 'max:255'],
+            'subject' => ['required', 'string', 'max:255'],
+            'body' => ['required', 'string', 'max:10000'],
+            'attachments' => ['nullable', 'array'],
+            'attachments.*' => ['string', 'max:255'],
+            'status' => ['required', Rule::in(['draft', 'issued'])],
+        ]);
+
+        $validated['letter_date'] = $validated['letter_date'] ?? null;
+        $validated['serial_number'] = ($validated['serial_number'] ?? null) ?: null;
+        $validated['recipient_prefix'] = ($validated['recipient_prefix'] ?? null) ?: null;
+        $validated['attachments'] = array_values($validated['attachments'] ?? []);
+
+        return $validated;
+    }
+
+    private function officialLetterApprovalTargets(FilmApplication $application): Collection
+    {
+        return $application
+            ->authorityApprovals()
+            ->with('entity')
+            ->orderBy('id')
+            ->get()
+            ->unique(fn (ApplicationAuthorityApproval $approval): string => $approval->entity_id
+                ? 'entity:'.$approval->entity_id
+                : 'approval:'.$approval->getKey())
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, ApplicationOfficialLetter>  $letters
+     */
+    private function notifyOfficialLettersIssued(FilmApplication $application, Collection $letters, ?int $actorId): void
+    {
+        $issuedLetters = $letters
+            ->filter(fn (?ApplicationOfficialLetter $letter): bool => $letter?->status === 'issued')
+            ->values();
+
+        if ($issuedLetters->isEmpty()) {
+            return;
+        }
+
+        $application->loadMissing(['entity', 'submittedBy']);
+
+        $issuedLetters->each(function (ApplicationOfficialLetter $letter) use ($application, $actorId): void {
+            $letter->loadMissing(['authorityApproval.entity', 'targetEntity']);
+            $approval = $letter->authorityApproval;
+
+            if (! $approval instanceof ApplicationAuthorityApproval) {
+                return;
+            }
+
+            NotificationRecipients::except(NotificationRecipients::authorityUsersForApproval($approval), $actorId)
+                ->each(fn (User $recipient) => $recipient->notify(new InboxMessageNotification(
+                    typeKey: 'official_letter_issued',
+                    title: $application->project_name,
+                    body: __('app.notifications.official_letter_issued_authority_body', [
+                        'code' => $application->code,
+                        'subject' => $letter->subject,
+                    ]),
+                    routeName: 'authority.applications.show',
+                    routeParameters: ['application' => $application->getKey()],
+                    meta: [
+                        ...WorkflowMessageMetadata::application($application),
+                        'application_id' => $application->getKey(),
+                        'official_letter_id' => $letter->getKey(),
+                        'authority_approval_id' => $approval->getKey(),
+                        'authority_code' => $approval->authority_code,
+                        'authority_label' => $approval->localizedAuthority(),
+                        'notification_highlight_active' => true,
+                        'notification_highlight_title' => __('app.notifications.official_letter_issued_title'),
+                        'notification_highlight_summary' => __('app.notifications.official_letter_issued_summary', [
+                            'subject' => $letter->subject,
+                        ]),
+                        'notification_highlight_class' => 'info',
+                    ],
+                )));
+        });
+
+        $firstLetter = $issuedLetters->first();
+        $body = $issuedLetters->count() === 1
+            ? __('app.notifications.official_letter_issued_applicant_body', [
+                'code' => $application->code,
+                'subject' => $firstLetter?->subject,
+            ])
+            : __('app.notifications.official_letters_issued_applicant_body', [
+                'code' => $application->code,
+                'count' => $issuedLetters->count(),
+            ]);
+
+        NotificationRecipients::except(NotificationRecipients::applicationApplicants($application), $actorId)
+            ->each(fn (User $recipient) => $recipient->notify(new InboxMessageNotification(
+                typeKey: 'official_letter_issued',
+                title: $application->project_name,
+                body: $body,
+                routeName: 'applications.show',
+                routeParameters: ['application' => $application->getKey()],
+                meta: [
+                    ...WorkflowMessageMetadata::application($application),
+                    'application_id' => $application->getKey(),
+                    'official_letter_ids' => $issuedLetters->pluck('id')->all(),
+                    'notification_highlight_active' => true,
+                    'notification_highlight_title' => __('app.notifications.official_letter_issued_title'),
+                    'notification_highlight_summary' => $issuedLetters->count() === 1
+                        ? __('app.notifications.official_letter_issued_summary', ['subject' => $firstLetter?->subject])
+                        : __('app.notifications.official_letters_issued_summary', ['count' => $issuedLetters->count()]),
+                    'notification_highlight_class' => 'info',
+                ],
+            )));
+    }
+
     private function notifyFinalDecisionStakeholders(FilmApplication $application, ?int $actorId): void
     {
         $targets = collect([
@@ -647,5 +1031,66 @@ class ApplicationManagementController extends Controller
         foreach ($targets as $user) {
             $user->notify(new FinalDecisionIssuedNotification($application));
         }
+    }
+
+    /**
+     * @return Collection<int, User>
+     */
+    private function workflowAssignableUsers(): Collection
+    {
+        return User::query()
+            ->where('status', 'active')
+            ->whereHas('entities.group', fn (Builder $query): Builder => $query->whereIn('code', ['rfc', 'admins']))
+            ->with('entities.group')
+            ->orderBy('name')
+            ->get()
+            ->filter(fn (User $user): bool => $this->isWorkflowAssignableUser($user))
+            ->values();
+    }
+
+    /**
+     * @return Collection<int, User>
+     */
+    private function authorityApprovalAssignableUsers(ApplicationAuthorityApproval $approval): Collection
+    {
+        $entity = $approval->entity;
+
+        if (! $entity || $entity->group?->code !== 'authorities') {
+            return collect();
+        }
+
+        return $entity->activeMembers()
+            ->filter(fn (User $user): bool => $this->isAuthorityApprovalAssignableUser($user, $entity))
+            ->values();
+    }
+
+    private function isAuthorityApprovalAssignableUser(User $user, Entity $entity): bool
+    {
+        $registrar = app(PermissionRegistrar::class);
+        $registrar->setPermissionsTeamId($entity->getKey());
+
+        try {
+            return $user->can('applications.view.entity');
+        } finally {
+            $registrar->setPermissionsTeamId(null);
+        }
+    }
+
+    private function isWorkflowAssignableUser(User $user): bool
+    {
+        return $user->availableEntities()->contains(function ($entity) use ($user): bool {
+            if (! in_array($entity->group?->code, ['rfc', 'admins'], true)) {
+                return false;
+            }
+
+            $registrar = app(PermissionRegistrar::class);
+            $registrar->setPermissionsTeamId($entity->getKey());
+
+            try {
+                return $user->canAny(['applications.review', 'applications.approve', 'applications.assign']);
+            } finally {
+                $registrar->setPermissionsTeamId(null);
+            }
+        });
     }
 }

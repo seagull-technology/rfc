@@ -581,12 +581,12 @@ background:    rgb(104 98 98 / 73%);
 
 .bd-aside a:hover,
 .bd-aside a:focus {
-    background-color: rgba(229, 9, 20, .1)
+    background-color: rgba(94, 29, 25, .1)
 }
 
 .bd-aside .active {
     font-weight: 600;
-    background-color: rgba(229, 9, 20, .1);
+    background-color: rgba(94, 29, 25, .1);
     color: var(--bs-primary)
 }
 
@@ -607,7 +607,7 @@ background:    rgb(104 98 98 / 73%);
 
 .bd-aside .btn:hover,
 .bd-aside .btn:focus {
-    background-color: rgba(229, 9, 20, .1);
+    background-color: rgba(94, 29, 25, .1);
     color: var(--bs-primary)
 }
 
@@ -994,4 +994,3 @@ body.uikit .btn-download {
 .fontSize22{
         font-size: 22px;
 }
-

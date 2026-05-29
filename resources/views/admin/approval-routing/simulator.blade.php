@@ -8,6 +8,8 @@
         'project_nationalities' => [],
         'work_categories' => [],
         'release_methods' => [],
+        'annex_flags' => [],
+        'governorates' => [],
     ]);
 @endphp
 
@@ -154,6 +156,22 @@
                                 <select id="draft-release-methods" name="draft[conditions][release_methods][]" class="form-select" multiple size="5">
                                     @foreach ($conditionOptions['release_methods'] as $option)
                                         <option value="{{ $option }}" @selected(in_array($option, (array) data_get($draftConditions, 'release_methods', []), true))>{{ __('app.applications.release_methods.'.$option) }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-xl-6">
+                                <label for="draft-annex-flags" class="form-label">{{ __('app.admin.approval_routing.annex_flags_condition') }}</label>
+                                <select id="draft-annex-flags" name="draft[conditions][annex_flags][]" class="form-select" multiple size="7">
+                                    @foreach ($conditionOptions['annex_flags'] as $option)
+                                        <option value="{{ $option }}" @selected(in_array($option, (array) data_get($draftConditions, 'annex_flags', []), true))>{{ __('app.admin.approval_routing.annex_flag_options.'.$option) }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-xl-6">
+                                <label for="draft-governorates" class="form-label">{{ __('app.admin.approval_routing.governorates_condition') }}</label>
+                                <select id="draft-governorates" name="draft[conditions][governorates][]" class="form-select" multiple size="7">
+                                    @foreach ($conditionOptions['governorates'] as $option)
+                                        <option value="{{ $option }}" @selected(in_array($option, (array) data_get($draftConditions, 'governorates', []), true))>{{ __('app.scouting.governorate_options.'.$option) }}</option>
                                     @endforeach
                                 </select>
                             </div>
