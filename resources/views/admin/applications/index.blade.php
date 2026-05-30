@@ -46,15 +46,37 @@
             white-space: nowrap;
         }
 
-        .admin-applications-index-layout table thead th,
-        .admin-applications-index-layout table tbody td {
-            white-space: nowrap;
-            vertical-align: middle;
+        .admin-applications-index-layout .nav-pills {
+            flex-wrap: nowrap;
+            overflow-x: auto;
         }
 
-        .admin-applications-index-layout .table-view table tbody td:first-child,
-        .admin-applications-index-layout .table-view table thead th:first-child {
-            width: 70px;
+        .admin-applications-index-layout .nav-pills .nav-item {
+            min-width: 220px;
+        }
+
+        .admin-applications-index-layout .admin-applications-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .admin-applications-index-layout .admin-applications-table {
+            min-width: 1280px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .admin-applications-index-layout .admin-applications-table thead th,
+        .admin-applications-index-layout .admin-applications-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+
+        .admin-applications-index-layout .admin-applications-table tbody td:first-child,
+        .admin-applications-index-layout .admin-applications-table thead th:first-child {
+            text-align: center;
         }
 
         .admin-applications-index-layout .response-flag {
@@ -65,6 +87,7 @@
             display: block;
             margin-top: .35rem;
             white-space: normal;
+            word-break: break-word;
         }
 
         .admin-applications-index-layout .responsibility-stack {
@@ -74,10 +97,15 @@
 
         .admin-applications-index-layout .responsibility-row {
             white-space: normal;
+            word-break: break-word;
         }
 
         .admin-applications-index-layout .responsibility-row .badge {
             margin-top: .2rem;
+        }
+
+        .admin-applications-index-layout .admin-applications-actions-cell .list-user-action {
+            justify-content: center;
         }
     </style>
 @endpush
@@ -183,8 +211,19 @@
                         <div class="row">
                             <div class="col-sm-12">
                                 <div class="streamit-wraper-table">
-                                    <div class="table-view table-space">
-                                        <table id="{{ $pane === 'home' ? 'seasonTable' : 'seasonTableArchive' }}" class="data-tables table custom-table data-table-one custom-table-height" role="grid" data-toggle="data-table">
+                                    <div class="table-view table-space admin-applications-table-scroll">
+                                        <table id="{{ $pane === 'home' ? 'seasonTable' : 'seasonTableArchive' }}" class="data-tables table custom-table data-table-one custom-table-height admin-applications-table" role="grid" data-toggle="data-table">
+                                            <colgroup>
+                                                <col style="width: 64px">
+                                                <col style="width: 126px">
+                                                <col style="width: 210px">
+                                                <col style="width: 150px">
+                                                <col style="width: 276px">
+                                                <col style="width: 140px">
+                                                <col style="width: 120px">
+                                                <col style="width: 110px">
+                                                <col style="width: 84px">
+                                            </colgroup>
                                             <thead>
                                                 <tr class="ligth">
                                                     <th>#</th>
@@ -250,7 +289,7 @@
                                                         <td><span class="badge bg-{{ $checkpointClass($checkpoint['key']) }}">{{ $checkpoint['label'] }}</span></td>
                                                         <td>{{ optional($application->submitted_at ?? $application->created_at)->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
                                                         <td><span class="badge bg-{{ $statusClass($application->status) }}">{{ $application->localizedStatus() }}</span></td>
-                                                        <td>
+                                                        <td class="admin-applications-actions-cell">
                                                             <div class="flex align-items-center list-user-action">
                                                                 <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ route('admin.applications.show', $application) }}">
                                                                     <span class="btn-inner">

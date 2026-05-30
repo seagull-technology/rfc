@@ -5,6 +5,52 @@
 
 @extends('layouts.admin-dashboard', ['title' => $title])
 
+@section('page_layout_class', 'admin-permits-index-layout')
+
+@push('styles')
+    <style>
+        .admin-permits-index-layout {
+            padding-top: 0;
+        }
+
+        .admin-permits-index-layout .card {
+            margin-bottom: 0;
+        }
+
+        .admin-permits-index-layout > .row > [class*="col-"] {
+            margin-bottom: 1.5rem;
+        }
+
+        .admin-permits-index-layout .card-header {
+            padding-bottom: 0;
+        }
+
+        .admin-permits-index-layout .permit-registry-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .admin-permits-index-layout .permit-registry-table {
+            min-width: 980px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .admin-permits-index-layout .permit-registry-table thead th,
+        .admin-permits-index-layout .permit-registry-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+
+        .admin-permits-index-layout .permit-actions-cell .btn {
+            white-space: normal;
+            text-align: center;
+        }
+    </style>
+@endpush
+
 @section('content')
     <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4">
         <div>
@@ -19,7 +65,7 @@
         </div>
     </div>
 
-    <div class="row mb-4">
+    <div class="row g-4 mb-4">
         @foreach ([
             ['value' => $stats['total'], 'label' => __('app.permits.metrics.total'), 'color' => 'primary'],
             ['value' => $stats['active'], 'label' => __('app.permits.metrics.active'), 'color' => 'success'],
@@ -63,8 +109,15 @@
     <div class="card mt-4">
         <div class="card-header"><div class="iq-header-title"><h3 class="card-title">{{ __('app.permits.directory_title') }}</h3></div></div>
         <div class="card-body">
-            <div class="table-responsive border rounded py-3">
-                <table class="table mb-0">
+            <div class="table-responsive border rounded py-3 permit-registry-scroll">
+                <table class="table mb-0 permit-registry-table">
+                    <colgroup>
+                        <col style="width: 18%">
+                        <col style="width: 28%">
+                        <col style="width: 22%">
+                        <col style="width: 14%">
+                        <col style="width: 18%">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>{{ __('app.permits.permit_number') }}</th>
@@ -87,7 +140,7 @@
                                 </td>
                                 <td>{{ $permit->entity?->displayName() ?? __('app.dashboard.not_available') }}</td>
                                 <td>{{ $permit->issued_at?->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</td>
-                                <td>
+                                <td class="permit-actions-cell">
                                     <div class="d-flex gap-2 flex-wrap">
                                         <a class="btn btn-sm btn-outline-primary" href="{{ route('admin.permits.show', $permit) }}">{{ __('app.permits.open_action') }}</a>
                                         <a class="btn btn-sm btn-outline-primary" href="{{ route('admin.applications.show', $permit->application) }}">{{ __('app.admin.applications.request_tab') }}</a>

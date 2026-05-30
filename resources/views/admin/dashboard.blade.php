@@ -125,6 +125,23 @@
             white-space: normal;
         }
 
+        .admin-template-layout .workflow-queue-table {
+            min-width: 980px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .admin-template-layout .workflow-queue-table thead th,
+        .admin-template-layout .workflow-queue-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+
+        .admin-template-layout .workflow-queue-actions-cell .list-user-action {
+            justify-content: center;
+        }
+
         .admin-template-layout .response-flag {
             margin-top: .5rem;
         }
@@ -240,7 +257,7 @@
                     <div class="col-xl-6">
                         <div class="card mb-3">
                             <div class="card-body">
-                                <div class="d-flex justify-content-between align-itmes-center">
+                                <div class="d-flex justify-content-between align-items-center">
                                     <div>
                                         <div class="p-3 rounded bg-primary-subtle">
                                             <i class="ph ph-user fs-2"></i>
@@ -261,7 +278,7 @@
 
                         <div class="card">
                             <div class="card-body">
-                                <div class="d-flex justify-content-between align-itmes-center">
+                                <div class="d-flex justify-content-between align-items-center">
                                     <div>
                                         <div class="p-3 rounded bg-primary-subtle">
                                             <i class="ph ph-buildings fs-2"></i>
