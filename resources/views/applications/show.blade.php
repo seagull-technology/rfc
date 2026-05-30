@@ -103,13 +103,33 @@
         }
 
         .applicant-request-show-layout .profile-tab {
-            gap: 0.5rem;
-            flex-wrap: wrap;
-            justify-content: flex-end;
+            flex-wrap: nowrap;
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
         }
 
         .applicant-request-show-layout .profile-tab .nav-link {
             white-space: nowrap;
+        }
+
+        .applicant-request-show-layout .profile-content .tab-pane {
+            transform: none !important;
+        }
+
+        .applicant-request-show-layout .table-responsive {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        [dir="rtl"] .applicant-request-show-layout .table-responsive {
+            direction: ltr;
+        }
+
+        [dir="rtl"] .applicant-request-show-layout .table-responsive > .table {
+            direction: rtl;
         }
 
         .applicant-request-show-layout .request-section-card .card-body > div:last-child,
@@ -249,7 +269,6 @@
                                     </form>
                                 @endif
                             </div>
-                        </div>
                         </div>
                     </div>
                 </div>
@@ -400,6 +419,9 @@
                                     <span class="fw-600 d-block mb-2">{{ __('app.applications.supporting_notes') }}</span>
                                     <div>{{ data_get($requirements, 'supporting_notes', __('app.applications.annex_empty_state')) }}</div>
                                 </div>
+                                <div class="border-top pt-4">
+                                    @include('applications.partials.annex-summary', ['application' => $application])
+                                </div>
                                 @if ($application->review_note)
                                     <div class="alert alert-warning mb-0">{{ $application->review_note }}</div>
                                 @endif
@@ -482,6 +504,7 @@
                             </div>
                         </div>
 
+                        @include('applications.partials.official-letters-applicant', ['officialLetters' => $officialLetters])
                         @include('applications.partials.correspondence-applicant', ['correspondences' => $correspondences])
                         @include('applications.partials.final-decision-applicant')
                     </div>

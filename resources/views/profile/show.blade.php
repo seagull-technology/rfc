@@ -48,12 +48,23 @@
             margin-bottom: 1.5rem;
         }
 
-        .portal-profile-layout .portal-summary-card {
-            margin-bottom: 1.5rem;
+        .portal-profile-layout .portal-summary-card .card-body {
+            padding: 1.5rem 1.75rem;
         }
 
-        .portal-profile-layout .portal-chart-card .card-body {
+        .portal-profile-layout .portal-summary-card img {
+            width: 70px;
+            height: 70px;
+            object-fit: cover;
+        }
+
+        .portal-profile-layout .portal-profile-stat-card .card-body {
+            padding: 1.25rem 1.35rem;
+        }
+
+        .portal-profile-layout .portal-profile-chart-card .card-body {
             min-height: 310px;
+            padding: 1.25rem 1.35rem 1rem;
         }
 
         .portal-profile-layout .portal-chart-surface {
@@ -69,13 +80,12 @@
         }
 
         .portal-profile-layout .card-header {
-            padding-bottom: 0;
-        }
-
-        .portal-profile-layout .portal-chart-card .card-header,
-        .portal-profile-layout .portal-projects-card .card-header {
             font-size: 1rem;
             font-weight: 600;
+            padding: 1rem 1.35rem 0;
+        }
+
+        .portal-profile-layout .portal-profile-projects .card-header {
             padding-bottom: 1rem;
         }
 
@@ -85,20 +95,29 @@
             vertical-align: middle;
         }
 
-        .portal-profile-layout .portal-stat-card h6 {
+        .portal-profile-layout .portal-profile-stat-card h6 {
             margin-bottom: .5rem;
+            font-size: .95rem;
+            font-weight: 600;
         }
 
-        .portal-profile-layout .portal-stat-card h3 {
+        .portal-profile-layout .portal-profile-projects .card-body {
+            padding-top: 0;
+        }
+
+        .portal-profile-layout .portal-profile-stat-card h3 {
             margin-bottom: 0;
         }
 
-        @media (min-width: 768px) {
-            .portal-profile-layout .portal-chart-row-secondary {
-                margin-top: 1rem !important;
-            }
+        .portal-profile-layout .portal-chart-grid + .portal-chart-grid {
+            margin-top: 1rem;
         }
 
+        @media (max-width: 767.98px) {
+            .portal-profile-layout .portal-summary-card .card-body {
+                padding: 1.25rem;
+            }
+        }
     </style>
 @endpush
 
@@ -128,7 +147,7 @@
             ['label' => __('app.admin.entities.profile_metrics.approval_average'), 'value' => $profileStats['approval_average'].'%'],
         ] as $metric)
             <div class="col-md-3">
-                <div class="card portal-stat-card">
+                <div class="card portal-profile-stat-card">
                     <div class="card-body">
                         <h6>{{ $metric['label'] }}</h6>
                         <h3>{{ $metric['value'] }}</h3>
@@ -138,48 +157,48 @@
         @endforeach
     </div>
 
-    <div class="row mt-4 g-3">
+    <div class="row mt-4 portal-chart-grid">
         <div class="col-md-6">
-            <div class="card portal-chart-card">
+            <div class="card portal-profile-chart-card">
                 <div class="card-header">{{ __('app.admin.entities.profile_charts.applications_by_type') }}</div>
                 <div class="card-body"><div id="chartType" class="portal-chart-surface"></div></div>
             </div>
         </div>
 
         <div class="col-md-6">
-            <div class="card portal-chart-card">
+            <div class="card portal-profile-chart-card">
                 <div class="card-header">{{ __('app.admin.entities.profile_charts.budget_by_project') }}</div>
                 <div class="card-body"><div id="chartBudget" class="portal-chart-surface"></div></div>
             </div>
         </div>
     </div>
 
-    <div class="row g-3 portal-chart-row-secondary">
-        <div class="col-md-6 mt-3 mt-md-0">
-            <div class="card portal-chart-card">
+    <div class="row portal-chart-grid">
+        <div class="col-md-6 mt-3">
+            <div class="card portal-profile-chart-card">
                 <div class="card-header">{{ __('app.admin.entities.profile_charts.applications_by_month') }}</div>
                 <div class="card-body"><div id="chartMonths" class="portal-chart-surface"></div></div>
             </div>
         </div>
 
-        <div class="col-md-6 mt-3 mt-md-0">
-            <div class="card portal-chart-card">
+        <div class="col-md-6 mt-3">
+            <div class="card portal-profile-chart-card">
                 <div class="card-header">{{ __('app.admin.entities.profile_charts.crew_by_project') }}</div>
                 <div class="card-body"><div id="chartActors" class="portal-chart-surface"></div></div>
             </div>
         </div>
     </div>
 
-    <div class="row g-3 portal-chart-row-secondary">
-        <div class="col-md-12 mt-3 mt-md-0">
-            <div class="card portal-chart-card">
+    <div class="row portal-chart-grid">
+        <div class="col-md-12 mt-3">
+            <div class="card portal-profile-chart-card">
                 <div class="card-header">{{ __('app.admin.entities.profile_charts.authority_response_average') }}</div>
                 <div class="card-body"><div id="chartGovResponse" class="portal-chart-surface"></div></div>
             </div>
         </div>
     </div>
 
-    <div class="card mt-4 portal-projects-card">
+    <div class="card mt-4 portal-profile-projects">
         <div class="card-header">{{ __('app.admin.entities.profile_previous_projects') }}</div>
         <div class="card-body">
             <div class="table-responsive">
@@ -232,7 +251,7 @@
             const crewByProjectChart = @json($crewByProjectChart);
             const authorityResponseChart = @json($authorityResponseChart);
             const emptyMessage = @json(__('app.admin.dashboard.chart_no_data'));
-            const palette = ['#ce0812', '#b70710', '#89050c', '#2e0204', '#d44d56', '#f0b2b6'];
+            const palette = ['#5e1d19', '#4b1714', '#38120f', '#1f0908', '#7a2a21', '#c4a5a1'];
 
             if (applicationsByTypeChart.length > 0) {
                 new ApexCharts(document.querySelector('#chartType'), {
@@ -251,7 +270,7 @@
                     chart: { type: 'bar', height: 300, toolbar: { show: false } },
                     series: [{ name: @json(__('app.admin.entities.profile_charts.budget_by_project')), data: budgetByProjectChart.map((row) => row.value) }],
                     xaxis: { categories: budgetByProjectChart.map((row) => row.label) },
-                    colors: ['#ce0812'],
+                    colors: ['#5e1d19'],
                     dataLabels: { enabled: true }
                 }).render();
             } else {
@@ -264,7 +283,7 @@
                     series: [{ name: @json(__('app.admin.entities.profile_charts.applications_by_month')), data: applicationsByMonthCounts }],
                     xaxis: { categories: applicationsByMonthLabels },
                     stroke: { curve: 'smooth' },
-                    colors: ['#ce0812']
+                    colors: ['#5e1d19']
                 }).render();
             } else {
                 renderEmptyState('#chartMonths', emptyMessage);
@@ -275,7 +294,7 @@
                     chart: { type: 'bar', height: 300, toolbar: { show: false } },
                     series: [{ name: @json(__('app.admin.entities.profile_charts.crew_by_project')), data: crewByProjectChart.map((row) => row.value) }],
                     xaxis: { categories: crewByProjectChart.map((row) => row.label) },
-                    colors: ['#ce0812'],
+                    colors: ['#5e1d19'],
                     dataLabels: { enabled: true }
                 }).render();
             } else {
@@ -287,7 +306,7 @@
                     chart: { type: 'radar', height: 350, toolbar: { show: false } },
                     series: [{ name: @json(__('app.admin.entities.profile_charts.authority_response_average')), data: authorityResponseChart.map((row) => row.value) }],
                     labels: authorityResponseChart.map((row) => row.label),
-                    colors: ['#ce0812']
+                    colors: ['#5e1d19']
                 }).render();
             } else {
                 renderEmptyState('#chartGovResponse', emptyMessage);

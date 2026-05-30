@@ -109,6 +109,11 @@ class Application extends Model
         return $this->hasMany(ApplicationCorrespondence::class)->latest();
     }
 
+    public function officialLetters(): HasMany
+    {
+        return $this->hasMany(ApplicationOfficialLetter::class)->latest();
+    }
+
     public function localizedStatus(): string
     {
         return __('app.statuses.'.Str::lower($this->status ?: 'draft'));

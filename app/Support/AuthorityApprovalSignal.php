@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\ApplicationAuthorityApproval;
 use App\Models\ApplicationCorrespondence;
+use App\Models\ApplicationOfficialLetter;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 
@@ -19,7 +20,22 @@ class AuthorityApprovalSignal
         }
 
         $latestExternalCorrespondence = self::latestExternalCorrespondence($approval);
+        $latestOfficialLetter = self::latestIssuedOfficialLetter($approval);
         $lastAuthorityTouch = self::lastAuthorityTouch($approval);
+
+        if ($latestOfficialLetter && (! $lastAuthorityTouch || $latestOfficialLetter['at']->gte($lastAuthorityTouch))) {
+            return [
+                'active' => true,
+                'key' => 'official_book_issued',
+                'label' => __('app.authority.applications.signal_official_book_issued'),
+                'summary' => __('app.authority.applications.signal_official_book_issued_item', [
+                    'item' => $latestOfficialLetter['item'],
+                ]),
+                'class' => 'info',
+                'priority' => 4,
+                'at' => $latestOfficialLetter['at'],
+            ];
+        }
 
         if ($latestExternalCorrespondence && (! $lastAuthorityTouch || $latestExternalCorrespondence['at']->gte($lastAuthorityTouch))) {
             return [
@@ -76,6 +92,64 @@ class AuthorityApprovalSignal
             'priority' => 0,
             'at' => null,
         ];
+    }
+
+    /**
+     * @return array{item:string,at:CarbonInterface}|null
+     */
+    private static function latestIssuedOfficialLetter(ApplicationAuthorityApproval $approval): ?array
+    {
+        $application = $approval->application;
+
+        if (! $application) {
+            return null;
+        }
+
+        $letter = $application->relationLoaded('officialLetters')
+            ? $application->officialLetters
+                ->filter(fn (ApplicationOfficialLetter $letter): bool => self::officialLetterBelongsToApproval($letter, $approval))
+                ->sortByDesc(fn (ApplicationOfficialLetter $letter): int => self::asCarbon($letter->issued_at ?? $letter->updated_at ?? $letter->created_at)?->timestamp ?? 0)
+                ->first()
+            : $application->officialLetters()
+                ->where('status', 'issued')
+                ->where(function ($query) use ($approval): void {
+                    $query->where('application_authority_approval_id', $approval->getKey());
+
+                    if ($approval->entity_id) {
+                        $query->orWhere('target_entity_id', $approval->entity_id);
+                    }
+                })
+                ->latest('issued_at')
+                ->latest()
+                ->first();
+
+        if (! $letter instanceof ApplicationOfficialLetter) {
+            return null;
+        }
+
+        $at = self::asCarbon($letter->issued_at ?? $letter->updated_at ?? $letter->created_at);
+
+        if (! $at) {
+            return null;
+        }
+
+        return [
+            'item' => $letter->subject,
+            'at' => $at,
+        ];
+    }
+
+    private static function officialLetterBelongsToApproval(ApplicationOfficialLetter $letter, ApplicationAuthorityApproval $approval): bool
+    {
+        if ($letter->status !== 'issued') {
+            return false;
+        }
+
+        if ((int) $letter->application_authority_approval_id === (int) $approval->getKey()) {
+            return true;
+        }
+
+        return $approval->entity_id !== null && (int) $letter->target_entity_id === (int) $approval->entity_id;
     }
 
     /**

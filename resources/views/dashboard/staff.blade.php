@@ -1,6 +1,5 @@
 @php
     $title = __('app.dashboard.title');
-    $isArabic = app()->getLocale() === 'ar';
     $metricPercent = static fn (int $value, int $total): int => $total > 0 ? (int) round(($value / $total) * 100) : 0;
     $statusClass = static fn (?string $status): string => match ($status) {
         'draft' => 'secondary',
@@ -12,9 +11,13 @@
         default => 'secondary',
     };
 
+    $translatedRoles = $roles
+        ->map(fn (string $roleName): string => __('app.roles.'.$roleName))
+        ->values();
+
     $metrics = [
         [
-            'label' => $isArabic ? 'عدد طلبات الانتاج' : 'Production requests',
+            'label' => __('app.dashboard.metrics.production_requests'),
             'value' => $applicationStats['total'],
             'percent' => $metricPercent($applicationStats['total'], max($applicationStats['total'], 1)),
             'card_color' => 'danger',
@@ -22,7 +25,7 @@
             'icon' => asset('images/clapboard.png'),
         ],
         [
-            'label' => $isArabic ? 'عدد الطلبات قيد الدراسة' : 'Requests in review',
+            'label' => __('app.dashboard.metrics.requests_in_review'),
             'value' => $applicationStats['active_reviews'],
             'percent' => $metricPercent($applicationStats['active_reviews'], max($applicationStats['total'], 1)),
             'card_color' => 'warning',
@@ -30,7 +33,7 @@
             'icon' => asset('images/clapboard.png'),
         ],
         [
-            'label' => $isArabic ? 'عدد طلبات الاستقصاء' : 'Scouting requests',
+            'label' => __('app.dashboard.metrics.scouting_requests'),
             'value' => $scoutingStats['total'],
             'percent' => $metricPercent($scoutingStats['total'], max($scoutingStats['total'], 1)),
             'card_color' => 'success',
@@ -104,7 +107,7 @@
                 </div>
                 <div class="mt-3">
                     <h3 class="d-inline-block text-white">{{ $entity->displayName() }}</h3>
-                    <div class="text-white-50">{{ $roles->isNotEmpty() ? $roles->join(' | ') : __('app.dashboard.no_roles') }}</div>
+                    <div class="text-white-50">{{ $translatedRoles->isNotEmpty() ? $translatedRoles->join(' | ') : __('app.dashboard.no_roles') }}</div>
                 </div>
             </div>
         </div>
@@ -152,7 +155,7 @@
                     <div class="mb-2"><span class="fw-600">{{ __('app.dashboard.signed_in_user') }}:</span> <span class="ms-2">{{ $user->displayName() }}</span></div>
                     <div class="mb-2"><span class="fw-600">{{ __('app.dashboard.current_entity') }}:</span> <span class="ms-2">{{ $entity->displayName() }}</span></div>
                     <div class="mb-2"><span class="fw-600">{{ __('app.dashboard.account_status') }}:</span> <span class="ms-2">{{ $user->localizedStatus() }}</span></div>
-                    <div class="mb-0"><span class="fw-600">{{ __('app.dashboard.assigned_roles') }}:</span> <span class="ms-2">{{ $roles->isNotEmpty() ? $roles->join(', ') : __('app.dashboard.no_roles') }}</span></div>
+                    <div class="mb-0"><span class="fw-600">{{ __('app.dashboard.assigned_roles') }}:</span> <span class="ms-2">{{ $translatedRoles->isNotEmpty() ? $translatedRoles->join(', ') : __('app.dashboard.no_roles') }}</span></div>
                 </div>
             </div>
         </div>
@@ -160,7 +163,7 @@
             <div class="card">
                 <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4">
                     <h2 class="episode-playlist-title wp-heading-inline">
-                        <span class="position-relative">{{ $isArabic ? 'أحدث طلبات الانتاج' : 'Latest production requests' }}</span>
+                        <span class="position-relative">{{ __('app.dashboard.sections.latest_production_requests') }}</span>
                     </h2>
                 </div>
                 <div class="card-body pt-0">
@@ -169,9 +172,9 @@
                             <thead>
                                 <tr class="ligth">
                                     <th>#</th>
-                                    <th>{{ $isArabic ? 'رقم الطلب' : 'Request number' }}</th>
-                                    <th>{{ $isArabic ? 'اسم المشروع' : 'Project name' }}</th>
-                                    <th>{{ $isArabic ? 'الجهة' : 'Entity' }}</th>
+                                    <th>{{ __('app.dashboard.tables.request_number') }}</th>
+                                    <th>{{ __('app.applications.project_name') }}</th>
+                                    <th>{{ __('app.dashboard.tables.entity') }}</th>
                                     <th>{{ __('app.applications.status') }}</th>
                                 </tr>
                             </thead>

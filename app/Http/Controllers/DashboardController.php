@@ -6,8 +6,11 @@ use App\Models\Application as FilmApplication;
 use App\Models\ApplicationAuthorityApproval;
 use App\Models\ScoutingRequest;
 use App\Models\User;
+use App\Services\AuthorityEscalationService;
 use App\Support\ApplicantDashboardState;
 use App\Support\ApplicationWorkflowRegistry;
+use App\Support\AuthorityApprovalSignal;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
@@ -16,6 +19,11 @@ use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
+    public function __construct(
+        private readonly AuthorityEscalationService $authorityEscalationService,
+    ) {
+    }
+
     public function __invoke(Request $request): View|RedirectResponse
     {
         $user = $request->user();
@@ -43,20 +51,43 @@ class DashboardController extends Controller
             $approvalCodes = ApplicationWorkflowRegistry::approvalCodesForEntity($entity);
 
             $approvals = ApplicationAuthorityApproval::query()
-                ->with(['application.entity', 'application.submittedBy', 'reviewedBy', 'entity'])
-                ->where(function ($query) use ($entity, $approvalCodes): void {
-                    $query->where('entity_id', $entity->getKey());
-
-                    if ($approvalCodes !== []) {
-                        $query->orWhere(function ($legacyQuery) use ($approvalCodes): void {
-                            $legacyQuery
-                                ->whereNull('entity_id')
-                                ->whereIn('authority_code', $approvalCodes);
-                        });
-                    }
-                })
+                ->with([
+                    'application' => fn ($builder) => $builder
+                        ->with(['entity', 'submittedBy', 'officialLetters'])
+                        ->withMax([
+                            'correspondences as last_external_correspondence_at' => fn (Builder $query): Builder => $query->whereIn('sender_type', ['admin', 'applicant']),
+                        ], 'created_at'),
+                    'assignedTo',
+                    'reviewedBy',
+                    'entity',
+                ])
+                ->where(fn (Builder $query): Builder => $this->restrictApprovalsToAuthorityUser($query, $user->getKey(), $entity, $approvalCodes))
                 ->latest()
                 ->get();
+            $approvalSignals = $approvals
+                ->mapWithKeys(fn (ApplicationAuthorityApproval $approval): array => [
+                    $approval->getKey() => AuthorityApprovalSignal::forApproval($approval),
+                ]);
+            $approvalSlaSignals = $approvals
+                ->mapWithKeys(fn (ApplicationAuthorityApproval $approval): array => [
+                    $approval->getKey() => $this->authorityEscalationService->signalForApproval($approval, null, $entity),
+                ]);
+            $approvals = $approvals
+                ->sortByDesc(function (ApplicationAuthorityApproval $approval) use ($approvalSignals, $approvalSlaSignals): int {
+                    $signal = $approvalSignals->get($approval->getKey(), [
+                        'priority' => 0,
+                        'at' => null,
+                    ]);
+                    $slaSignal = $approvalSlaSignals->get($approval->getKey(), [
+                        'is_overdue' => false,
+                        'is_escalated' => false,
+                    ]);
+
+                    return (((int) ($slaSignal['is_overdue'] ?? false) * 10) + ((int) ($slaSignal['is_escalated'] ?? false) * 5)) * 1_000_000_000_000_000
+                        + ((int) ($signal['priority'] ?? 0) * 1_000_000_000_000)
+                        + (int) (($signal['at'] ?? null)?->timestamp ?? $approval->updated_at?->timestamp ?? 0);
+                })
+                ->values();
 
             return view('dashboard.authority', [
                 'user' => $user,
@@ -64,11 +95,19 @@ class DashboardController extends Controller
                 'group' => $group,
                 'roles' => $user->roleNamesForEntity($entity),
                 'approvals' => $approvals,
+                'approvalSignals' => $approvalSignals,
+                'approvalSlaSignals' => $approvalSlaSignals,
                 'approvalStats' => [
                     'total' => $approvals->count(),
+                    'my_assigned' => $approvals->where('assigned_user_id', $user->getKey())->count(),
+                    'shared_inbox' => $approvals->whereNull('assigned_user_id')->count(),
                     'pending' => $approvals->where('status', 'pending')->count(),
                     'in_review' => $approvals->where('status', 'in_review')->count(),
                     'resolved' => $approvals->whereIn('status', ['approved', 'rejected'])->count(),
+                    'updates' => $approvalSignals->where('key', 'request_update')->count(),
+                    'official_books' => $approvalSignals->where('key', 'official_book_issued')->count(),
+                    'overdue' => $approvalSlaSignals->where('is_overdue', true)->count(),
+                    'escalated' => $approvals->whereNotNull('escalated_at')->count(),
                 ],
             ]);
         }
@@ -268,5 +307,27 @@ class DashboardController extends Controller
             'approved' => 'success',
             default => 'secondary',
         };
+    }
+
+    /**
+     * @param  array<int, string>  $approvalCodes
+     */
+    private function restrictApprovalsToAuthorityUser(Builder $query, int $userId, $entity, array $approvalCodes): Builder
+    {
+        return $query->where(function (Builder $builder) use ($entity, $approvalCodes): void {
+            $builder->where('entity_id', $entity->getKey());
+
+            if ($approvalCodes !== []) {
+                $builder->orWhere(function (Builder $legacyQuery) use ($approvalCodes): void {
+                    $legacyQuery
+                        ->whereNull('entity_id')
+                        ->whereIn('authority_code', $approvalCodes);
+                });
+            }
+        })->where(function (Builder $builder) use ($userId): void {
+            $builder
+                ->whereNull('assigned_user_id')
+                ->orWhere('assigned_user_id', $userId);
+        });
     }
 }

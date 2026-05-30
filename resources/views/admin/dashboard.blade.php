@@ -43,6 +43,14 @@
     $activeUserPercent = number_format(($stats['active_users'] / $userTotal) * 100, 2);
     $pendingReviewPercent = number_format(($stats['pending_reviews'] / $registrationTotal) * 100, 2);
     $workflowTotal = max(1, (int) ($stats['workflow_needs_admin_review'] + $stats['workflow_waiting_applicant'] + $stats['workflow_waiting_authorities'] + $stats['workflow_ready_final_decision'] + $stats['workflow_assign_reviewer']));
+    $workflowRoleLabels = $admin
+        ->getRoleNames()
+        ->map(fn (string $roleName): string => $translateOrFallback('app.roles.'.$roleName, str($roleName)->replace('_', ' ')->title()->toString()))
+        ->values();
+    $workflowVisibleCount = $workflowQueue->count();
+    $workflowVisiblePercent = number_format(($workflowVisibleCount / max(1, (int) $stats['applications'])) * 100, 2);
+    $workflowWaitingAuthoritiesPercent = number_format(($stats['workflow_waiting_authorities'] / $workflowTotal) * 100, 2);
+    $workflowFinalDecisionPercent = number_format(($stats['workflow_ready_final_decision'] / $workflowTotal) * 100, 2);
 @endphp
 
 @extends('layouts.admin-dashboard', ['title' => $title])
@@ -125,10 +133,67 @@
             display: block;
             margin-top: .35rem;
         }
+
+        .admin-template-layout .workflow-dashboard-layout {
+            padding-top: 0 !important;
+        }
+
+        .admin-template-layout .workflow-dashboard-hero {
+            border: 0;
+            border-radius: .5rem;
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+        }
+
+        .admin-template-layout .workflow-dashboard-hero .card-body {
+            padding: 2.5rem 1rem 2rem;
+        }
+
+        .admin-template-layout .workflow-dashboard-hero .avatar-130 {
+            width: 130px;
+            height: 130px;
+        }
+
+        .admin-template-layout .workflow-dashboard-hero h3 {
+            font-size: 2.25rem;
+            font-weight: 700;
+            margin-bottom: .35rem;
+        }
+
+        .admin-template-layout .workflow-dashboard-card .card-body {
+            min-height: 205px;
+        }
+
+        .admin-template-layout .workflow-dashboard-card img {
+            width: 64px;
+            height: 64px;
+            object-fit: contain;
+        }
+
+        .admin-template-layout .workflow-dashboard-summary .summary-item + .summary-item {
+            margin-top: .85rem;
+        }
+
+        .admin-template-layout .workflow-dashboard-summary .summary-label {
+            font-weight: 600;
+        }
     </style>
 @endpush
 
 @section('content')
+    @if ($isWorkflowDashboard)
+        @include('admin.partials.workflow-dashboard', [
+            'admin' => $admin,
+            'profileEntityName' => $profileEntityName,
+            'workflowRoleLabels' => $workflowRoleLabels,
+            'workflowVisibleCount' => $workflowVisibleCount,
+            'workflowVisiblePercent' => $workflowVisiblePercent,
+            'workflowWaitingAuthoritiesPercent' => $workflowWaitingAuthoritiesPercent,
+            'workflowFinalDecisionPercent' => $workflowFinalDecisionPercent,
+            'stats' => $stats,
+            'workflowQueue' => $workflowQueue,
+        ])
+    @else
     <div class="row">
         <div class="col-12">
             <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4 px-0">
@@ -538,6 +603,7 @@
             </div>
         </div>
     </div>
+    @endif
 @endsection
 
 @push('scripts')
@@ -551,8 +617,8 @@
             const primaryColor = '#3b82f6';
             const dangerColor = '#b52b1e';
             const successColor = '#198754';
-            const orangeColor = '#f97316';
-            const mutedPalette = ['#3b82f6', '#f97316', '#ef4444', '#22c55e', '#8b5cf6', '#06b6d4'];
+            const orangeColor = '#7a2a21';
+            const mutedPalette = ['#3b82f6', '#7a2a21', '#5e1d19', '#22c55e', '#8b5cf6', '#06b6d4'];
 
             const renderEmptyState = function (selector) {
                 const element = document.querySelector(selector);

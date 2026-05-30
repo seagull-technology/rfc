@@ -79,6 +79,11 @@
         .admin-user-show-layout .badge.bg-primary-subtle.text-dark {
             border: 1px solid rgba(0, 0, 0, 0.08);
         }
+
+        .admin-user-show-layout .role-audit-badge {
+            min-width: 5.5rem;
+            text-align: center;
+        }
     </style>
 @endpush
 
@@ -435,7 +440,7 @@
                         @csrf
                         <div class="col-md-6">
                             <label for="entity_id" class="form-label">{{ __('app.admin.users.initial_entity') }}</label>
-                            <select id="entity_id" name="entity_id" class="form-select" required>
+                            <select id="entity_id" name="entity_id" class="form-select select2-basic-single" required>
                                 <option value="">{{ __('app.admin.select_placeholder') }}</option>
                                 @foreach ($entities as $entity)
                                     <option value="{{ $entity->id }}" data-roles="{{ $entity->group->roles->pluck('name')->join(',') }}" @selected(old('entity_id') == $entity->id)>
@@ -445,9 +450,8 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label for="role" class="form-label">{{ __('app.admin.users.initial_role') }}</label>
-                            <select id="role" name="role" class="form-select" required>
-                                <option value="">{{ __('app.admin.select_entity_first') }}</option>
+                            <label for="roles" class="form-label">{{ __('app.admin.users.initial_roles') }}</label>
+                            <select id="roles" name="roles[]" class="form-select select2-basic-multiple" multiple required disabled data-placeholder="{{ __('app.admin.select_placeholder') }}">
                             </select>
                         </div>
                         <div class="col-md-6">
@@ -514,48 +518,69 @@
                 </div>
             </div>
         </div>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <div class="iq-header-title">
+                        <h3 class="card-title">{{ __('app.admin.users.role_history_title') }}</h3>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive border rounded py-3">
+                        <table class="table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>{{ __('app.admin.users.member_role') }}</th>
+                                    <th>{{ __('app.admin.users.role_history_entity') }}</th>
+                                    <th>{{ __('app.admin.users.role_history_action') }}</th>
+                                    <th>{{ __('app.admin.users.role_history_by') }}</th>
+                                    <th>{{ __('app.admin.users.role_history_at') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse ($roleAssignmentAudits as $audit)
+                                    <tr>
+                                        <td><span class="badge bg-primary-subtle text-dark">{{ __('app.roles.'.$audit->role_name) }}</span></td>
+                                        <td>
+                                            @if ($audit->entity)
+                                                <a href="{{ route('admin.entities.show', $audit->entity->getKey()) }}">{{ $audit->entity->displayName() }}</a><br>
+                                                <span class="text-muted">{{ $audit->entity->group?->displayName() ?? __('app.dashboard.not_available') }}</span>
+                                            @else
+                                                {{ __('app.dashboard.not_available') }}
+                                            @endif
+                                        </td>
+                                        <td>
+                                            <span class="badge role-audit-badge bg-{{ $audit->action === 'added' ? 'success' : 'danger' }}">{{ $audit->localizedAction() }}</span>
+                                        </td>
+                                        <td>{{ $audit->changedBy?->displayName() ?? __('app.dashboard.not_available') }}</td>
+                                        <td>{{ optional($audit->created_at)->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="5" class="text-center text-muted py-4">{{ __('app.admin.users.role_history_empty') }}</td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 @endsection
 
 @push('scripts')
+    @include('admin.users.partials.role-picker-script', ['entities' => $entities])
+
     <script>
         (() => {
-            const entitySelect = document.getElementById('entity_id');
-            const roleSelect = document.getElementById('role');
-            const selectedRole = @json(old('role'));
-            const labels = @json($entities->flatMap(fn ($entity) => $entity->group->roles->pluck('name'))->unique()->mapWithKeys(fn ($roleName) => [$roleName => __('app.roles.'.$roleName)]));
-
-            const populateRoles = () => {
-                const selectedOption = entitySelect.options[entitySelect.selectedIndex];
-                const roles = (selectedOption?.dataset.roles || '').split(',').filter(Boolean);
-
-                roleSelect.innerHTML = '';
-
-                if (!roles.length) {
-                    roleSelect.innerHTML = `<option value="">{{ __('app.admin.select_entity_first') }}</option>`;
-                    return;
-                }
-
-                roleSelect.innerHTML = `<option value="">{{ __('app.admin.select_placeholder') }}</option>`;
-
-                roles.forEach((roleName) => {
-                    const option = document.createElement('option');
-                    option.value = roleName;
-                    option.textContent = labels[roleName] || roleName;
-                    option.selected = selectedRole === roleName;
-                    roleSelect.appendChild(option);
-                });
-            };
-
-            entitySelect.addEventListener('change', populateRoles);
-            populateRoles();
-
             if (typeof ApexCharts === 'undefined') {
                 return;
             }
 
             const chartNoDataText = @json(__('app.admin.dashboard.chart_no_data'));
-            const palette = ['#ce0812', '#b70710', '#89050c', '#2e0204', '#f97316', '#06b6d4'];
+            const palette = ['#5e1d19', '#4b1714', '#38120f', '#1f0908', '#7a2a21', '#06b6d4'];
 
             const renderEmptyState = function (selector) {
                 const element = document.querySelector(selector);
@@ -606,7 +631,7 @@
                 chart: { type: 'bar', height: 260, toolbar: { show: false } },
                 series: [{ name: budgetSeriesLabel, data: budgetData.map(item => item.value) }],
                 xaxis: { categories: budgetData.map(item => item.label) },
-                colors: ['#ce0812'],
+                colors: ['#5e1d19'],
                 plotOptions: { bar: { borderRadius: 6, columnWidth: '45%' } },
                 dataLabels: { enabled: false }
             });
@@ -615,7 +640,7 @@
                 chart: { type: 'area', height: 260, toolbar: { show: false } },
                 series: [{ name: requestsSeriesLabel, data: monthCounts }],
                 xaxis: { categories: monthLabels },
-                colors: ['#89050c'],
+                colors: ['#38120f'],
                 stroke: { curve: 'smooth', width: 3 },
                 dataLabels: { enabled: false },
                 fill: {
@@ -628,7 +653,7 @@
                 chart: { type: 'bar', height: 260, toolbar: { show: false } },
                 series: [{ name: crewSeriesLabel, data: crewData.map(item => item.value) }],
                 xaxis: { categories: crewData.map(item => item.label) },
-                colors: ['#f97316'],
+                colors: ['#7a2a21'],
                 plotOptions: { bar: { borderRadius: 6, columnWidth: '45%' } },
                 dataLabels: { enabled: false }
             });
@@ -637,7 +662,7 @@
                 chart: { type: 'bar', height: 260, toolbar: { show: false } },
                 series: [{ name: authoritySeriesLabel, data: authorityData.map(item => item.value) }],
                 xaxis: { categories: authorityData.map(item => item.label) },
-                colors: ['#2e0204'],
+                colors: ['#1f0908'],
                 plotOptions: { bar: { horizontal: true, borderRadius: 6, barHeight: '45%' } },
                 dataLabels: { enabled: false }
             });

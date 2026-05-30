@@ -119,7 +119,7 @@
 
             const setStatus = (message, isError = false) => {
                 status.textContent = message;
-                status.style.color = isError ? '#8d1f1f' : '#60776c';
+                status.style.color = isError ? '#5e1d19' : '#60776c';
             };
 
             button.addEventListener('click', async () => {

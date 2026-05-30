@@ -81,6 +81,13 @@
             white-space: normal;
         }
 
+        .authority-inbox-layout .authority-sla-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .35rem;
+            margin-top: .5rem;
+        }
+
         @media (max-width: 767.98px) {
             .portal-authority-hero .card-body {
                 padding-top: 2rem;
@@ -96,7 +103,7 @@
 
 @section('content')
     <div class="row">
-        <div class="col-lg-4 col-md-6">
+        <div class="col-lg-3 col-md-6">
             <div class="card">
                 <div class="card-body">
                     <div class="text-center">{{ __('app.authority.dashboard.metrics.total') }}</div>
@@ -117,28 +124,49 @@
             </div>
         </div>
 
-        <div class="col-lg-4 col-md-6">
+        <div class="col-lg-3 col-md-6">
             <div class="card">
                 <div class="card-body">
-                    <div class="text-center">{{ __('app.authority.dashboard.metrics.in_review') }}</div>
+                    <div class="text-center">{{ __('app.authority.dashboard.metrics.my_assigned') }}</div>
                     <div class="d-flex align-items-center justify-content-between mt-3">
                         <div>
-                            <h2 class="counter">{{ $stats['pending'] + $stats['in_review'] }}</h2>
+                            <h2 class="counter">{{ $stats['my_assigned'] }}</h2>
                         </div>
                         <div class="border bg-warning-subtle rounded p-3">
-                            <img src="{{ asset('images/clapboard.png') }}" alt="in review">
+                            <img src="{{ asset('images/clapboard.png') }}" alt="my assigned">
                         </div>
                     </div>
                     <div class="mt-4">
                         <div class="progress bg-warning-subtle shadow-none w-100" style="height: 6px">
-                            <div class="progress-bar bg-warning" role="progressbar" style="width: {{ $stats['total'] > 0 ? (($stats['pending'] + $stats['in_review']) / $stats['total']) * 100 : 0 }}%"></div>
+                            <div class="progress-bar bg-warning" role="progressbar" style="width: {{ $stats['total'] > 0 ? ($stats['my_assigned'] / $stats['total']) * 100 : 0 }}%"></div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="col-lg-4 col-md-6">
+        <div class="col-lg-3 col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <div class="text-center">{{ __('app.authority.dashboard.metrics.shared_inbox') }}</div>
+                    <div class="d-flex align-items-center justify-content-between mt-3">
+                        <div>
+                            <h2 class="counter">{{ $stats['shared_inbox'] }}</h2>
+                        </div>
+                        <div class="border bg-primary-subtle rounded p-3">
+                            <img src="{{ asset('images/clapboard.png') }}" alt="shared inbox">
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <div class="progress bg-primary-subtle shadow-none w-100" style="height: 6px">
+                            <div class="progress-bar bg-primary" role="progressbar" style="width: {{ $stats['total'] > 0 ? ($stats['shared_inbox'] / $stats['total']) * 100 : 0 }}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6">
             <div class="card">
                 <div class="card-body">
                     <div class="text-center">{{ __('app.authority.dashboard.metrics.updates') }}</div>
@@ -146,13 +174,76 @@
                         <div>
                             <h2 class="counter">{{ $stats['updates'] }}</h2>
                         </div>
-                        <div class="border bg-primary-subtle rounded p-3">
+                        <div class="border bg-success-subtle rounded p-3">
                             <img src="{{ asset('images/clapboard.png') }}" alt="updates">
                         </div>
                     </div>
                     <div class="mt-4">
-                        <div class="progress bg-primary-subtle shadow-none w-100" style="height: 6px">
-                            <div class="progress-bar bg-primary" role="progressbar" style="width: {{ $stats['total'] > 0 ? ($stats['updates'] / $stats['total']) * 100 : 0 }}%"></div>
+                        <div class="progress bg-success-subtle shadow-none w-100" style="height: 6px">
+                            <div class="progress-bar bg-success" role="progressbar" style="width: {{ $stats['total'] > 0 ? ($stats['updates'] / $stats['total']) * 100 : 0 }}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <div class="text-center">{{ __('app.authority.dashboard.metrics.official_books') }}</div>
+                    <div class="d-flex align-items-center justify-content-between mt-3">
+                        <div>
+                            <h2 class="counter">{{ $stats['official_books'] }}</h2>
+                        </div>
+                        <div class="border bg-info-subtle rounded p-3">
+                            <img src="{{ asset('images/clapboard.png') }}" alt="official books">
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <div class="progress bg-info-subtle shadow-none w-100" style="height: 6px">
+                            <div class="progress-bar bg-info" role="progressbar" style="width: {{ $stats['total'] > 0 ? ($stats['official_books'] / $stats['total']) * 100 : 0 }}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <div class="text-center">{{ __('app.authority.dashboard.metrics.overdue') }}</div>
+                    <div class="d-flex align-items-center justify-content-between mt-3">
+                        <div>
+                            <h2 class="counter">{{ $stats['overdue'] }}</h2>
+                        </div>
+                        <div class="border bg-danger-subtle rounded p-3">
+                            <img src="{{ asset('images/clapboard.png') }}" alt="overdue">
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <div class="progress bg-danger-subtle shadow-none w-100" style="height: 6px">
+                            <div class="progress-bar bg-danger" role="progressbar" style="width: {{ $stats['total'] > 0 ? ($stats['overdue'] / $stats['total']) * 100 : 0 }}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <div class="text-center">{{ __('app.authority.dashboard.metrics.escalated') }}</div>
+                    <div class="d-flex align-items-center justify-content-between mt-3">
+                        <div>
+                            <h2 class="counter">{{ $stats['escalated'] }}</h2>
+                        </div>
+                        <div class="border bg-dark-subtle rounded p-3">
+                            <img src="{{ asset('images/clapboard.png') }}" alt="escalated">
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <div class="progress bg-dark-subtle shadow-none w-100" style="height: 6px">
+                            <div class="progress-bar bg-dark" role="progressbar" style="width: {{ $stats['total'] > 0 ? ($stats['escalated'] / $stats['total']) * 100 : 0 }}%"></div>
                         </div>
                     </div>
                 </div>
@@ -184,7 +275,15 @@
                                         @endforeach
                                     </select>
                                 </div>
-                                <div class="col-lg-2 d-flex gap-2 flex-wrap">
+                                <div class="col-lg-2">
+                                    <label class="form-label" for="ownership">{{ __('app.authority.applications.ownership') }}</label>
+                                    <select id="ownership" name="ownership" class="form-control select2-basic-single">
+                                        @foreach (['all', 'mine', 'shared'] as $ownership)
+                                            <option value="{{ $ownership }}" @selected($filters['ownership'] === $ownership)>{{ __('app.authority.applications.ownership_filters.'.$ownership) }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="col-lg-12 d-flex gap-2 flex-wrap">
                                     <button class="btn btn-primary flex-fill" type="submit">{{ __('app.applications.apply_filters_action') }}</button>
                                     <a class="btn btn-outline-primary flex-fill" href="{{ route('authority.applications.index') }}">{{ __('app.applications.clear_filters_action') }}</a>
                                 </div>
@@ -199,7 +298,9 @@
                                             <th>#</th>
                                             <th>{{ __('app.applications.request_number') }}</th>
                                             <th>{{ __('app.applications.project_name') }}</th>
+                                            <th>{{ __('app.authority.applications.approval_type') }}</th>
                                             <th>{{ __('app.authority.applications.applicant') }}</th>
+                                            <th>{{ __('app.authority.applications.ownership') }}</th>
                                             <th>{{ __('app.applications.submitted_at_label') }}</th>
                                             <th>{{ __('app.applications.status') }}</th>
                                             <th>{{ __('app.authority.applications.actions') }}</th>
@@ -209,6 +310,7 @@
                                         @forelse ($approvals as $approval)
                                             @php
                                                 $approvalSignal = $approvalSignals->get($approval->getKey(), ['active' => false]);
+                                                $approvalSlaSignal = $approvalSlaSignals->get($approval->getKey(), ['label' => null, 'is_overdue' => false, 'is_escalated' => false, 'due_at' => null]);
                                             @endphp
                                             <tr>
                                                 <td>{{ $loop->iteration }}</td>
@@ -224,10 +326,36 @@
                                                             @endif
                                                         </div>
                                                     @endif
+                                                    <div class="authority-sla-badges">
+                                                        @if ($approvalSlaSignal['label'])
+                                                            <span class="badge bg-{{ $approvalSlaSignal['is_overdue'] ? 'danger' : 'secondary' }}">{{ $approvalSlaSignal['label'] }}</span>
+                                                        @endif
+                                                        @if ($approvalSlaSignal['is_escalated'])
+                                                            <span class="badge bg-dark">{{ __('app.admin.authority_escalations.escalated_badge') }}</span>
+                                                        @endif
+                                                    </div>
+                                                    @if ($approvalSlaSignal['due_at'])
+                                                        <div class="small text-muted mt-1">{{ __('app.admin.authority_escalations.due_at_label', ['date' => $approvalSlaSignal['due_at']->format('Y-m-d h:i A')]) }}</div>
+                                                        <div
+                                                            class="small text-muted mt-1"
+                                                            data-sla-countdown
+                                                            data-due-at="{{ $approvalSlaSignal['due_at']->toIso8601String() }}"
+                                                            data-remaining-template="{{ __('app.admin.authority_escalations.countdown_remaining') }}"
+                                                            data-overdue-template="{{ __('app.admin.authority_escalations.countdown_overdue') }}"
+                                                        ></div>
+                                                    @endif
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-secondary-subtle text-dark">{{ __('app.applications.required_approval_options.'.$approval->authority_code) }}</span>
                                                 </td>
                                                 <td>
                                                     <div>{{ $approval->application?->submittedBy?->displayName() ?? __('app.dashboard.not_available') }}</div>
                                                     <div class="text-muted">{{ $approval->localizedAuthority() }}</div>
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-{{ $approval->assigned_user_id ? 'warning' : 'primary' }}">
+                                                        {{ $approval->assigned_user_id ? __('app.authority.applications.ownership_badges.mine') : __('app.authority.applications.ownership_badges.shared') }}
+                                                    </span>
                                                 </td>
                                                 <td>{{ optional($approval->application?->submitted_at ?? $approval->application?->created_at)->format('Y-m-d') }}</td>
                                                 <td>
@@ -251,7 +379,7 @@
                                             </tr>
                                         @empty
                                             <tr>
-                                                <td colspan="7">{{ __('app.authority.applications.empty_state') }}</td>
+                                                <td colspan="9">{{ __('app.authority.applications.empty_state') }}</td>
                                             </tr>
                                         @endforelse
                                     </tbody>
@@ -264,3 +392,7 @@
         </div>
     </div>
 @endsection
+
+@push('scripts')
+    @include('partials.sla-countdown-script')
+@endpush

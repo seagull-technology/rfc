@@ -18,6 +18,7 @@ class NotificationRecipients
     {
         return $entity->users()
             ->where('users.status', 'active')
+            ->wherePivot('status', 'active')
             ->get()
             ->unique(fn (User $user): int => $user->getKey())
             ->values();
@@ -91,6 +92,23 @@ class NotificationRecipients
      */
     public static function authorityUsersForApproval(ApplicationAuthorityApproval $approval): Collection
     {
+        if ($approval->assigned_user_id) {
+            $assignedUser = $approval->relationLoaded('assignedTo')
+                ? $approval->assignedTo
+                : User::query()->find($approval->assigned_user_id);
+
+            if ($assignedUser
+                && $assignedUser->status === 'active'
+                && $approval->entity
+                && $approval->entity->users()
+                    ->where('users.id', $assignedUser->getKey())
+                    ->wherePivot('status', 'active')
+                    ->exists()
+            ) {
+                return collect([$assignedUser]);
+            }
+        }
+
         if ($approval->entity && $approval->entity->group?->code === 'authorities') {
             return self::entityUsers($approval->entity);
         }

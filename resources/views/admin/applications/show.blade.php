@@ -86,6 +86,11 @@
     $canAssignReviewer = auth()->user()?->can('applications.assign') ?? false;
     $canReviewApplication = auth()->user()?->can('applications.review') ?? false;
     $canApproveApplication = auth()->user()?->can('applications.approve') ?? false;
+    $canManageAuthorityApprovals = $canReviewApplication || $canApproveApplication;
+    $authorityApprovalStatuses = $canApproveApplication
+        ? ['pending', 'in_review', 'approved', 'rejected']
+        : ['pending', 'in_review'];
+    $sharedAuthorityInboxLabel = __('app.admin.applications.authority_shared_inbox');
 @endphp
 
 @extends('layouts.admin-dashboard', ['title' => $title])
@@ -110,11 +115,42 @@
             margin-bottom: 0;
         }
 
-        .admin-application-show-layout .profile-tab {
-            gap: .25rem;
+        .admin-application-show-layout .profile-content .tab-pane {
+            transform: none !important;
         }
 
-        .admin-application-show-layout .profile-tab .nav-link {
+        .official-letter-offcanvas-form {
+            display: flex;
+            flex: 1 1 auto;
+            flex-direction: column;
+            height: 100%;
+            min-height: 0;
+        }
+
+        .official-letter-offcanvas-form .offcanvas-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+        }
+
+        .official-letter-offcanvas-form .offcanvas-footer {
+            flex: 0 0 auto;
+        }
+
+        .admin-application-show-layout .profile-tab,
+        .application-hero-card .profile-tab {
+            flex-wrap: nowrap;
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
+        }
+
+        .admin-application-show-layout .profile-tab .nav-link,
+        .application-hero-card .profile-tab .nav-link {
+            font-size: .9375rem;
+            padding-left: .75rem;
+            padding-right: .75rem;
             white-space: nowrap;
         }
 
@@ -126,6 +162,20 @@
         .admin-application-show-layout .table tbody td {
             white-space: nowrap;
             vertical-align: middle;
+        }
+
+        .admin-application-show-layout .table-responsive {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        [dir="rtl"] .admin-application-show-layout .table-responsive {
+            direction: ltr;
+        }
+
+        [dir="rtl"] .admin-application-show-layout .table-responsive > .table {
+            direction: rtl;
         }
 
         .admin-application-show-layout .application-detail-list .mb-1:last-child,
@@ -184,6 +234,16 @@
             font-size: .8125rem;
             font-weight: 600;
             margin-bottom: .5rem;
+        }
+
+        .admin-application-show-layout .authority-sla-summary .card-body {
+            padding: 1rem 1.25rem;
+        }
+
+        .admin-application-show-layout .authority-sla-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .35rem;
         }
 
         @media (max-width: 991.98px) {
@@ -321,8 +381,10 @@
                                     @if ($canReviewApplication || $canApproveApplication)
                                         <a class="btn btn-outline-secondary" data-bs-toggle="tab" href="#profile-decision" role="tab">{{ __('app.admin_request_state.open_review') }}</a>
                                     @endif
-                                    @if ($canReviewApplication)
+                                    @if ($canManageAuthorityApprovals)
                                         <a class="btn btn-outline-secondary" data-bs-toggle="tab" href="#profile-activity2" role="tab">{{ __('app.admin_request_state.open_approvals') }}</a>
+                                    @endif
+                                    @if ($canReviewApplication)
                                         <a class="btn btn-outline-secondary" data-bs-toggle="tab" href="#profile-correspondence" role="tab">{{ __('app.admin_request_state.open_correspondence') }}</a>
                                     @endif
                                 </div>
@@ -495,6 +557,9 @@
                                                                     <div>{{ $requiredApprovals }}</div>
                                                                     <div class="fw-600 mt-4 mb-2">{{ __('app.applications.supporting_notes') }}</div>
                                                                     <div>{{ data_get($requirements, 'supporting_notes', __('app.applications.annex_empty_state')) }}</div>
+                                                                    <div class="border-top mt-4 pt-4">
+                                                                        @include('applications.partials.annex-summary', ['application' => $application, 'tableClass' => 'table table-striped mb-0'])
+                                                                    </div>
                                                                 </td>
                                                             </tr>
                                                         </tbody>
@@ -564,12 +629,31 @@
                                         </div>
                                     </div>
                                     <div class="card-body">
+                                        <div class="row g-3 authority-sla-summary mb-4">
+                                            @foreach ([
+                                                ['label' => __('app.admin.authority_escalations.metrics.live_approvals'), 'value' => $authorityApprovalSignalStats['live'], 'class' => 'info'],
+                                                ['label' => __('app.admin.authority_escalations.metrics.overdue_approvals'), 'value' => $authorityApprovalSignalStats['overdue'], 'class' => 'danger'],
+                                                ['label' => __('app.admin.authority_escalations.metrics.escalated_approvals'), 'value' => $authorityApprovalSignalStats['escalated'], 'class' => 'dark'],
+                                            ] as $metric)
+                                                <div class="col-md-4">
+                                                    <div class="card mb-0">
+                                                        <div class="card-body">
+                                                            <div class="text-muted">{{ $metric['label'] }}</div>
+                                                            <h3 class="mb-0 text-{{ $metric['class'] }}">{{ $metric['value'] }}</h3>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            @endforeach
+                                        </div>
+
                                         <div class="table-responsive mt-4">
                                             <table id="basic-table-approvals" class="table table-striped mb-0 request-narrow-table" role="grid">
                                                 <thead>
                                                     <tr>
                                                         <th style="width: 34%;">{{ __('app.documents.title_label') }}</th>
                                                         <th>{{ __('app.admin.applications.authority') }}</th>
+                                                        <th>{{ __('app.admin.applications.current_delegate') }}</th>
+                                                        <th>{{ __('app.admin.authority_escalations.response_window') }}</th>
                                                         <th>{{ __('app.final_decision.issued_at') }}</th>
                                                         <th>{{ __('app.applications.updated_at') }}</th>
                                                         <th>{{ __('app.applications.status') }}</th>
@@ -578,24 +662,57 @@
                                                 </thead>
                                                 <tbody>
                                                     @forelse ($authorityApprovals as $approval)
+                                                        @php($approvalSignal = $authorityApprovalSignals[$approval->getKey()] ?? ['enabled' => false, 'label' => null, 'is_overdue' => false, 'is_escalated' => false, 'due_at' => null])
                                                         <tr>
                                                             <td>{{ $approval->note ?: __('app.dashboard.not_available') }}</td>
                                                             <td>{{ $approval->localizedAuthority() }}</td>
+                                                            <td>{{ $approval->assignedTo?->displayName() ?? $sharedAuthorityInboxLabel }}</td>
+                                                            <td>
+                                                                <div class="authority-sla-badges">
+                                                                    @if ($approvalSignal['label'])
+                                                                        <span class="badge bg-{{ $approvalSignal['is_overdue'] ? 'danger' : 'secondary' }}">{{ $approvalSignal['label'] }}</span>
+                                                                    @else
+                                                                        <span class="badge bg-light text-dark">{{ __('app.admin.authority_escalations.unconfigured_badge') }}</span>
+                                                                    @endif
+                                                                    @if ($approvalSignal['is_escalated'])
+                                                                        <span class="badge bg-dark">{{ __('app.admin.authority_escalations.escalated_badge') }}</span>
+                                                                    @endif
+                                                                </div>
+                                                                @if ($approvalSignal['due_at'])
+                                                                    <div class="small text-muted mt-1">{{ __('app.admin.authority_escalations.due_at_label', ['date' => $approvalSignal['due_at']->format('Y-m-d h:i A')]) }}</div>
+                                                                @endif
+                                                            </td>
                                                             <td>{{ optional($approval->decided_at)->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
                                                             <td>{{ optional($approval->updated_at)->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</td>
                                                             <td><span class="badge bg-{{ $statusClass($approval->status) }}">{{ $approval->localizedStatus() }}</span></td>
                                                             <td>
-                                                                @if ($canReviewApplication)
-                                                                    <form method="POST" action="{{ route('admin.applications.approvals.update', [$application, $approval]) }}" class="d-grid gap-2">
-                                                                        @csrf
-                                                                        <select name="status" class="form-select form-select-sm">
-                                                                            @foreach (['pending', 'in_review', 'approved', 'rejected'] as $approvalStatus)
-                                                                                <option value="{{ $approvalStatus }}" @selected($approval->status === $approvalStatus)>{{ __('app.approvals.statuses.'.$approvalStatus) }}</option>
-                                                                            @endforeach
-                                                                        </select>
-                                                                        <input name="note" type="text" class="form-control form-control-sm" value="{{ $approval->note }}" placeholder="{{ __('app.admin.applications.review_note') }}">
-                                                                        <button class="btn btn-sm btn-outline-primary" type="submit">{{ __('app.approvals.update_action') }}</button>
-                                                                    </form>
+                                                                @if ($canManageAuthorityApprovals && ($canApproveApplication || ! in_array($approval->status, ['approved', 'rejected'], true)))
+                                                                    <div class="d-grid gap-3">
+                                                                        <form method="POST" action="{{ route('admin.applications.approvals.update', [$application, $approval]) }}" class="d-grid gap-2">
+                                                                            @csrf
+                                                                            <select name="status" class="form-select form-select-sm">
+                                                                                @foreach ($authorityApprovalStatuses as $approvalStatus)
+                                                                                    <option value="{{ $approvalStatus }}" @selected($approval->status === $approvalStatus)>{{ __('app.approvals.statuses.'.$approvalStatus) }}</option>
+                                                                                @endforeach
+                                                                            </select>
+                                                                            <input name="note" type="text" class="form-control form-control-sm" value="{{ $approval->note }}" placeholder="{{ __('app.admin.applications.review_note') }}">
+                                                                            <button class="btn btn-sm btn-outline-primary" type="submit">{{ __('app.approvals.update_action') }}</button>
+                                                                        </form>
+
+                                                                        @if ($canAssignReviewer && ($authorityApprovalDelegates->get($approval->getKey())?->isNotEmpty() ?? false))
+                                                                            <form method="POST" action="{{ route('admin.applications.approvals.assign', [$application, $approval]) }}" class="d-grid gap-2 border-top pt-3">
+                                                                                @csrf
+                                                                                <select name="assigned_user_id" class="form-select form-select-sm">
+                                                                                    <option value="">{{ $sharedAuthorityInboxLabel }}</option>
+                                                                                    @foreach ($authorityApprovalDelegates->get($approval->getKey(), collect()) as $delegate)
+                                                                                        <option value="{{ $delegate->getKey() }}" @selected($approval->assigned_user_id === $delegate->getKey())>{{ $delegate->displayName() }}</option>
+                                                                                    @endforeach
+                                                                                </select>
+                                                                                <input name="assignment_note" type="text" class="form-control form-control-sm" value="{{ old('assignment_note') }}" placeholder="{{ __('app.admin.applications.authority_assignment_note') }}">
+                                                                                <button class="btn btn-sm btn-outline-secondary" type="submit">{{ __('app.admin.applications.reassign_approval_action') }}</button>
+                                                                            </form>
+                                                                        @endif
+                                                                    </div>
                                                                 @else
                                                                     <span class="text-muted">{{ __('app.dashboard.not_available') }}</span>
                                                                 @endif
@@ -603,7 +720,57 @@
                                                         </tr>
                                                     @empty
                                                         <tr>
-                                                            <td colspan="6">{{ __('app.applications.no_required_approvals') }}</td>
+                                                            <td colspan="8">{{ __('app.applications.no_required_approvals') }}</td>
+                                                        </tr>
+                                                    @endforelse
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        <div class="table-responsive mt-4">
+                                            <table id="basic-table-approval-audit" class="table table-striped mb-0 request-narrow-table" role="grid">
+                                                <thead>
+                                                    <tr>
+                                                        <th>{{ __('app.admin.applications.authority') }}</th>
+                                                        <th>{{ __('app.admin.applications.audit_action') }}</th>
+                                                        <th>{{ __('app.admin.applications.audit_from') }}</th>
+                                                        <th>{{ __('app.admin.applications.audit_to') }}</th>
+                                                        <th>{{ __('app.admin.applications.review_note') }}</th>
+                                                        <th>{{ __('app.admin.entities.reviewed_by') }}</th>
+                                                        <th>{{ __('app.final_decision.issued_at') }}</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @forelse ($authorityAuditTrail as $auditEvent)
+                                                        @php($auditType = data_get($auditEvent->metadata, 'type'))
+                                                        <tr>
+                                                            <td>{{ data_get($auditEvent->metadata, 'authority_label', __('app.dashboard.not_available')) }}</td>
+                                                            <td>
+                                                                @if ($auditType === 'authority_reassigned')
+                                                                    {{ __('app.admin.applications.audit_actions.reassigned') }}
+                                                                @elseif ($auditType === 'authority_escalated')
+                                                                    {{ __('app.admin.applications.audit_actions.escalated') }}
+                                                                @else
+                                                                    {{ __('app.admin.applications.audit_actions.status_updated') }}
+                                                                @endif
+                                                            </td>
+                                                            <td>{{ data_get($auditEvent->metadata, 'from_user_name', data_get($auditEvent->metadata, 'assigned_user_name', __('app.dashboard.not_available'))) }}</td>
+                                                            <td>
+                                                                @if ($auditType === 'authority_reassigned')
+                                                                    {{ data_get($auditEvent->metadata, 'to_user_name', $sharedAuthorityInboxLabel) ?: $sharedAuthorityInboxLabel }}
+                                                                @elseif ($auditType === 'authority_escalated')
+                                                                    {{ __('app.admin.authority_escalations.escalated_badge') }}
+                                                                @else
+                                                                    {{ data_get($auditEvent->metadata, 'approval_status_label', __('app.dashboard.not_available')) }}
+                                                                @endif
+                                                            </td>
+                                                            <td>{{ data_get($auditEvent->metadata, 'reason', $auditEvent->note ?: __('app.dashboard.not_available')) }}</td>
+                                                            <td>{{ $auditEvent->user?->displayName() ?? __('app.dashboard.not_available') }}</td>
+                                                            <td>{{ $auditEvent->happened_at?->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</td>
+                                                        </tr>
+                                                    @empty
+                                                        <tr>
+                                                            <td colspan="7">{{ __('app.admin.applications.authority_audit_empty') }}</td>
                                                         </tr>
                                                     @endforelse
                                                 </tbody>
@@ -614,6 +781,7 @@
                             </div>
 
                             <div id="profile-correspondence" class="tab-pane fade">
+                                @include('admin.applications.partials.official-letters', ['officialLetters' => $officialLetters, 'officialLetterApprovals' => $officialLetterApprovals])
                                 @include('admin.applications.partials.correspondence', ['correspondences' => $correspondences])
                             </div>
                         </div>

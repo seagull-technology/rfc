@@ -3,6 +3,7 @@
     $currentPortalEntity = $currentPortalUser?->primaryEntity();
     $currentPortalGroupCode = $currentPortalEntity?->group?->code;
     $currentPortalRegistrationType = $currentPortalEntity?->registration_type ?? $currentPortalUser?->registration_type;
+    $portalAvailableEntities = $currentPortalUser?->availableEntities() ?? collect();
     $portalAvatar = asset('images/OIP.jpeg');
     $portalUnreadNotifications = $currentPortalUser?->unreadNotifications ?? collect();
     $portalInboxNotificationCount = $portalUnreadNotifications
@@ -184,6 +185,24 @@
                                     @foreach ($portalProfileLinks as $portalProfileLink)
                                         <li><a class="dropdown-item" href="{{ $portalProfileLink['url'] }}">{{ $portalProfileLink['label'] }}</a></li>
                                     @endforeach
+                                    @if ($portalAvailableEntities->count() > 1)
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><h6 class="dropdown-header">{{ __('app.portal.switch_entity_title') }}</h6></li>
+                                        @foreach ($portalAvailableEntities as $portalEntityOption)
+                                            <li>
+                                                <form method="POST" action="{{ route('context.entity.update') }}">
+                                                    @csrf
+                                                    <input type="hidden" name="entity_id" value="{{ $portalEntityOption->getKey() }}">
+                                                    <button type="submit" class="dropdown-item d-flex justify-content-between align-items-center">
+                                                        <span>{{ $portalEntityOption->displayName() }}</span>
+                                                        @if ((int) $portalEntityOption->getKey() === (int) $currentPortalEntity?->getKey())
+                                                            <span class="badge bg-danger">{{ __('app.portal.current_entity_badge') }}</span>
+                                                        @endif
+                                                    </button>
+                                                </form>
+                                            </li>
+                                        @endforeach
+                                    @endif
                                     <li><hr class="dropdown-divider"></li>
                                     <li>
                                         <form method="POST" action="{{ route('logout') }}">

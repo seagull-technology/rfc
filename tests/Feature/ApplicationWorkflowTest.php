@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Application;
 use App\Models\ApplicationAuthorityApproval;
+use App\Models\ApprovalRoutingRule;
 use App\Models\Entity;
 use App\Models\Group;
 use App\Models\Permit;
@@ -12,6 +13,7 @@ use App\Notifications\RegistrationApprovedNotification;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -40,7 +42,8 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSee('id="form-wizard1"', false)
             ->assertSee('id="step1"', false)
             ->assertSee('id="step2"', false)
-            ->assertSee('class="btn btn-danger next action-button float-end btn-lg"', false)
+            ->assertSee('class="btn btn-danger request-wizard-next action-button float-end btn-lg"', false)
+            ->assertSeeText(__('app.applications.approval_route_preview_title'))
             ->assertSee('js/form-wizard.js', false);
     }
 
@@ -68,7 +71,7 @@ class ApplicationWorkflowTest extends TestCase
         ]);
 
         $this->assertSame('Local Producer', data_get($application->metadata, 'producer.producer_name'));
-        $this->assertSame(['public_security', 'environment'], data_get($application->metadata, 'requirements.required_approvals'));
+        $this->assertSame([], data_get($application->metadata, 'requirements.required_approvals'));
         $this->assertDatabaseHas('application_status_histories', [
             'application_id' => $application->getKey(),
             'status' => 'draft',
@@ -83,6 +86,10 @@ class ApplicationWorkflowTest extends TestCase
             'status' => 'submitted',
             'current_stage' => 'intake',
         ]);
+        $this->assertSame(
+            ['public_security', 'environment'],
+            data_get($application->fresh()->metadata, 'requirements.required_approvals')
+        );
         $this->assertDatabaseHas('application_status_histories', [
             'application_id' => $application->getKey(),
             'status' => 'submitted',
@@ -103,6 +110,74 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertTrue($authorityUser->fresh()->unreadNotifications->contains(
             fn ($notification) => data_get($notification->data, 'type_key') === 'authority_approval_requested'
         ));
+    }
+
+    public function test_application_stores_and_displays_structured_annex_forms(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        [$applicant] = $this->createApplicantContext();
+        [$authorityUser] = $this->createAuthorityContext();
+
+        $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
+            'work_content_summary_synopsis' => 'A road sequence with controlled public access.',
+            'work_content_summary_sensitive_notes' => 'Contains a simulated checkpoint scene.',
+            'work_content_summary_confirmed' => '1',
+            'cast_crew' => [
+                ['name' => 'Jordanian Lead', 'role' => 'Actor', 'nationality' => 'Jordanian', 'identity_number' => 'J12345'],
+            ],
+            'filming_locations' => [
+                ['governorate' => 'amman', 'location_name' => 'Downtown Amman', 'location_type' => 'Public road', 'start_date' => '2026-05-02', 'end_date' => '2026-05-03', 'notes' => 'Traffic support needed'],
+            ],
+            'safety_guidelines_acknowledged' => '1',
+            'safety_guidelines_notes' => 'No pyrotechnics. Traffic marshals requested.',
+            'imported_equipment' => [
+                ['item' => 'Camera crane', 'serial_number' => 'CR-7788', 'quantity' => 1, 'origin_country' => 'Germany', 'entry_point' => 'Queen Alia Airport', 'arrival_date' => '2026-04-28'],
+            ],
+            'military_border_equipment' => [
+                ['location_name' => 'Border training area', 'equipment' => 'Long lens kit', 'security_need' => 'Escort required', 'notes' => 'No drone use'],
+            ],
+            'airport_filming_airport_name' => 'Queen Alia International Airport',
+            'airport_filming_area' => 'Departures hall',
+            'airport_filming_date' => '2026-05-04',
+            'airport_filming_crew_count' => 12,
+            'airport_filming_notes' => 'Small handheld crew.',
+            'governmental_scenes' => [
+                ['site_name' => 'Municipal archive', 'authority' => 'Greater Amman Municipality', 'scene_description' => 'Exterior establishing shot', 'filming_date' => '2026-05-05'],
+            ],
+        ]));
+
+        $application = Application::query()->firstOrFail();
+
+        $this->assertSame('A road sequence with controlled public access.', data_get($application->metadata, 'annex.work_content_summary.synopsis'));
+        $this->assertTrue(data_get($application->metadata, 'annex.work_content_summary.confirmed'));
+        $this->assertSame('Jordanian Lead', data_get($application->metadata, 'annex.cast_crew.0.name'));
+        $this->assertSame('Downtown Amman', data_get($application->metadata, 'annex.filming_locations.0.location_name'));
+        $this->assertSame('Camera crane', data_get($application->metadata, 'annex.imported_equipment.0.item'));
+        $this->assertSame('Queen Alia International Airport', data_get($application->metadata, 'annex.airport_filming.airport_name'));
+
+        $this->actingAs($applicant)
+            ->get(route('applications.show', $application))
+            ->assertOk()
+            ->assertSeeText('Jordanian Lead')
+            ->assertSeeText('Downtown Amman')
+            ->assertSeeText('Queen Alia International Airport');
+
+        $this->actingAs($applicant)->post(route('applications.submit', $application));
+
+        $this->actingAs($admin)
+            ->get(route('admin.applications.show', $application))
+            ->assertOk()
+            ->assertSeeText('Camera crane')
+            ->assertSeeText('Municipal archive');
+
+        $this->actingAs($authorityUser)
+            ->get(route('authority.applications.show', $application))
+            ->assertOk()
+            ->assertSeeText('Border training area')
+            ->assertSeeText('Greater Amman Municipality');
     }
 
     public function test_admin_can_review_submitted_application_and_request_clarification(): void
@@ -269,6 +344,57 @@ class ApplicationWorkflowTest extends TestCase
         ));
     }
 
+    public function test_admin_cannot_assign_non_workflow_user_to_application(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        [$user] = $this->createApplicantContext();
+        $adminEntity = Entity::query()->where('code', 'platform-administration')->firstOrFail();
+
+        $reporter = User::query()->create([
+            'name' => 'Workflow Reporter',
+            'username' => 'workflow-reporter',
+            'email' => 'workflow-reporter@example.com',
+            'phone' => '0795555111',
+            'status' => 'active',
+            'password' => Hash::make('Reporter@123'),
+        ]);
+
+        $reporter->entities()->attach($adminEntity->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($adminEntity->getKey());
+        $reporter->assignRole('reporter');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $this->actingAs($user)->post(route('applications.store'), $this->applicationPayload([
+            'required_approvals' => ['public_security'],
+        ]));
+
+        $application = Application::query()->firstOrFail();
+        $this->actingAs($user)->post(route('applications.submit', $application));
+
+        $response = $this->actingAs($admin)->post(route('admin.applications.assign', $application), [
+            'assigned_to_user_id' => $reporter->getKey(),
+        ]);
+
+        $response
+            ->assertRedirect(route('admin.applications.show', $application))
+            ->assertSessionHasErrors('assigned_to_user_id');
+
+        $this->assertDatabaseHas('applications', [
+            'id' => $application->getKey(),
+            'assigned_to_user_id' => null,
+            'current_stage' => 'intake',
+            'status' => 'submitted',
+        ]);
+    }
+
     public function test_applicant_can_upload_document_and_admin_can_review_and_send_correspondence(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -348,6 +474,150 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Latest correspondence')
             ->assertSeeText('Official RFC note')
             ->assertSeeText('Please upload the revised signed form before we continue.');
+    }
+
+    public function test_admin_can_create_and_update_official_book_for_application(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        [$applicant] = $this->createApplicantContext();
+        [$authorityUser] = $this->createAuthorityContext();
+        $publicSecurityEntity = Entity::query()->where('code', 'public-security-directorate')->firstOrFail();
+        $customsEntity = Entity::query()->where('code', 'jordan-customs')->firstOrFail();
+
+        $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
+            'required_approvals' => ['public_security', 'environment'],
+        ]));
+
+        $application = Application::query()->firstOrFail();
+        $this->actingAs($applicant)->post(route('applications.submit', $application));
+
+        $application->refresh();
+        $publicSecurityApproval = $application->authorityApprovals()
+            ->where('authority_code', 'public_security')
+            ->firstOrFail();
+        $environmentApproval = $application->authorityApprovals()
+            ->where('authority_code', 'environment')
+            ->firstOrFail();
+        $duplicatePublicSecurityApproval = $application->authorityApprovals()->create([
+            'authority_code' => 'drones',
+            'entity_id' => $publicSecurityEntity->getKey(),
+            'status' => 'pending',
+        ]);
+
+        $createResponse = $this->actingAs($admin)->post(route('admin.applications.official-letters.store', $application), [
+            'letter_date' => '2026-05-10',
+            'serial_number' => 'AG-REQ-7781',
+            'recipient_prefix' => 'H.E.',
+            'recipient_name' => 'Director of Military Media',
+            'subject' => 'Military equipment facilitation',
+            'body' => 'Please facilitate the filming team mission.',
+            'attachments' => ['Filming locations list'],
+            'status' => 'draft',
+        ]);
+
+        $createResponse->assertRedirect(route('admin.applications.show', $application));
+
+        $this->assertDatabaseHas('application_official_letters', [
+            'application_id' => $application->getKey(),
+            'application_authority_approval_id' => $publicSecurityApproval->getKey(),
+            'target_entity_id' => $publicSecurityEntity->getKey(),
+            'serial_number' => 'AG-REQ-7781',
+            'subject' => 'Military equipment facilitation',
+            'status' => 'draft',
+        ]);
+        $this->assertDatabaseHas('application_official_letters', [
+            'application_id' => $application->getKey(),
+            'application_authority_approval_id' => $environmentApproval->getKey(),
+            'target_entity_id' => $environmentApproval->entity_id,
+            'serial_number' => 'AG-REQ-7781',
+            'subject' => 'Military equipment facilitation',
+            'status' => 'draft',
+        ]);
+        $this->assertDatabaseMissing('application_official_letters', [
+            'application_id' => $application->getKey(),
+            'application_authority_approval_id' => $duplicatePublicSecurityApproval->getKey(),
+            'target_entity_id' => $publicSecurityEntity->getKey(),
+            'serial_number' => 'AG-REQ-7781',
+        ]);
+        $this->assertSame(2, $application->officialLetters()->count());
+
+        $letter = $application->officialLetters()
+            ->where('application_authority_approval_id', $publicSecurityApproval->getKey())
+            ->firstOrFail();
+
+        $updateResponse = $this->actingAs($admin)->put(route('admin.applications.official-letters.update', [$application, $letter]), [
+            'application_authority_approval_id' => $environmentApproval->getKey(),
+            'target_entity_id' => $customsEntity->getKey(),
+            'letter_date' => '2026-05-11',
+            'serial_number' => 'AG-REQ-7781-R1',
+            'recipient_prefix' => 'H.E.',
+            'recipient_name' => 'Director of Military Media',
+            'subject' => 'Updated facilitation book',
+            'body' => 'Please approve and facilitate the filming team mission.',
+            'attachments' => ['Filming locations list', 'Cast and crew list'],
+            'status' => 'issued',
+        ]);
+
+        $updateResponse->assertRedirect(route('admin.applications.show', $application));
+
+        $this->assertDatabaseHas('application_official_letters', [
+            'id' => $letter->getKey(),
+            'application_authority_approval_id' => $publicSecurityApproval->getKey(),
+            'target_entity_id' => $publicSecurityEntity->getKey(),
+            'serial_number' => 'AG-REQ-7781-R1',
+            'subject' => 'Updated facilitation book',
+            'status' => 'issued',
+        ]);
+        $this->assertNotNull($letter->fresh()->issued_at);
+        $this->assertTrue($applicant->fresh()->unreadNotifications->contains(
+            fn ($notification) => data_get($notification->data, 'type_key') === 'official_letter_issued'
+                && data_get($notification->data, 'notification_highlight_summary') === 'Official book: Updated facilitation book'
+        ));
+        $this->assertTrue($authorityUser->fresh()->unreadNotifications->contains(
+            fn ($notification) => data_get($notification->data, 'type_key') === 'official_letter_issued'
+                && (int) data_get($notification->data, 'authority_approval_id') === $publicSecurityApproval->getKey()
+                && data_get($notification->data, 'notification_highlight_summary') === 'Official book: Updated facilitation book'
+        ));
+
+        $adminShow = $this->actingAs($admin)->get(route('admin.applications.show', $application));
+
+        $adminShow
+            ->assertOk()
+            ->assertSeeText('Official Books')
+            ->assertSeeText('AG-REQ-7781-R1')
+            ->assertSeeText('Updated facilitation book')
+            ->assertSeeText('Automatic recipients')
+            ->assertDontSee('name="target_entity_id"', false)
+            ->assertDontSee('name="application_authority_approval_id"', false);
+
+        $authorityInbox = $this->actingAs($authorityUser)->get(route('authority.applications.index'));
+
+        $authorityInbox
+            ->assertOk()
+            ->assertSeeText('Official books issued')
+            ->assertSeeText('Official book issued')
+            ->assertSeeText('Official book: Updated facilitation book');
+
+        $authorityDashboard = $this->actingAs($authorityUser)->get(route('dashboard'));
+
+        $authorityDashboard
+            ->assertOk()
+            ->assertSeeText('Official books issued')
+            ->assertSeeText('Official book issued');
+
+        $applicantShow = $this->actingAs($applicant)->get(route('applications.show', $application));
+
+        $applicantShow
+            ->assertOk()
+            ->assertSeeText('Official Books')
+            ->assertSeeText('AG-REQ-7781-R1')
+            ->assertSeeText('Updated facilitation book')
+            ->assertSeeText('View book')
+            ->assertSeeText('Please approve and facilitate the filming team mission.')
+            ->assertSee('applicantOfficialLetterView', false);
     }
 
     public function test_applicant_document_upload_requeues_clarification_back_to_admin_queue(): void
@@ -488,11 +758,63 @@ class ApplicationWorkflowTest extends TestCase
 
         $this->assertNotNull($authorityApplicantUpdate);
 
+        $currentApproval = ApplicationAuthorityApproval::query()
+            ->where('application_id', $application->getKey())
+            ->where('authority_code', 'public_security')
+            ->firstOrFail();
+        $otherEntity = Entity::query()->where('code', 'jordan-customs')->firstOrFail();
+
+        $application->officialLetters()->create([
+            'application_authority_approval_id' => $currentApproval->getKey(),
+            'target_entity_id' => $authorityEntity->getKey(),
+            'created_by_user_id' => $admin->getKey(),
+            'updated_by_user_id' => $admin->getKey(),
+            'letter_date' => '2026-05-12',
+            'serial_number' => 'AUTH-BOOK-100',
+            'recipient_prefix' => 'H.E.',
+            'recipient_name' => 'Public Security Director',
+            'subject' => 'Authority coordination book',
+            'body' => 'Please review the automatically routed filming request.',
+            'attachments' => ['Filming locations list'],
+            'status' => 'issued',
+            'issued_at' => now(),
+        ]);
+        $application->officialLetters()->create([
+            'target_entity_id' => $authorityEntity->getKey(),
+            'created_by_user_id' => $admin->getKey(),
+            'updated_by_user_id' => $admin->getKey(),
+            'letter_date' => '2026-05-12',
+            'serial_number' => 'AUTH-DRAFT-100',
+            'recipient_name' => 'Public Security Director',
+            'subject' => 'Draft authority coordination book',
+            'body' => 'This draft should stay internal.',
+            'attachments' => [],
+            'status' => 'draft',
+        ]);
+        $application->officialLetters()->create([
+            'target_entity_id' => $otherEntity->getKey(),
+            'created_by_user_id' => $admin->getKey(),
+            'updated_by_user_id' => $admin->getKey(),
+            'letter_date' => '2026-05-12',
+            'serial_number' => 'CUSTOMS-BOOK-100',
+            'recipient_name' => 'Jordan Customs',
+            'subject' => 'Other authority coordination book',
+            'body' => 'This letter belongs to a different authority.',
+            'attachments' => [],
+            'status' => 'issued',
+            'issued_at' => now(),
+        ]);
+
         $showResponse = $this->actingAs($authorityUser)->get(route('authority.applications.show', $application));
 
         $showResponse
             ->assertOk()
             ->assertSeeText('Authority Decision')
+            ->assertSeeText('Official Books')
+            ->assertSeeText('AUTH-BOOK-100')
+            ->assertSeeText('Authority coordination book')
+            ->assertDontSeeText('Draft authority coordination book')
+            ->assertDontSeeText('Other authority coordination book')
             ->assertSeeText('Request update received')
             ->assertSeeText('New correspondence: Applicant Reply')
             ->assertSee('streamit-wraper-table', false)
@@ -524,6 +846,15 @@ class ApplicationWorkflowTest extends TestCase
             fn ($notification) => data_get($notification->data, 'type_key') === 'authority_approval_updated'
         ));
 
+        $this->assertDatabaseHas('application_status_histories', [
+            'application_id' => $application->getKey(),
+            'user_id' => $authorityUser->getKey(),
+        ]);
+        $this->assertSame(
+            'authority_status_updated',
+            data_get($application->fresh()->statusHistory()->latest('id')->first()?->metadata, 'type')
+        );
+
         $correspondenceResponse = $this->actingAs($authorityUser)->post(route('authority.applications.correspondence.store', $application), [
             'subject' => 'Authority Note',
             'message' => 'Security authority has approved the request.',
@@ -544,6 +875,327 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertTrue($applicant->fresh()->unreadNotifications->contains(
             fn ($notification) => data_get($notification->data, 'type_key') === 'application_correspondence'
         ));
+    }
+
+    public function test_authority_reviewer_cannot_resolve_approval_without_approver_permission(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$applicant] = $this->createApplicantContext();
+        $authorityEntity = Entity::query()->where('code', 'public-security-directorate')->firstOrFail();
+
+        $reviewer = User::query()->create([
+            'name' => 'Authority Reviewer Only',
+            'username' => 'authority-reviewer-only',
+            'email' => 'authority-reviewer-only@example.com',
+            'phone' => '0794444222',
+            'status' => 'active',
+            'password' => Hash::make('Authority@123'),
+        ]);
+
+        $reviewer->entities()->attach($authorityEntity->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($authorityEntity->getKey());
+        $reviewer->assignRole('authority_reviewer');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
+            'required_approvals' => ['public_security'],
+        ]));
+
+        $application = Application::query()->firstOrFail();
+        $this->actingAs($applicant)->post(route('applications.submit', $application));
+
+        $showResponse = $this->actingAs($reviewer)->get(route('authority.applications.show', $application));
+
+        $showResponse
+            ->assertOk()
+            ->assertDontSee('value="approved"', false)
+            ->assertDontSee('value="rejected"', false);
+
+        $updateResponse = $this->actingAs($reviewer)->post(route('authority.applications.approval.update', $application), [
+            'status' => 'approved',
+            'note' => 'Trying to approve without approver access.',
+        ]);
+
+        $updateResponse->assertForbidden();
+
+        $this->assertDatabaseHas('application_authority_approvals', [
+            'application_id' => $application->getKey(),
+            'authority_code' => 'public_security',
+            'status' => 'pending',
+            'reviewed_by_user_id' => null,
+        ]);
+    }
+
+    public function test_authority_default_delegate_receives_private_inbox_assignment(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$applicant] = $this->createApplicantContext();
+        $authorityEntity = Entity::query()->where('code', 'public-security-directorate')->firstOrFail();
+
+        [$delegate] = $this->createAuthorityContext([
+            'name' => 'Assigned Authority Approver',
+            'username' => 'assigned-authority-approver',
+            'email' => 'assigned-authority-approver@example.com',
+        ]);
+
+        $peer = User::query()->create([
+            'name' => 'Peer Authority Approver',
+            'username' => 'peer-authority-approver',
+            'email' => 'peer-authority-approver@example.com',
+            'phone' => '0794111222',
+            'status' => 'active',
+            'password' => Hash::make('Authority@123'),
+        ]);
+
+        $peer->entities()->attach($authorityEntity->getKey(), [
+            'is_primary' => false,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($authorityEntity->getKey());
+        $peer->assignRole('authority_approver');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $metadata = $authorityEntity->metadata ?? [];
+        data_set($metadata, 'authority_delegation.approval_user_map.public_security', $delegate->getKey());
+        $authorityEntity->forceFill([
+            'metadata' => $metadata,
+        ])->save();
+
+        $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
+            'project_name' => 'Delegated Security Request',
+            'required_approvals' => ['public_security'],
+        ]));
+
+        $application = Application::query()->latest('id')->firstOrFail();
+        $this->actingAs($applicant)->post(route('applications.submit', $application));
+
+        $approval = ApplicationAuthorityApproval::query()
+            ->where('application_id', $application->getKey())
+            ->where('authority_code', 'public_security')
+            ->firstOrFail();
+
+        $this->assertSame($delegate->getKey(), $approval->assigned_user_id);
+        $this->assertNotNull($approval->assigned_at);
+
+        $delegateInbox = $this->actingAs($delegate)->get(route('authority.applications.index'));
+        $delegateInbox
+            ->assertOk()
+            ->assertSeeText('Delegated Security Request');
+
+        $peerInbox = $this->actingAs($peer)->get(route('authority.applications.index'));
+        $peerInbox
+            ->assertOk()
+            ->assertDontSeeText('Delegated Security Request');
+
+        $peerShow = $this->actingAs($peer)->get(route('authority.applications.show', $application));
+        $peerShow->assertNotFound();
+
+        $this->assertTrue($delegate->fresh()->unreadNotifications->contains(
+            fn ($notification) => data_get($notification->data, 'type_key') === 'authority_approval_requested'
+                && data_get($notification->data, 'title') === 'Delegated Security Request'
+        ));
+        $this->assertFalse($peer->fresh()->unreadNotifications->contains(
+            fn ($notification) => data_get($notification->data, 'type_key') === 'authority_approval_requested'
+                && data_get($notification->data, 'title') === 'Delegated Security Request'
+        ));
+    }
+
+    public function test_admin_can_manually_reassign_live_authority_approval_from_application_page(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        [$applicant] = $this->createApplicantContext();
+        [$originalAuthorityUser, $authorityEntity] = $this->createAuthorityContext([
+            'name' => 'Original Authority Handler',
+            'username' => 'original-authority-handler',
+            'email' => 'original-authority-handler@example.com',
+        ]);
+
+        $replacementAuthorityUser = User::query()->create([
+            'name' => 'Replacement Authority Handler',
+            'username' => 'replacement-authority-handler',
+            'email' => 'replacement-authority-handler@example.com',
+            'phone' => '0794111333',
+            'status' => 'active',
+            'password' => Hash::make('Authority@123'),
+        ]);
+
+        $replacementAuthorityUser->entities()->attach($authorityEntity->getKey(), [
+            'is_primary' => false,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($authorityEntity->getKey());
+        $replacementAuthorityUser->assignRole('authority_approver');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
+            'project_name' => 'Manual Authority Reassignment',
+            'required_approvals' => ['public_security'],
+        ]));
+
+        $application = Application::query()->latest('id')->firstOrFail();
+        $this->actingAs($applicant)->post(route('applications.submit', $application));
+
+        $approval = ApplicationAuthorityApproval::query()
+            ->where('application_id', $application->getKey())
+            ->where('authority_code', 'public_security')
+            ->firstOrFail();
+
+        $response = $this->actingAs($admin)->post(route('admin.applications.approvals.assign', [$application, $approval]), [
+            'assigned_user_id' => $replacementAuthorityUser->getKey(),
+            'assignment_note' => 'Shift coverage for today',
+        ]);
+
+        $response->assertRedirect(route('admin.applications.show', $application));
+
+        $this->assertDatabaseHas('application_authority_approvals', [
+            'id' => $approval->getKey(),
+            'assigned_user_id' => $replacementAuthorityUser->getKey(),
+        ]);
+
+        $originalShow = $this->actingAs($originalAuthorityUser)->get(route('authority.applications.show', $application));
+        $originalShow->assertNotFound();
+
+        $replacementInbox = $this->actingAs($replacementAuthorityUser)->get(route('authority.applications.index'));
+        $replacementInbox
+            ->assertOk()
+            ->assertSeeText('Manual Authority Reassignment');
+
+        $showResponse = $this->actingAs($admin)->get(route('admin.applications.show', $application));
+        $showResponse
+            ->assertOk()
+            ->assertSeeText('Replacement Authority Handler')
+            ->assertSeeText('Reassigned')
+            ->assertSeeText('Shift coverage for today');
+    }
+
+    public function test_authority_dashboard_and_inbox_highlight_my_assignments_and_shared_inbox(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $authorityEntity = Entity::query()->where('code', 'public-security-directorate')->firstOrFail();
+        [$delegate] = $this->createAuthorityContext([
+            'name' => 'Dashboard Delegate',
+            'username' => 'dashboard-delegate',
+            'email' => 'dashboard-delegate@example.com',
+        ]);
+
+        $peer = User::query()->create([
+            'name' => 'Dashboard Peer',
+            'username' => 'dashboard-peer',
+            'email' => 'dashboard-peer@example.com',
+            'phone' => '0794111444',
+            'status' => 'active',
+            'password' => Hash::make('Authority@123'),
+        ]);
+
+        $peer->entities()->attach($authorityEntity->getKey(), [
+            'is_primary' => false,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($authorityEntity->getKey());
+        $peer->assignRole('authority_approver');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        [$applicant, $applicantEntity] = $this->createApplicantContext([
+            'name' => 'Authority Metrics Applicant',
+            'username' => 'authority-metrics-applicant',
+            'email' => 'authority-metrics-applicant@example.com',
+        ], [
+            'name_en' => 'Authority Metrics Studio',
+            'name_ar' => 'Authority Metrics Studio',
+            'registration_no' => 'ORG-188',
+        ]);
+
+        $sharedApplication = Application::query()->create([
+            'code' => 'REQ-SHARED-1',
+            'entity_id' => $applicantEntity->getKey(),
+            'submitted_by_user_id' => $applicant->getKey(),
+            'project_name' => 'Shared Authority Request',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'feature_film',
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-08-01',
+            'planned_end_date' => '2026-08-03',
+            'project_summary' => 'Shared authority workload.',
+            'status' => 'under_review',
+            'current_stage' => 'authority_review',
+            'submitted_at' => now()->subDay(),
+        ]);
+
+        $privateApplication = Application::query()->create([
+            'code' => 'REQ-PRIVATE-1',
+            'entity_id' => $applicantEntity->getKey(),
+            'submitted_by_user_id' => $applicant->getKey(),
+            'project_name' => 'Private Authority Request',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'documentary',
+            'release_method' => 'festival',
+            'planned_start_date' => '2026-08-05',
+            'planned_end_date' => '2026-08-07',
+            'project_summary' => 'Private delegated authority workload.',
+            'status' => 'under_review',
+            'current_stage' => 'authority_review',
+            'submitted_at' => now()->subHours(18),
+        ]);
+
+        ApplicationAuthorityApproval::query()->create([
+            'application_id' => $sharedApplication->getKey(),
+            'authority_code' => 'public_security',
+            'entity_id' => $authorityEntity->getKey(),
+            'status' => 'pending',
+        ]);
+
+        ApplicationAuthorityApproval::query()->create([
+            'application_id' => $privateApplication->getKey(),
+            'authority_code' => 'public_security',
+            'entity_id' => $authorityEntity->getKey(),
+            'assigned_user_id' => $delegate->getKey(),
+            'assigned_at' => now()->subHours(12),
+            'status' => 'in_review',
+        ]);
+
+        $delegateDashboard = $this->actingAs($delegate)->get(route('dashboard'));
+        $delegateDashboard
+            ->assertOk()
+            ->assertSeeText('My assigned approvals')
+            ->assertSeeText('Shared inbox approvals')
+            ->assertSeeText('Private Authority Request')
+            ->assertSeeText('Shared Authority Request')
+            ->assertSeeText('My assignment')
+            ->assertSeeText('Shared inbox');
+
+        $peerDashboard = $this->actingAs($peer)->get(route('dashboard'));
+        $peerDashboard
+            ->assertOk()
+            ->assertSeeText('Shared Authority Request')
+            ->assertDontSeeText('Private Authority Request');
+
+        $delegateSharedFilter = $this->actingAs($delegate)->get(route('authority.applications.index', [
+            'ownership' => 'shared',
+        ]));
+        $delegateSharedFilter
+            ->assertOk()
+            ->assertSeeText('Shared Authority Request')
+            ->assertDontSeeText('Private Authority Request');
     }
 
     public function test_admin_can_filter_applications_directory(): void
@@ -600,6 +1252,11 @@ class ApplicationWorkflowTest extends TestCase
 
         $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
         [$user, $entity] = $this->createApplicantContext();
+        [$authorityUser, $authorityEntity] = $this->createAuthorityContext([
+            'name' => 'Directory Authority Owner',
+            'username' => 'directory-authority-owner',
+            'email' => 'directory-authority-owner@example.com',
+        ]);
 
         Application::query()->create([
             'code' => 'REQ-50001',
@@ -615,6 +1272,9 @@ class ApplicationWorkflowTest extends TestCase
             'status' => 'submitted',
         ])->authorityApprovals()->create([
             'authority_code' => 'public_security',
+            'entity_id' => $authorityEntity->getKey(),
+            'assigned_user_id' => $authorityUser->getKey(),
+            'assigned_at' => now(),
             'status' => 'pending',
         ]);
 
@@ -657,9 +1317,13 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Assign reviewer')
             ->assertSeeText('Waiting on applicant')
             ->assertSeeText('Ready for final decision')
+            ->assertSeeText('Responsibility')
+            ->assertSeeText('RFC owner')
+            ->assertSeeText('Authority owners')
             ->assertSeeText('Assign Reviewer Project')
             ->assertSeeText('Applicant Clarification Project')
-            ->assertSeeText('Final Decision Project');
+            ->assertSeeText('Final Decision Project')
+            ->assertSeeText('Directory Authority Owner');
 
         $dashboardResponse = $this->actingAs($admin)->get(route('admin.dashboard'));
 
@@ -668,6 +1332,213 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Workflow Queue')
             ->assertSeeText('Assign Reviewer Project')
             ->assertSeeText('Ready for final decision');
+    }
+
+    public function test_overdue_authority_approval_is_flagged_and_escalated_from_configured_response_time(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $rfcEntity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+        [$user, $entity] = $this->createApplicantContext();
+        [$authorityUser, $authorityEntity] = $this->createAuthorityContext([
+            'name' => 'Escalation Authority Owner',
+            'username' => 'escalation-authority-owner',
+            'email' => 'escalation-authority-owner@example.com',
+        ]);
+
+        $rfcAdmin = User::query()->create([
+            'name' => 'RFC Escalation Admin',
+            'username' => 'rfc_escalation_admin',
+            'email' => 'rfc-escalation-admin@example.com',
+            'phone' => '0793111222',
+            'status' => 'active',
+            'password' => Hash::make('Password@123'),
+        ]);
+
+        $rfcAdmin->entities()->attach($rfcEntity->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($rfcEntity->getKey());
+        $rfcAdmin->assignRole('rfc_admin');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $authorityEntity->forceFill([
+            'metadata' => [
+                ...($authorityEntity->metadata ?? []),
+                'authority_sla' => [
+                    'response_time_days' => 2,
+                    'escalation_user_ids' => [$admin->getKey()],
+                    'escalation_role_names' => ['rfc_admin'],
+                ],
+            ],
+        ])->save();
+
+        $application = Application::query()->create([
+            'code' => 'REQ-50004',
+            'entity_id' => $entity->getKey(),
+            'submitted_by_user_id' => $user->getKey(),
+            'project_name' => 'Overdue Authority Project',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'feature_film',
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-10-01',
+            'planned_end_date' => '2026-10-12',
+            'project_summary' => 'Waiting too long on authority.',
+            'status' => 'submitted',
+            'submitted_at' => now()->subDays(3),
+        ]);
+
+        $approval = $application->authorityApprovals()->create([
+            'authority_code' => 'public_security',
+            'entity_id' => $authorityEntity->getKey(),
+            'assigned_user_id' => $authorityUser->getKey(),
+            'assigned_at' => now()->subDays(3),
+            'status' => 'pending',
+        ]);
+
+        $approval->forceFill([
+            'created_at' => now()->subDays(3),
+            'updated_at' => now()->subDays(3),
+        ])->saveQuietly();
+
+        $indexResponse = $this->actingAs($admin)->get(route('admin.applications.index'));
+
+        $indexResponse
+            ->assertOk()
+            ->assertSeeText('Overdue Authority Project')
+            ->assertSeeText('Overdue by');
+
+        Artisan::call('authority-approvals:check-escalations');
+
+        $approval->refresh();
+
+        $this->assertNotNull($approval->escalated_at);
+        $this->assertTrue($admin->fresh()->notifications->contains(
+            fn ($notification) => data_get($notification->data, 'type_key') === 'authority_approval_escalated'
+        ));
+        $this->assertTrue($rfcAdmin->fresh()->notifications->contains(
+            fn ($notification) => data_get($notification->data, 'type_key') === 'authority_approval_escalated'
+        ));
+
+        $afterResponse = $this->actingAs($admin)->get(route('admin.applications.index'));
+
+        $afterResponse
+            ->assertOk()
+            ->assertSeeText('Escalated');
+
+        $showResponse = $this->actingAs($admin)->get(route('admin.applications.show', $application));
+
+        $showResponse
+            ->assertOk()
+            ->assertSeeText('Response window')
+            ->assertSeeText('Escalated');
+
+        $authorityInboxResponse = $this->actingAs($authorityUser)->get(route('authority.applications.index'));
+
+        $authorityInboxResponse
+            ->assertOk()
+            ->assertSeeText('Overdue approvals')
+            ->assertSeeText('Escalated approvals')
+            ->assertSeeText('Escalated')
+            ->assertSeeText('Approval type')
+            ->assertSee('data-sla-countdown', false);
+
+        $authorityDashboardResponse = $this->actingAs($authorityUser)->get(route('dashboard'));
+
+        $authorityDashboardResponse
+            ->assertOk()
+            ->assertSeeText('Overdue approvals')
+            ->assertSeeText('Escalated approvals')
+            ->assertSeeText('Escalated')
+            ->assertSeeText('Approval type')
+            ->assertSee('data-sla-countdown', false);
+
+        $authorityShowResponse = $this->actingAs($authorityUser)->get(route('authority.applications.show', $application));
+
+        $authorityShowResponse
+            ->assertOk()
+            ->assertSeeText('Escalated')
+            ->assertSeeText('Due at:')
+            ->assertSee('data-sla-countdown', false);
+        $this->assertMatchesRegularExpression('/Due at: .* (AM|PM)/', $authorityShowResponse->getContent());
+    }
+
+    public function test_authority_pages_show_configured_response_time_for_legacy_code_based_approval(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$applicant, $applicantEntity] = $this->createApplicantContext();
+        [$authorityUser, $authorityEntity] = $this->createAuthorityContext([
+            'name' => 'Legacy SLA Authority Owner',
+            'username' => 'legacy-sla-authority-owner',
+            'email' => 'legacy-sla-authority-owner@example.com',
+        ]);
+
+        $authorityEntity->forceFill([
+            'metadata' => [
+                ...($authorityEntity->metadata ?? []),
+                'authority_sla' => [
+                    'response_time_days' => 2,
+                    'escalation_user_ids' => [],
+                    'escalation_role_names' => [],
+                ],
+            ],
+        ])->save();
+
+        $application = Application::query()->create([
+            'code' => 'REQ-LEGACY-SLA',
+            'entity_id' => $applicantEntity->getKey(),
+            'submitted_by_user_id' => $applicant->getKey(),
+            'project_name' => 'Legacy SLA Project',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'feature_film',
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-10-01',
+            'planned_end_date' => '2026-10-12',
+            'project_summary' => 'Legacy approval row without an entity id.',
+            'status' => 'submitted',
+            'current_stage' => 'authority_approvals',
+            'submitted_at' => now()->subDay(),
+        ]);
+
+        $approval = $application->authorityApprovals()->create([
+            'authority_code' => 'public_security',
+            'entity_id' => null,
+            'status' => 'pending',
+        ]);
+
+        $approval->forceFill([
+            'created_at' => now()->subDay(),
+            'updated_at' => now()->subDay(),
+        ])->saveQuietly();
+
+        $showResponse = $this->actingAs($authorityUser)->get(route('authority.applications.show', $application));
+
+        $showResponse
+            ->assertOk()
+            ->assertSeeText('Due in')
+            ->assertSeeText('Due at:')
+            ->assertDontSeeText('No window');
+
+        $indexResponse = $this->actingAs($authorityUser)->get(route('authority.applications.index'));
+
+        $indexResponse
+            ->assertOk()
+            ->assertSeeText('Due in')
+            ->assertSeeText('Due at:');
+
+        $dashboardResponse = $this->actingAs($authorityUser)->get(route('dashboard'));
+
+        $dashboardResponse
+            ->assertOk()
+            ->assertSeeText('Due in')
+            ->assertSeeText('Due at:');
     }
 
     public function test_applicant_request_detail_page_displays_saved_metadata_fields(): void
@@ -693,8 +1564,6 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('No additional authority approvals are required for this request.')
             ->assertSeeText('Final decision readiness')
             ->assertSeeText('Submit the request to start the official review workflow.')
-            ->assertSeeText('Public Security Directorate')
-            ->assertSeeText('Ministry of Environment')
             ->assertSeeText('120,000.00');
     }
 
@@ -983,7 +1852,7 @@ class ApplicationWorkflowTest extends TestCase
             ->assertOk()
             ->assertSee('href="'.route('dashboard').'"', false)
             ->assertSee('href="'.route('profile.show').'"', false)
-            ->assertSee('href="'.route('profile.show', ['variant' => 'foreign_producer']).'"', false);
+            ->assertDontSee('href="'.route('profile.show', ['variant' => 'foreign_producer']).'"', false);
     }
 
     public function test_authority_dashboard_hides_export_button_and_contains_shared_profile_route(): void
@@ -1006,7 +1875,7 @@ class ApplicationWorkflowTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('href="'.route('dashboard').'"', false)
-            ->assertSee('href="'.route('profile.show', ['variant' => 'foreign_producer']).'"', false)
+            ->assertDontSee('href="'.route('profile.show', ['variant' => 'foreign_producer']).'"', false)
             ->assertDontSeeText(__('app.reports.export_current'));
     }
 
@@ -1066,6 +1935,8 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Foreign Feature')
             ->assertSeeText('Scouting requests')
             ->assertSeeText('Foreign Scout')
+            ->assertSeeText('Declaration and Undertaking')
+            ->assertSeeText('Open request')
             ->assertDontSeeText('Work category');
     }
 
@@ -1476,7 +2347,18 @@ class ApplicationWorkflowTest extends TestCase
      */
     private function applicationPayload(array $overrides = []): array
     {
-        return array_merge([
+        $approvalCodes = array_values((array) ($overrides['required_approvals'] ?? ['public_security', 'environment']));
+
+        ApprovalRoutingRule::query()
+            ->where('request_type', 'application')
+            ->update(['is_active' => false]);
+
+        ApprovalRoutingRule::query()
+            ->where('request_type', 'application')
+            ->whereIn('approval_code', $approvalCodes)
+            ->update(['is_active' => true]);
+
+        $payload = array_merge([
             'project_name' => 'Desert Dreams',
             'project_nationality' => 'jordanian',
             'work_category' => 'feature_film',
@@ -1502,8 +2384,11 @@ class ApplicationWorkflowTest extends TestCase
             'director_profile_url' => 'https://example.com/director',
             'international_producer_name' => 'Global Partner',
             'international_producer_company' => 'Global Films',
-            'required_approvals' => ['public_security', 'environment'],
             'supporting_notes' => 'Need desert location and crowd management support.',
         ], $overrides);
+
+        unset($payload['required_approvals']);
+
+        return $payload;
     }
 }

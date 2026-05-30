@@ -29,13 +29,14 @@ class LoginController extends Controller
             'identifier' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
         ]);
+        $identifier = trim((string) $credentials['identifier']);
 
         $user = User::query()
-            ->where('email', $credentials['identifier'])
-            ->orWhere('username', $credentials['identifier'])
-            ->orWhere('national_id', $credentials['identifier'])
-            ->orWhereHas('entities', function ($query) use ($credentials): void {
-                $query->where('registration_no', $credentials['identifier']);
+            ->where('email', $identifier)
+            ->orWhere('username', $identifier)
+            ->orWhere('national_id', $identifier)
+            ->orWhereHas('entities', function ($query) use ($identifier): void {
+                $query->where('registration_no', $identifier);
             })
             ->first();
 
@@ -57,6 +58,15 @@ class LoginController extends Controller
                 ]);
         }
 
+        $matchedEntity = $user->availableEntities()
+            ->first(function ($entity) use ($identifier): bool {
+                return in_array($identifier, array_filter([
+                    $entity->registration_no,
+                    $entity->email,
+                    $entity->national_id,
+                ]), true);
+            });
+
         $issuedOtp = $otpService->issueLoginOtp(
             user: $user,
             ipAddress: $request->ip(),
@@ -65,9 +75,9 @@ class LoginController extends Controller
 
         $request->session()->put([
             'pending_auth_user_id' => $user->getKey(),
-            'pending_auth_identifier' => $credentials['identifier'],
+            'pending_auth_identifier' => $identifier,
             'pending_auth_phone' => $issuedOtp['phone'],
-            'pending_auth_entity_id' => $user->primaryEntity()?->getKey(),
+            'pending_auth_entity_id' => $matchedEntity?->getKey() ?? $user->primaryEntity()?->getKey(),
         ]);
 
         if (app()->environment(['local', 'testing']) || $this->shouldAllowDebugFallback()) {

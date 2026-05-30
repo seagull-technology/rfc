@@ -1,8 +1,5 @@
 @php
     $title = __('app.authority.dashboard.title');
-    $isArabic = app()->getLocale() === 'ar';
-    $approvedCount = $approvals->where('status', 'approved')->count();
-    $reviewCount = $approvals->whereIn('status', ['pending', 'in_review'])->count();
     $metricPercent = static fn (int $value, int $total): int => $total > 0 ? (int) round(($value / $total) * 100) : 0;
     $statusClass = static fn (?string $status): string => match ($status) {
         'pending' => 'warning',
@@ -11,28 +8,61 @@
         'rejected' => 'danger',
         default => 'secondary',
     };
-
-    $metrics = [
+    $activeReviewCount = $approvalStats['pending'] + $approvalStats['in_review'];
+    $approvedCount = $approvals->where('status', 'approved')->count();
+    $primaryMetrics = [
         [
-            'label' => $isArabic ? 'عدد الطلبات' : 'Requests count',
+            'label' => __('app.authority.dashboard.metrics.total'),
             'value' => $approvalStats['total'],
             'percent' => $metricPercent($approvalStats['total'], max($approvalStats['total'], 1)),
             'card_color' => 'danger',
             'progress_color' => 'danger',
         ],
         [
-            'label' => $isArabic ? 'عدد الطلبات قيد الدراسة' : 'Requests in review',
-            'value' => $reviewCount,
-            'percent' => $metricPercent($reviewCount, max($approvalStats['total'], 1)),
+            'label' => __('app.authority.dashboard.metrics.in_review'),
+            'value' => $activeReviewCount,
+            'percent' => $metricPercent($activeReviewCount, max($approvalStats['total'], 1)),
             'card_color' => 'warning',
             'progress_color' => 'warning',
         ],
         [
-            'label' => $isArabic ? 'عدد الطلبات الموافق عليها' : 'Approved requests',
+            'label' => __('app.statuses.approved'),
             'value' => $approvedCount,
             'percent' => $metricPercent($approvedCount, max($approvalStats['total'], 1)),
             'card_color' => 'success',
             'progress_color' => 'success',
+        ],
+    ];
+    $secondaryMetrics = [
+        [
+            'label' => __('app.authority.dashboard.metrics.my_assigned'),
+            'value' => $approvalStats['my_assigned'],
+            'badge_class' => 'bg-warning-subtle text-dark',
+        ],
+        [
+            'label' => __('app.authority.dashboard.metrics.shared_inbox'),
+            'value' => $approvalStats['shared_inbox'],
+            'badge_class' => 'bg-primary-subtle text-dark',
+        ],
+        [
+            'label' => __('app.authority.dashboard.metrics.updates'),
+            'value' => $approvalStats['updates'],
+            'badge_class' => 'bg-success-subtle text-dark',
+        ],
+        [
+            'label' => __('app.authority.dashboard.metrics.official_books'),
+            'value' => $approvalStats['official_books'],
+            'badge_class' => 'bg-info-subtle text-dark',
+        ],
+        [
+            'label' => __('app.authority.dashboard.metrics.overdue'),
+            'value' => $approvalStats['overdue'],
+            'badge_class' => 'bg-danger-subtle text-dark',
+        ],
+        [
+            'label' => __('app.authority.dashboard.metrics.escalated'),
+            'value' => $approvalStats['escalated'],
+            'badge_class' => 'bg-dark text-white',
         ],
     ];
 @endphp
@@ -46,7 +76,7 @@
         .portal-authority-hero {
             border: 0;
             border-radius: .5rem;
-            margin-bottom: 0;
+            margin-bottom: 1.5rem;
             overflow: hidden;
         }
 
@@ -78,7 +108,8 @@
         }
 
         .authority-dashboard-layout .row .col-lg-4.col-md-6 > .card,
-        .authority-dashboard-layout .row .col-lg-12.col-md-12 > .card {
+        .authority-dashboard-layout .row .col-lg-12.col-md-12 > .card,
+        .authority-dashboard-layout .row .col-lg-3.col-md-6 > .card {
             height: calc(100% - 1.5rem);
         }
 
@@ -101,7 +132,40 @@
 
         .authority-dashboard-layout table.table thead th,
         .authority-dashboard-layout table.table tbody td {
+            vertical-align: middle;
+        }
+
+        .authority-dashboard-layout table.table thead th:not(:nth-child(3)),
+        .authority-dashboard-layout table.table tbody td:not(:nth-child(3)) {
             white-space: nowrap;
+        }
+
+        .authority-dashboard-layout .authority-sla-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .35rem;
+            margin-top: .5rem;
+        }
+
+        .authority-dashboard-layout .authority-operations-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .75rem;
+            justify-content: flex-end;
+        }
+
+        .authority-dashboard-layout .authority-operations-strip .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: .45rem;
+            border-radius: 999px;
+            font-size: .82rem;
+            font-weight: 500;
+            padding: .55rem .85rem;
+        }
+
+        .authority-dashboard-layout .authority-operations-strip .count {
+            font-weight: 700;
         }
 
         @media (max-width: 767.98px) {
@@ -112,6 +176,10 @@
 
             .portal-authority-hero h3 {
                 font-size: 1.75rem;
+            }
+
+            .authority-dashboard-layout .authority-operations-strip {
+                justify-content: flex-start;
             }
         }
     </style>
@@ -134,7 +202,7 @@
 
 @section('content')
     <div class="row">
-        @foreach ($metrics as $metric)
+        @foreach ($primaryMetrics as $metric)
             <div class="col-lg-4 col-md-6">
                 <div class="card">
                     <div class="card-body">
@@ -164,8 +232,16 @@
             <div class="card card-dashboard">
                 <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4">
                     <h2 class="episode-playlist-title wp-heading-inline">
-                        <span class="position-relative">{{ $isArabic ? 'الطلبات' : 'Requests' }}</span>
+                        <span class="position-relative">{{ __('app.authority.navigation.applications') }}</span>
                     </h2>
+                    <div class="authority-operations-strip">
+                        @foreach ($secondaryMetrics as $metric)
+                            <span class="badge {{ $metric['badge_class'] }}">
+                                <span>{{ $metric['label'] }}</span>
+                                <span class="count">{{ $metric['value'] }}</span>
+                            </span>
+                        @endforeach
+                    </div>
                 </div>
                 <div class="card-body pt-0">
                     <div class="mt-4 table-responsive">
@@ -174,21 +250,58 @@
                                 <thead>
                                     <tr class="ligth">
                                         <th>#</th>
-                                        <th>{{ $isArabic ? 'رقم الطلب' : 'Request number' }}</th>
-                                        <th>{{ $isArabic ? 'اسم المشروع' : 'Project name' }}</th>
-                                        <th>{{ $isArabic ? 'اسم مقدم الطلب' : 'Applicant name' }}</th>
-                                        <th>{{ $isArabic ? 'تاريخ تقديم الطلب' : 'Submission date' }}</th>
+                                        <th>{{ __('app.applications.request_number') }}</th>
+                                        <th>{{ __('app.applications.project_name') }}</th>
+                                        <th>{{ __('app.authority.applications.approval_type') }}</th>
+                                        <th>{{ __('app.authority.applications.applicant') }}</th>
+                                        <th>{{ __('app.authority.applications.ownership') }}</th>
+                                        <th>{{ __('app.applications.submitted_at_label') }}</th>
                                         <th>{{ __('app.applications.status') }}</th>
                                         <th>{{ __('app.authority.applications.actions') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @forelse ($approvals as $approval)
+                                        @php($approvalSignal = $approvalSignals->get($approval->getKey(), ['active' => false]))
+                                        @php($approvalSlaSignal = $approvalSlaSignals->get($approval->getKey(), ['label' => null, 'is_overdue' => false, 'is_escalated' => false, 'due_at' => null]))
                                         <tr>
                                             <td>{{ $loop->iteration }}</td>
                                             <td>{{ $approval->application?->code ?? __('app.dashboard.not_available') }}</td>
-                                            <td>{{ $approval->application?->project_name ?? __('app.dashboard.not_available') }}</td>
+                                            <td>
+                                                <div class="fw-semibold">{{ $approval->application?->project_name ?? __('app.dashboard.not_available') }}</div>
+                                                @if ($approvalSignal['active'])
+                                                    <div class="mt-2">
+                                                        <span class="badge bg-{{ $approvalSignal['class'] }}">{{ $approvalSignal['label'] }}</span>
+                                                    </div>
+                                                @endif
+                                                <div class="authority-sla-badges">
+                                                    @if ($approvalSlaSignal['label'])
+                                                        <span class="badge bg-{{ $approvalSlaSignal['is_overdue'] ? 'danger' : 'secondary' }}">{{ $approvalSlaSignal['label'] }}</span>
+                                                    @endif
+                                                    @if ($approvalSlaSignal['is_escalated'])
+                                                        <span class="badge bg-dark">{{ __('app.admin.authority_escalations.escalated_badge') }}</span>
+                                                    @endif
+                                                </div>
+                                                @if ($approvalSlaSignal['due_at'])
+                                                    <div class="small text-muted mt-1">{{ __('app.admin.authority_escalations.due_at_label', ['date' => $approvalSlaSignal['due_at']->format('Y-m-d h:i A')]) }}</div>
+                                                    <div
+                                                        class="small text-muted mt-1"
+                                                        data-sla-countdown
+                                                        data-due-at="{{ $approvalSlaSignal['due_at']->toIso8601String() }}"
+                                                        data-remaining-template="{{ __('app.admin.authority_escalations.countdown_remaining') }}"
+                                                        data-overdue-template="{{ __('app.admin.authority_escalations.countdown_overdue') }}"
+                                                    ></div>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-secondary-subtle text-dark">{{ __('app.applications.required_approval_options.'.$approval->authority_code) }}</span>
+                                            </td>
                                             <td>{{ $approval->application?->submittedBy?->displayName() ?? __('app.dashboard.not_available') }}</td>
+                                            <td>
+                                                <span class="badge bg-{{ $approval->assigned_user_id ? 'warning' : 'primary' }}">
+                                                    {{ $approval->assigned_user_id ? __('app.authority.applications.ownership_badges.mine') : __('app.authority.applications.ownership_badges.shared') }}
+                                                </span>
+                                            </td>
                                             <td>{{ $approval->application?->submitted_at?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
                                             <td><span class="badge bg-{{ $statusClass($approval->status) }}">{{ $approval->localizedStatus() }}</span></td>
                                             <td>
@@ -201,7 +314,7 @@
                                         </tr>
                                     @empty
                                         <tr>
-                                            <td colspan="7">{{ __('app.authority.applications.empty_state') }}</td>
+                                            <td colspan="9">{{ __('app.authority.applications.empty_state') }}</td>
                                         </tr>
                                     @endforelse
                                 </tbody>
@@ -213,3 +326,7 @@
         </div>
     </div>
 @endsection
+
+@push('scripts')
+    @include('partials.sla-countdown-script')
+@endpush

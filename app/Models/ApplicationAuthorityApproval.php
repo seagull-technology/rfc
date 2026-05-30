@@ -16,6 +16,9 @@ class ApplicationAuthorityApproval extends Model
         'authority_code',
         'entity_id',
         'approval_routing_rule_id',
+        'assigned_user_id',
+        'assigned_at',
+        'escalated_at',
         'status',
         'note',
         'reviewed_by_user_id',
@@ -25,6 +28,8 @@ class ApplicationAuthorityApproval extends Model
     protected function casts(): array
     {
         return [
+            'assigned_at' => 'datetime',
+            'escalated_at' => 'datetime',
             'decided_at' => 'datetime',
         ];
     }
@@ -37,6 +42,11 @@ class ApplicationAuthorityApproval extends Model
     public function reviewedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by_user_id');
+    }
+
+    public function assignedTo(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_user_id');
     }
 
     public function entity(): BelongsTo

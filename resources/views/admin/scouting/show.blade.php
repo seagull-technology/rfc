@@ -60,7 +60,11 @@
         }
 
         .admin-application-show-layout .profile-tab {
-            gap: .25rem;
+            flex-wrap: nowrap;
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
         }
 
         .admin-application-show-layout .profile-tab .nav-link {

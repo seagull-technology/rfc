@@ -1,6 +1,7 @@
 @php
     $currentAuthorityUser = auth()->user();
     $currentAuthorityEntity = $currentAuthorityUser?->primaryEntity();
+    $authorityAvailableEntities = $currentAuthorityUser?->availableEntities() ?? collect();
     $authorityAvatar = asset('images/111.jpeg');
     $authorityUnreadNotifications = $currentAuthorityUser?->unreadNotifications ?? collect();
     $authorityNotificationCount = $authorityUnreadNotifications->count();
@@ -144,6 +145,24 @@
                                     @foreach ($authorityProfileLinks as $authorityProfileLink)
                                         <li><a class="dropdown-item" href="{{ $authorityProfileLink['url'] }}">{{ $authorityProfileLink['label'] }}</a></li>
                                     @endforeach
+                                    @if ($authorityAvailableEntities->count() > 1)
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><h6 class="dropdown-header">{{ __('app.portal.switch_entity_title') }}</h6></li>
+                                        @foreach ($authorityAvailableEntities as $authorityEntityOption)
+                                            <li>
+                                                <form method="POST" action="{{ route('context.entity.update') }}">
+                                                    @csrf
+                                                    <input type="hidden" name="entity_id" value="{{ $authorityEntityOption->getKey() }}">
+                                                    <button type="submit" class="dropdown-item d-flex justify-content-between align-items-center">
+                                                        <span>{{ $authorityEntityOption->displayName() }}</span>
+                                                        @if ((int) $authorityEntityOption->getKey() === (int) $currentAuthorityEntity?->getKey())
+                                                            <span class="badge bg-danger">{{ __('app.portal.current_entity_badge') }}</span>
+                                                        @endif
+                                                    </button>
+                                                </form>
+                                            </li>
+                                        @endforeach
+                                    @endif
                                     <li><hr class="dropdown-divider"></li>
                                     <li>
                                         <form method="POST" action="{{ route('logout') }}">
