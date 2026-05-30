@@ -46,6 +46,7 @@ class ScoutingRequestFlowTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('streamit-wraper-table', false)
+            ->assertSee('scouting-request-table', false)
             ->assertSeeText(__('app.scouting.title'))
             ->assertSeeText(__('app.scouting.open_requests'));
     }
@@ -253,6 +254,7 @@ class ScoutingRequestFlowTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('admin-scouting-table', false)
             ->assertSeeText('Needs admin review')
             ->assertSeeText('Waiting on applicant')
             ->assertSeeText('Needs Admin Review Scout')

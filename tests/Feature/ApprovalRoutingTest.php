@@ -557,6 +557,9 @@ class ApprovalRoutingTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('approval-routing-index-layout', false)
+            ->assertSee('approval-routing-conflict-table', false)
+            ->assertSee('approval-routing-rules-table', false)
             ->assertSeeText('Priority Conflict Report')
             ->assertSeeText('Shadowed rule')
             ->assertSeeText('Broad municipalities route')
@@ -930,6 +933,8 @@ class ApprovalRoutingTest extends TestCase
 
         $indexResponse
             ->assertOk()
+            ->assertSee('approval-routing-usage-table', false)
+            ->assertSee('approval-routing-rules-table', false)
             ->assertSeeText('Routing Usage Snapshot')
             ->assertSeeText('Used municipalities analytics route')
             ->assertSeeText('2')
@@ -1067,6 +1072,7 @@ class ApprovalRoutingTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('approval-routing-cleanup-table', false)
             ->assertSeeText('Cleanup Review')
             ->assertSeeText('Cleanup unused rule')
             ->assertSeeText('Cleanup stale rule')
@@ -1100,6 +1106,8 @@ class ApprovalRoutingTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('approval-routing-audit-table', false)
+            ->assertSee('approval-routing-rules-table', false)
             ->assertSeeText('Last changed by')
             ->assertSeeText('Last changed at')
             ->assertSeeText('Last change')
@@ -1172,10 +1180,13 @@ class ApprovalRoutingTest extends TestCase
         ]));
 
         $content = $response->getContent();
-        $mainTableHtml = substr($content, (int) strrpos($content, '<table class="table mb-0">'));
+        $mainTableOffset = strrpos($content, '<table class="table mb-0 approval-routing-table approval-routing-rules-table">');
+        $this->assertNotFalse($mainTableOffset);
+        $mainTableHtml = substr($content, (int) $mainTableOffset);
 
         $response
             ->assertOk()
+            ->assertSee('approval-routing-rules-table', false)
             ->assertSeeText('Filter target rule')
             ->assertSeeText('Routing Auditor')
             ->assertSeeText('Updated');

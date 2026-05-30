@@ -16,10 +16,33 @@
             padding-bottom: 0;
         }
 
-        .contact-center-layout table thead th,
-        .contact-center-layout table tbody td {
-            vertical-align: middle;
-            white-space: nowrap;
+        .contact-center-layout .contact-center-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .contact-center-layout .contact-center-table {
+            min-width: 980px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .contact-center-layout .contact-center-table thead th,
+        .contact-center-layout .contact-center-table tbody td {
+            vertical-align: top;
+            white-space: normal;
+            word-break: break-word;
+        }
+
+        .contact-center-layout .contact-center-table thead th:first-child,
+        .contact-center-layout .contact-center-table tbody td:first-child,
+        .contact-center-layout .contact-center-actions-cell {
+            text-align: center;
+        }
+
+        .contact-center-layout .contact-center-actions-cell .list-user-action {
+            justify-content: center;
         }
     </style>
 @endpush
@@ -34,8 +57,17 @@
                     </h2>
                 </div>
 
-                <div class="table-view table-space">
-                    <table class="data-tables table custom-table data-table-one custom-table-height" role="grid" data-toggle="data-table1">
+                <div class="table-view table-space contact-center-table-scroll">
+                    <table class="data-tables table custom-table data-table-one custom-table-height contact-center-table" role="grid" data-toggle="data-table1">
+                        <colgroup>
+                            <col style="width: 64px">
+                            <col style="width: 260px">
+                            <col style="width: 140px">
+                            <col style="width: 150px">
+                            <col style="width: 190px">
+                            <col style="width: 120px">
+                            <col style="width: 56px">
+                        </colgroup>
                         <thead>
                             <tr class="ligth">
                                 <th>#</th>
@@ -62,7 +94,7 @@
                                     </td>
                                     <td>{{ $message['sender_label'] }}</td>
                                     <td>{{ $message['created_at']?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
-                                    <td>
+                                    <td class="contact-center-actions-cell">
                                         <div class="flex align-items-center list-user-action">
                                             <button class="btn btn-sm btn-icon btn-info-subtle rounded" type="button" data-bs-toggle="offcanvas" data-bs-target="#viewMsg-{{ $loop->iteration }}">
                                                 <i class="ph ph-eye fs-6"></i>

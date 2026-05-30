@@ -21,50 +21,77 @@
 
 @extends('layouts.admin-dashboard', ['title' => $title])
 
-@section('page_layout_class', 'admin-applications-index-layout')
+@section('page_layout_class', 'admin-scouting-index-layout')
 
 @push('styles')
     <style>
-        .admin-applications-index-layout {
+        .admin-scouting-index-layout {
             padding-top: 0;
         }
 
-        .admin-applications-index-layout .tools-card {
+        .admin-scouting-index-layout .tools-card {
             margin-bottom: 1.5rem;
         }
 
-        .admin-applications-index-layout .card {
+        .admin-scouting-index-layout .card {
             margin-bottom: 0;
         }
 
-        .admin-applications-index-layout > .row > [class*="col-"] {
+        .admin-scouting-index-layout > .row > [class*="col-"] {
             margin-bottom: 1.5rem;
         }
 
-        .admin-applications-index-layout .card-header {
+        .admin-scouting-index-layout .card-header {
             padding-bottom: 0;
         }
 
-        .admin-applications-index-layout .nav-pills .nav-link {
+        .admin-scouting-index-layout .nav-pills {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+        }
+
+        .admin-scouting-index-layout .nav-pills .nav-item {
+            min-width: 220px;
+        }
+
+        .admin-scouting-index-layout .nav-pills .nav-link {
             white-space: nowrap;
         }
 
-        .admin-applications-index-layout table thead th,
-        .admin-applications-index-layout table tbody td {
-            white-space: nowrap;
-            vertical-align: middle;
+        .admin-scouting-index-layout .admin-scouting-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
         }
 
-        .admin-applications-index-layout .table-view table tbody td:first-child,
-        .admin-applications-index-layout .table-view table thead th:first-child {
-            width: 70px;
+        .admin-scouting-index-layout .admin-scouting-table {
+            min-width: 1180px;
+            table-layout: fixed;
+            width: 100%;
         }
 
-        .admin-applications-index-layout .response-flag {
+        .admin-scouting-index-layout .admin-scouting-table thead th,
+        .admin-scouting-index-layout .admin-scouting-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+
+        .admin-scouting-index-layout .admin-scouting-table thead th:first-child,
+        .admin-scouting-index-layout .admin-scouting-table tbody td:first-child,
+        .admin-scouting-index-layout .admin-scouting-actions-cell {
+            text-align: center;
+        }
+
+        .admin-scouting-index-layout .admin-scouting-actions-cell .list-user-action {
+            justify-content: center;
+        }
+
+        .admin-scouting-index-layout .response-flag {
             margin-top: .5rem;
         }
 
-        .admin-applications-index-layout .response-flag .small {
+        .admin-scouting-index-layout .response-flag .small {
             display: block;
             margin-top: .35rem;
             white-space: normal;
@@ -146,8 +173,18 @@
                         <div class="row">
                             <div class="col-sm-12">
                                 <div class="streamit-wraper-table">
-                                    <div class="table-view table-space">
-                                        <table class="data-tables table custom-table data-table-one custom-table-height" role="grid" data-toggle="data-table">
+                                    <div class="table-view table-space admin-scouting-table-scroll">
+                                        <table class="data-tables table custom-table data-table-one custom-table-height admin-scouting-table" role="grid" data-toggle="data-table">
+                                            <colgroup>
+                                                <col style="width: 64px">
+                                                <col style="width: 150px">
+                                                <col style="width: 280px">
+                                                <col style="width: 220px">
+                                                <col style="width: 150px">
+                                                <col style="width: 130px">
+                                                <col style="width: 115px">
+                                                <col style="width: 71px">
+                                            </colgroup>
                                             <thead>
                                                 <tr class="ligth">
                                                     <th>#</th>
@@ -180,7 +217,7 @@
                                                         <td><span class="badge bg-{{ $checkpointClass($checkpoint['key']) }}">{{ $checkpoint['label'] }}</span></td>
                                                         <td>{{ optional($requestRecord->submitted_at ?? $requestRecord->created_at)->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
                                                         <td><span class="badge bg-{{ $statusClass($requestRecord->status) }}">{{ $requestRecord->localizedStatus() }}</span></td>
-                                                        <td>
+                                                        <td class="admin-scouting-actions-cell">
                                                             <div class="flex align-items-center list-user-action">
                                                                 <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ route('admin.scouting-requests.show', $requestRecord) }}">
                                                                     <span class="btn-inner">
