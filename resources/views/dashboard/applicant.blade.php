@@ -128,10 +128,33 @@
             padding-bottom: 1.5rem !important;
         }
 
-        .applicant-dashboard-layout table.table thead th,
-        .applicant-dashboard-layout table.table tbody td {
-            white-space: nowrap;
-            vertical-align: middle;
+        .applicant-dashboard-layout .portal-request-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .applicant-dashboard-layout .portal-request-table {
+            min-width: 980px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .applicant-dashboard-layout .portal-request-table thead th,
+        .applicant-dashboard-layout .portal-request-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+
+        .applicant-dashboard-layout .portal-request-table thead th:first-child,
+        .applicant-dashboard-layout .portal-request-table tbody td:first-child,
+        .applicant-dashboard-layout .portal-request-actions-cell {
+            text-align: center;
+        }
+
+        .applicant-dashboard-layout .portal-request-actions-cell .list-user-action {
+            justify-content: center;
         }
 
         .applicant-dashboard-layout .dashboard-metric-card img,
@@ -211,8 +234,17 @@
                 </div>
                 <div class="card-body pt-0">
                     <div class="mt-4 table-responsive">
-                        <div class="table-responsive rounded py-4">
-                            <table id="applicant-production-table" class="table" data-toggle="data-table">
+                        <div class="table-responsive rounded py-4 portal-request-table-scroll">
+                            <table id="applicant-production-table" class="table portal-request-table" data-toggle="data-table">
+                                <colgroup>
+                                    <col style="width: 64px">
+                                    <col style="width: 150px">
+                                    <col style="width: 270px">
+                                    <col style="width: 190px">
+                                    <col style="width: 135px">
+                                    <col style="width: 115px">
+                                    <col style="width: 80px">
+                                </colgroup>
                                 <thead>
                                     <tr class="ligth">
                                         <th>#</th>
@@ -233,7 +265,7 @@
                                             <td>{{ $application->submittedBy?->displayName() ?? $user->displayName() }}</td>
                                             <td>{{ $application->submitted_at?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
                                             <td><span class="badge bg-{{ $statusClass($application->status) }}">{{ $application->localizedStatus() }}</span></td>
-                                            <td>
+                                            <td class="portal-request-actions-cell">
                                                 <div class="flex align-items-center list-user-action">
                                                     <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ route('applications.show', $application) }}">
                                                         <span class="btn-inner"><i class="ph ph-eye fs-6"></i></span>
@@ -286,8 +318,17 @@
                 </div>
                 <div class="card-body pt-0">
                     <div class="mt-4 table-responsive">
-                        <div class="table-responsive rounded py-4">
-                            <table id="applicant-scouting-table" class="table" data-toggle="data-table">
+                        <div class="table-responsive rounded py-4 portal-request-table-scroll">
+                            <table id="applicant-scouting-table" class="table portal-request-table" data-toggle="data-table">
+                                <colgroup>
+                                    <col style="width: 64px">
+                                    <col style="width: 150px">
+                                    <col style="width: 270px">
+                                    <col style="width: 190px">
+                                    <col style="width: 135px">
+                                    <col style="width: 115px">
+                                    <col style="width: 80px">
+                                </colgroup>
                                 <thead>
                                     <tr class="ligth">
                                         <th>#</th>
@@ -308,7 +349,7 @@
                                             <td>{{ $scoutingRequest->submittedBy?->displayName() ?? $user->displayName() }}</td>
                                             <td>{{ $scoutingRequest->submitted_at?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
                                             <td><span class="badge bg-{{ $statusClass($scoutingRequest->status) }}">{{ $scoutingRequest->localizedStatus() }}</span></td>
-                                            <td>
+                                            <td class="portal-request-actions-cell">
                                                 <div class="flex align-items-center list-user-action">
                                                     <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ route('scouting-requests.show', $scoutingRequest) }}">
                                                         <span class="btn-inner"><i class="ph ph-eye fs-6"></i></span>

@@ -61,14 +61,34 @@
             padding-top: 1.5rem;
         }
 
-        .authority-inbox-layout table.table thead th,
-        .authority-inbox-layout table.table tbody td {
-            white-space: nowrap;
+        .authority-inbox-layout .authority-directory-table {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .authority-inbox-layout .authority-requests-table {
+            min-width: 1240px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .authority-inbox-layout .authority-requests-table thead th,
+        .authority-inbox-layout .authority-requests-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
         }
 
         .authority-inbox-layout .authority-directory-table .btn-icon {
             min-width: 38px;
             min-height: 38px;
+        }
+
+        .authority-inbox-layout .authority-requests-table thead th:first-child,
+        .authority-inbox-layout .authority-requests-table tbody td:first-child,
+        .authority-inbox-layout .authority-requests-actions-cell {
+            text-align: center;
         }
 
         .authority-inbox-layout .authority-signal {
@@ -292,7 +312,18 @@
 
                         <div class="mt-4 table-responsive authority-directory-table">
                             <div class="table-responsive rounded py-4">
-                                <table class="table mb-0">
+                                <table class="table mb-0 authority-requests-table">
+                                    <colgroup>
+                                        <col style="width: 64px">
+                                        <col style="width: 136px">
+                                        <col style="width: 278px">
+                                        <col style="width: 160px">
+                                        <col style="width: 170px">
+                                        <col style="width: 126px">
+                                        <col style="width: 126px">
+                                        <col style="width: 110px">
+                                        <col style="width: 70px">
+                                    </colgroup>
                                     <thead>
                                         <tr class="ligth">
                                             <th>#</th>
@@ -369,7 +400,7 @@
                                                     @endphp
                                                     <span class="badge bg-{{ $badgeClass }}">{{ $approval->localizedStatus() }}</span>
                                                 </td>
-                                                <td>
+                                                <td class="authority-requests-actions-cell">
                                                     <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ route('authority.applications.show', $approval->application) }}">
                                                         <span class="btn-inner">
                                                             <i class="ph ph-eye fs-6"></i>

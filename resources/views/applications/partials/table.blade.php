@@ -10,8 +10,15 @@
     };
 @endphp
 
-<div class="table-responsive">
-    <table class="table mb-0">
+<div class="table-responsive applicant-request-table-scroll">
+    <table class="table mb-0 applicant-request-table">
+        <colgroup>
+            <col style="width: 150px">
+            <col style="width: 300px">
+            <col style="width: 130px">
+            <col style="width: 150px">
+            <col style="width: 110px">
+        </colgroup>
         <thead>
             <tr>
                 <th>{{ __('app.applications.request_number') }}</th>
@@ -38,7 +45,7 @@
                             <div class="text-muted mt-2 small">{{ $application->review_note }}</div>
                         @endif
                     </td>
-                    <td>
+                    <td class="applicant-request-actions-cell">
                         <div class="d-flex gap-2 flex-wrap">
                             <a href="{{ route('applications.show', $application) }}" class="btn btn-sm btn-icon btn-primary rounded-pill" data-bs-toggle="tooltip" title="{{ __('app.applications.view_action') }}">
                                 <span class="btn-inner">

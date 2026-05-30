@@ -597,6 +597,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $authorityInbox
             ->assertOk()
+            ->assertSee('authority-requests-table', false)
             ->assertSeeText('Official books issued')
             ->assertSeeText('Official book issued')
             ->assertSeeText('Official book: Updated facilitation book');
@@ -605,6 +606,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $authorityDashboard
             ->assertOk()
+            ->assertSee('authority-requests-table', false)
             ->assertSeeText('Official books issued')
             ->assertSeeText('Official book issued');
 
@@ -1202,6 +1204,7 @@ class ApplicationWorkflowTest extends TestCase
         $delegateDashboard = $this->actingAs($delegate)->get(route('dashboard'));
         $delegateDashboard
             ->assertOk()
+            ->assertSee('authority-requests-table', false)
             ->assertSeeText('My assigned approvals')
             ->assertSeeText('Shared inbox approvals')
             ->assertSeeText('Private Authority Request')
@@ -1220,6 +1223,7 @@ class ApplicationWorkflowTest extends TestCase
         ]));
         $delegateSharedFilter
             ->assertOk()
+            ->assertSee('authority-requests-table', false)
             ->assertSeeText('Shared Authority Request')
             ->assertDontSeeText('Private Authority Request');
     }
@@ -1468,6 +1472,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $authorityInboxResponse
             ->assertOk()
+            ->assertSee('authority-requests-table', false)
             ->assertSeeText('Overdue approvals')
             ->assertSeeText('Escalated approvals')
             ->assertSeeText('Escalated')
@@ -1478,6 +1483,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $authorityDashboardResponse
             ->assertOk()
+            ->assertSee('authority-requests-table', false)
             ->assertSeeText('Overdue approvals')
             ->assertSeeText('Escalated approvals')
             ->assertSeeText('Escalated')
@@ -1664,11 +1670,20 @@ class ApplicationWorkflowTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('card-dashboard', false)
+            ->assertSee('portal-request-table', false)
             ->assertSeeText('Production requests')
             ->assertSeeText('Scouting requests')
             ->assertSeeText('Clarification Project')
             ->assertSeeText('Needs clarification')
             ->assertSeeText('Applicant Studio');
+
+        $indexResponse = $this->actingAs($user)->get(route('applications.index'));
+
+        $indexResponse
+            ->assertOk()
+            ->assertSee('applicant-request-table', false)
+            ->assertSee('request-tabs', false)
+            ->assertSeeText('Clarification Project');
     }
 
     public function test_student_dashboard_uses_template_sections_and_live_request_rows(): void
@@ -1713,6 +1728,7 @@ class ApplicationWorkflowTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('card-dashboard', false)
+            ->assertSee('portal-request-table', false)
             ->assertSeeText('Production requests')
             ->assertSeeText('Scouting requests')
             ->assertSeeText('Student Documentary')
