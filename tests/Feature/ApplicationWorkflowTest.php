@@ -810,9 +810,30 @@ class ApplicationWorkflowTest extends TestCase
         $showResponse
             ->assertOk()
             ->assertSeeText('Authority Decision')
+            ->assertSeeText('Procedures')
+            ->assertSeeText('Request Timeline')
+            ->assertSeeText('The applicant sent a new correspondence message.')
+            ->assertSeeText('Approvals and Official Updates')
+            ->assertSeeText('Approval type')
+            ->assertSeeText('Decision note')
+            ->assertSeeText('Attached Forms')
+            ->assertSeeText('Form title')
+            ->assertSeeText('Authority procedures')
+            ->assertSeeText('Start or continue review')
+            ->assertSeeText('Approve request')
+            ->assertSeeText('Reject request')
+            ->assertDontSee('value="pending"', false)
             ->assertSeeText('Official Books')
             ->assertSeeText('AUTH-BOOK-100')
             ->assertSeeText('Authority coordination book')
+            ->assertSeeText('View book')
+            ->assertSeeText('Thank you for your cooperation.')
+            ->assertSeeText('Please accept our highest regards.')
+            ->assertSeeText('New correspondence')
+            ->assertSeeText('Send new correspondence')
+            ->assertSeeText('Message content')
+            ->assertSeeText('Sender')
+            ->assertSeeText('Sent at')
             ->assertDontSeeText('Draft authority coordination book')
             ->assertDontSeeText('Other authority coordination book')
             ->assertSeeText('Request update received')
@@ -915,8 +936,13 @@ class ApplicationWorkflowTest extends TestCase
 
         $showResponse
             ->assertOk()
+            ->assertSeeText('Start or continue review')
+            ->assertSeeText('Final approval or rejection is available only to authority approvers.')
+            ->assertDontSee('value="pending"', false)
             ->assertDontSee('value="approved"', false)
-            ->assertDontSee('value="rejected"', false);
+            ->assertDontSee('value="rejected"', false)
+            ->assertDontSeeText('Approve request')
+            ->assertDontSeeText('Reject request');
 
         $updateResponse = $this->actingAs($reviewer)->post(route('authority.applications.approval.update', $application), [
             'status' => 'approved',

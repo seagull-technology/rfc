@@ -124,6 +124,58 @@
             overflow-y: hidden;
         }
 
+        .applicant-request-show-layout .applicant-approval-table {
+            table-layout: fixed;
+            min-width: 760px;
+            width: 100%;
+        }
+
+        .applicant-request-show-layout .applicant-approval-table th,
+        .applicant-request-show-layout .applicant-approval-table td {
+            vertical-align: top;
+            white-space: normal;
+            word-break: break-word;
+        }
+
+        .applicant-request-show-layout .applicant-correspondence-list {
+            display: grid;
+            gap: .75rem;
+        }
+
+        .applicant-request-show-layout .applicant-correspondence-list .list-group-item {
+            border: 1px solid rgba(17, 24, 39, 0.08);
+            border-radius: 6px;
+            padding: .875rem;
+            text-align: start;
+        }
+
+        .applicant-request-show-layout .applicant-correspondence-list .list-group-item + .list-group-item {
+            border-top-width: 1px;
+        }
+
+        .applicant-request-show-layout .applicant-correspondence-summary {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .applicant-request-show-layout .applicant-correspondence-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .25rem .75rem;
+        }
+
+        .applicant-request-show-layout .applicant-message-readonly {
+            height: auto;
+            min-height: 3rem;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
+        .applicant-request-show-layout .applicant-message-body {
+            min-height: 9rem;
+            white-space: pre-wrap;
+        }
+
         [dir="rtl"] .applicant-request-show-layout .table-responsive {
             direction: ltr;
         }
@@ -478,7 +530,7 @@
                             </div>
                             <div class="card-body">
                                 <div class="table-responsive">
-                                    <table class="table mb-0">
+                                    <table class="table mb-0 applicant-approval-table">
                                         <thead>
                                             <tr>
                                                 <th>{{ __('app.applications.authority') }}</th>

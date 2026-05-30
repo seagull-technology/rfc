@@ -83,6 +83,8 @@
                         </ul>
                     </div>
                 @endif
+                <p class="text-center pt-4 mb-1">{{ __('app.official_letters.formal_thanks') }}</p>
+                <p class="text-center mb-0">{{ __('app.official_letters.formal_respect') }}</p>
             </div>
         </div>
         <div class="offcanvas-footer border-top">

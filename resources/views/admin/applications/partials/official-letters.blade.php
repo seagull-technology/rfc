@@ -26,7 +26,15 @@
     </div>
     <div class="card-body">
         <div class="table-responsive">
-            <table class="table table-striped mb-0">
+            <table class="table table-striped mb-0 admin-official-letters-table">
+                <colgroup>
+                    <col style="width: 22%;">
+                    <col style="width: 18%;">
+                    <col style="width: 26%;">
+                    <col style="width: 12%;">
+                    <col style="width: 11%;">
+                    <col style="width: 11%;">
+                </colgroup>
                 <thead>
                     <tr>
                         <th>{{ __('app.official_letters.target_entity') }}</th>
@@ -45,8 +53,8 @@
                             <td>{{ $letter->subject }}</td>
                             <td>{{ $letter->letter_date?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
                             <td><span class="badge bg-{{ $letter->status === 'issued' ? 'success' : 'secondary' }}">{{ $letter->localizedStatus() }}</span></td>
-                            <td>
-                                <div class="d-flex gap-2 flex-wrap">
+                            <td class="admin-official-letter-action-cell">
+                                <div class="d-flex gap-2 flex-wrap justify-content-center">
                                     <button class="btn btn-sm btn-icon btn-info-subtle rounded" type="button" data-bs-toggle="offcanvas" data-bs-target="#officialLetterView{{ $letter->getKey() }}" aria-controls="officialLetterView{{ $letter->getKey() }}" title="{{ __('app.official_letters.view_action') }}">
                                         <i class="ph ph-eye fs-6"></i>
                                     </button>
@@ -113,6 +121,7 @@
                 <div class="meta pt-2">
                     <div><span class="form-label px-2">{{ __('app.official_letters.letter_date') }}:</span> <span>{{ $letter->letter_date?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</span></div>
                     <div><span class="form-label px-2">{{ __('app.official_letters.serial_number') }}:</span> <span>{{ $letter->serial_number ?: __('app.dashboard.not_available') }}</span></div>
+                    <div><span class="form-label px-2">{{ __('app.official_letters.target_entity') }}:</span> <span>{{ $letter->targetEntity?->displayName() ?? __('app.dashboard.not_available') }}</span></div>
                     <div><span class="form-label px-2">{{ $letter->recipient_prefix ?: __('app.official_letters.recipient_prefix') }}:</span> <span>{{ $letter->recipient_name }}</span></div>
                 </div>
                 <div class="subject mt-3">
@@ -130,7 +139,8 @@
                         </ul>
                     </div>
                 @endif
-                <p class="text-center pt-4">{{ app()->getLocale() === 'ar' ? 'شاكرين لكم تعاونكم' : 'Thank you for your cooperation.' }}</p>
+                <p class="text-center pt-4 mb-1">{{ __('app.official_letters.formal_thanks') }}</p>
+                <p class="text-center mb-0">{{ __('app.official_letters.formal_respect') }}</p>
             </div>
         </div>
         <div class="offcanvas-footer border-top">

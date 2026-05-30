@@ -201,6 +201,71 @@
             margin: auto;
         }
 
+        .admin-application-show-layout .admin-approval-management-table,
+        .admin-application-show-layout .admin-official-letters-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .admin-application-show-layout .admin-approval-management-table {
+            min-width: 1180px;
+        }
+
+        .admin-application-show-layout .admin-official-letters-table {
+            min-width: 1000px;
+        }
+
+        .admin-application-show-layout .admin-approval-management-table th,
+        .admin-application-show-layout .admin-approval-management-table td,
+        .admin-application-show-layout .admin-official-letters-table th,
+        .admin-application-show-layout .admin-official-letters-table td {
+            vertical-align: top;
+            white-space: normal;
+            word-break: break-word;
+        }
+
+        .admin-application-show-layout .admin-official-letter-action-cell {
+            text-align: center;
+        }
+
+        .admin-application-show-layout .admin-correspondence-list {
+            display: grid;
+            gap: .75rem;
+        }
+
+        .admin-application-show-layout .admin-correspondence-list .list-group-item {
+            border: 1px solid rgba(17, 24, 39, 0.08);
+            border-radius: 6px;
+            padding: .875rem;
+            text-align: start;
+        }
+
+        .admin-application-show-layout .admin-correspondence-list .list-group-item + .list-group-item {
+            border-top-width: 1px;
+        }
+
+        .admin-application-show-layout .admin-correspondence-summary {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .admin-application-show-layout .admin-correspondence-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .35rem .75rem;
+        }
+
+        .admin-application-show-layout .admin-message-readonly {
+            height: auto;
+            line-height: 1.7;
+            min-height: 42px;
+        }
+
+        .admin-application-show-layout .admin-message-body {
+            min-height: 140px;
+            white-space: pre-line;
+        }
+
         .admin-application-show-layout .tab-pane > .card:last-child {
             margin-bottom: 0;
         }
@@ -647,10 +712,20 @@
                                         </div>
 
                                         <div class="table-responsive mt-4">
-                                            <table id="basic-table-approvals" class="table table-striped mb-0 request-narrow-table" role="grid">
+                                            <table id="basic-table-approvals" class="table table-striped mb-0 request-narrow-table admin-approval-management-table" role="grid">
+                                                <colgroup>
+                                                    <col style="width: 13%;">
+                                                    <col style="width: 18%;">
+                                                    <col style="width: 14%;">
+                                                    <col style="width: 15%;">
+                                                    <col style="width: 8%;">
+                                                    <col style="width: 10%;">
+                                                    <col style="width: 7%;">
+                                                    <col style="width: 15%;">
+                                                </colgroup>
                                                 <thead>
                                                     <tr>
-                                                        <th style="width: 34%;">{{ __('app.documents.title_label') }}</th>
+                                                        <th>{{ __('app.documents.title_label') }}</th>
                                                         <th>{{ __('app.admin.applications.authority') }}</th>
                                                         <th>{{ __('app.admin.applications.current_delegate') }}</th>
                                                         <th>{{ __('app.admin.authority_escalations.response_window') }}</th>
