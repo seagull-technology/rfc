@@ -1784,6 +1784,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('portal-profile-projects-table', false)
             ->assertSeeText('Profile Studio')
             ->assertSeeText('Cinema production company')
             ->assertSeeText('Member since')
@@ -1869,6 +1870,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $response->assertOk();
         $response
+            ->assertSee('portal-profile-projects-table', false)
             ->assertSee('<span class="badge bg-success">Approved</span>', false)
             ->assertSee('<span class="badge bg-danger">Rejected</span>', false);
         $previousProjects = collect($response->viewData('previousProjects'));
@@ -1970,6 +1972,8 @@ class ApplicationWorkflowTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('foreign-producer-applications-table', false)
+            ->assertSee('foreign-producer-scouting-table', false)
             ->assertSeeText('Foreign Profile Studio')
             ->assertSeeText('Foreign Producer')
             ->assertSeeText('Production Requests')

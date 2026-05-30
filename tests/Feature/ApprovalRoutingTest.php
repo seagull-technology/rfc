@@ -407,6 +407,8 @@ class ApprovalRoutingTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('approval-routing-show-layout', false)
+            ->assertSee('approval-routing-show-audit-table', false)
             ->assertSeeText('Drones to interior')
             ->assertSeeText(__('app.admin.approval_routing.audit_actions.created'))
             ->assertSeeText(__('app.admin.approval_routing.audit_actions.updated'))
@@ -1260,6 +1262,7 @@ class ApprovalRoutingTest extends TestCase
         $this->assertStringContainsString('Preview Match', $html);
         $this->assertStringNotContainsString('Preview Mismatch', $html);
         $this->assertStringContainsString('Impact Preview', $html);
+        $this->assertStringContainsString('approval-routing-preview-table', $html);
     }
 
     public function test_preview_endpoint_lists_overlapping_active_rules(): void
@@ -1351,6 +1354,8 @@ class ApprovalRoutingTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('approval-routing-simulator-layout', false)
+            ->assertSee('approval-routing-simulator-route-table', false)
             ->assertSeeText('Simulator Match')
             ->assertSeeText('Municipal cinema route')
             ->assertSeeText($targetEntity->displayName())
@@ -1403,6 +1408,9 @@ class ApprovalRoutingTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('approval-routing-simulator-layout', false)
+            ->assertSee('approval-routing-simulator-route-table', false)
+            ->assertSee('approval-routing-simulator-change-table', false)
             ->assertSeeText('Current Routing Result')
             ->assertSeeText('With Draft Rule')
             ->assertSeeText('Draft municipal route')

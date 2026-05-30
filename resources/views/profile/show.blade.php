@@ -95,6 +95,25 @@
             vertical-align: middle;
         }
 
+        .portal-profile-layout .portal-profile-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .portal-profile-layout .portal-profile-table {
+            min-width: 860px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .portal-profile-layout .portal-profile-table thead th,
+        .portal-profile-layout .portal-profile-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+
         .portal-profile-layout .portal-profile-stat-card h6 {
             margin-bottom: .5rem;
             font-size: .95rem;
@@ -201,8 +220,15 @@
     <div class="card mt-4 portal-profile-projects">
         <div class="card-header">{{ __('app.admin.entities.profile_previous_projects') }}</div>
         <div class="card-body">
-            <div class="table-responsive">
-                <table class="table">
+            <div class="table-responsive portal-profile-table-scroll">
+                <table class="table portal-profile-table portal-profile-projects-table">
+                    <colgroup>
+                        <col style="width: 280px">
+                        <col style="width: 180px">
+                        <col style="width: 170px">
+                        <col style="width: 130px">
+                        <col style="width: 100px">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>{{ __('app.applications.project_name') }}</th>

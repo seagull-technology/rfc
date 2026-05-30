@@ -107,8 +107,14 @@
             @if ($matchedApplications->isEmpty())
                 <div class="text-muted">{{ __('app.admin.approval_routing.preview_no_matches') }}</div>
             @else
-                <div class="table-responsive">
-                    <table class="table table-sm mb-0">
+                <div class="table-responsive approval-routing-preview-table-scroll">
+                    <table class="table table-sm mb-0 approval-routing-preview-table">
+                        <colgroup>
+                            <col style="width: 130px">
+                            <col style="width: 190px">
+                            <col style="width: 170px">
+                            <col style="width: 110px">
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th>{{ __('app.applications.request_number') }}</th>

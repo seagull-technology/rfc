@@ -76,6 +76,36 @@
             vertical-align: middle;
         }
 
+        .admin-user-show-layout .admin-user-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .admin-user-show-layout .admin-user-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .admin-user-show-layout .admin-user-projects-table {
+            min-width: 860px;
+        }
+
+        .admin-user-show-layout .admin-user-memberships-table {
+            min-width: 960px;
+        }
+
+        .admin-user-show-layout .admin-user-role-history-table {
+            min-width: 1020px;
+        }
+
+        .admin-user-show-layout .admin-user-table thead th,
+        .admin-user-show-layout .admin-user-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+
         .admin-user-show-layout .badge.bg-primary-subtle.text-dark {
             border: 1px solid rgba(0, 0, 0, 0.08);
         }
@@ -176,32 +206,41 @@
     <div class="card mt-4">
         <div class="card-header">{{ __('app.admin.users.profile_previous_projects') }}</div>
         <div class="card-body">
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>{{ __('app.applications.project_name') }}</th>
-                        <th>{{ __('app.applications.work_category') }}</th>
-                        <th>{{ __('app.applications.estimated_budget') }}</th>
-                        <th>{{ __('app.applications.status') }}</th>
-                        <th>{{ __('app.admin.users.profile_project_year') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse ($userApplications as $project)
+            <div class="table-responsive border rounded py-3 admin-user-table-scroll">
+                <table class="table mb-0 admin-user-table admin-user-projects-table">
+                    <colgroup>
+                        <col style="width: 280px">
+                        <col style="width: 180px">
+                        <col style="width: 170px">
+                        <col style="width: 130px">
+                        <col style="width: 100px">
+                    </colgroup>
+                    <thead>
                         <tr>
-                            <td><a href="{{ route('admin.applications.show', $project) }}">{{ $project->project_name }}</a></td>
-                            <td>{{ $translateOrFallback('app.applications.work_categories.'.$project->work_category, $formatFallback($project->work_category)) }}</td>
-                            <td>{{ $project->estimated_budget ? number_format((float) $project->estimated_budget, 2) : __('app.dashboard.not_available') }}</td>
-                            <td><span class="badge bg-{{ $statusClass($project->status) }}">{{ $project->localizedStatus() }}</span></td>
-                            <td>{{ optional($project->created_at)->format('Y') ?: __('app.dashboard.not_available') }}</td>
+                            <th>{{ __('app.applications.project_name') }}</th>
+                            <th>{{ __('app.applications.work_category') }}</th>
+                            <th>{{ __('app.applications.estimated_budget') }}</th>
+                            <th>{{ __('app.applications.status') }}</th>
+                            <th>{{ __('app.admin.users.profile_project_year') }}</th>
                         </tr>
-                    @empty
-                        <tr>
-                            <td colspan="5">{{ __('app.admin.applications.empty_state') }}</td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        @forelse ($userApplications as $project)
+                            <tr>
+                                <td><a href="{{ route('admin.applications.show', $project) }}">{{ $project->project_name }}</a></td>
+                                <td>{{ $translateOrFallback('app.applications.work_categories.'.$project->work_category, $formatFallback($project->work_category)) }}</td>
+                                <td>{{ $project->estimated_budget ? number_format((float) $project->estimated_budget, 2) : __('app.dashboard.not_available') }}</td>
+                                <td><span class="badge bg-{{ $statusClass($project->status) }}">{{ $project->localizedStatus() }}</span></td>
+                                <td>{{ optional($project->created_at)->format('Y') ?: __('app.dashboard.not_available') }}</td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="5">{{ __('app.admin.applications.empty_state') }}</td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -481,8 +520,12 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <div class="table-responsive border rounded py-3">
-                        <table class="table mb-0">
+                    <div class="table-responsive border rounded py-3 admin-user-table-scroll">
+                        <table class="table mb-0 admin-user-table admin-user-memberships-table">
+                            <colgroup>
+                                <col style="width: 420px">
+                                <col style="width: 540px">
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>{{ __('app.admin.entities.name') }}</th>
@@ -527,8 +570,15 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <div class="table-responsive border rounded py-3">
-                        <table class="table mb-0">
+                    <div class="table-responsive border rounded py-3 admin-user-table-scroll">
+                        <table class="table mb-0 admin-user-table admin-user-role-history-table">
+                            <colgroup>
+                                <col style="width: 220px">
+                                <col style="width: 270px">
+                                <col style="width: 150px">
+                                <col style="width: 220px">
+                                <col style="width: 160px">
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>{{ __('app.admin.users.member_role') }}</th>

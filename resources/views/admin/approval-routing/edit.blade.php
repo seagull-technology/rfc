@@ -11,6 +11,25 @@
             position: sticky;
             top: 1.5rem;
         }
+
+        .approval-routing-preview-shell .approval-routing-preview-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .approval-routing-preview-shell .approval-routing-preview-table {
+            min-width: 600px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .approval-routing-preview-shell .approval-routing-preview-table thead th,
+        .approval-routing-preview-shell .approval-routing-preview-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
     </style>
 @endpush
 

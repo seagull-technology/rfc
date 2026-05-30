@@ -821,6 +821,8 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('admin-entities-index-layout', false)
+            ->assertSee('admin-entities-directory-table', false)
             ->assertSeeText('Filter Match Entity')
             ->assertDontSeeText('Other Entity');
     }
@@ -836,6 +838,7 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('admin-entities-internal-table', false)
             ->assertSeeText('Official and Internal Entities')
             ->assertSeeText('Authorities')
             ->assertSeeText('Public Security Directorate');
@@ -915,6 +918,8 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('admin-entity-authority-routing-table', false)
+            ->assertSee('admin-entity-authority-workload-table', false)
             ->assertSeeText('Authority Operations')
             ->assertSeeText('Municipal Routing Rule')
             ->assertSeeText('Authority Request Workload')
@@ -1116,6 +1121,7 @@ class AdminPanelTest extends TestCase
 
         $showResponse
             ->assertOk()
+            ->assertSee('admin-entity-authority-delegation-table', false)
             ->assertSeeText('Authority Inbox Delegation')
             ->assertSeeText('Authority Delegate');
     }
@@ -1384,6 +1390,8 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('admin-users-index-layout', false)
+            ->assertSee('admin-users-directory-table', false)
             ->assertSeeText('Pending NGO User')
             ->assertDontSeeText('Active Student User');
     }
@@ -1443,6 +1451,8 @@ class AdminPanelTest extends TestCase
 
         $showResponse
             ->assertOk()
+            ->assertSee('admin-user-memberships-table', false)
+            ->assertSee('admin-user-role-history-table', false)
             ->assertSeeText('Role Change History')
             ->assertSeeText(__('app.roles.rfc_reviewer'))
             ->assertSeeText('Removed');
@@ -1880,6 +1890,8 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('admin-entity-members-table', false)
+            ->assertSee('admin-entity-review-history-table', false)
             ->assertSeeText('Registration Details')
             ->assertSeeText('Community cinema workshops.')
             ->assertSeeText('certificate.pdf')
@@ -1942,6 +1954,8 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('admin-user-show-layout', false)
+            ->assertSee('admin-user-memberships-table', false)
             ->assertSeeText('Registration and Entity Details')
             ->assertSeeText('Studio One')
             ->assertSeeText('CO-700')

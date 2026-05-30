@@ -139,7 +139,7 @@
                             <div class="col-sm-12">
                                 <div class="streamit-wraper-table">
                                     <div class="table-view table-space">
-                                        <table id="users-table-{{ $type }}" class="data-tables table custom-table data-table-one custom-table-height" role="grid" data-toggle="data-table">
+                                        <table id="users-table-{{ $type }}" class="data-tables table custom-table data-table-one custom-table-height admin-users-directory-table" role="grid" data-toggle="data-table">
                                             <thead>
                                                 <tr class="ligth">
                                                     <th>#</th>

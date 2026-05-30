@@ -15,6 +15,42 @@
 
 @extends('layouts.admin-dashboard', ['title' => $title])
 
+@section('page_layout_class', 'approval-routing-simulator-layout')
+
+@push('styles')
+    <style>
+        .approval-routing-simulator-layout {
+            padding-top: 0;
+        }
+
+        .approval-routing-simulator-layout .approval-routing-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .approval-routing-simulator-layout .approval-routing-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .approval-routing-simulator-layout .approval-routing-simulator-route-table {
+            min-width: 820px;
+        }
+
+        .approval-routing-simulator-layout .approval-routing-simulator-change-table {
+            min-width: 960px;
+        }
+
+        .approval-routing-simulator-layout .approval-routing-table thead th,
+        .approval-routing-simulator-layout .approval-routing-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+    </style>
+@endpush
+
 @section('content')
     <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4">
         <div>
@@ -198,8 +234,14 @@
                         @if ($simulationRoutes->isEmpty())
                             <div class="text-muted">{{ __('app.admin.approval_routing.simulator_empty_routes') }}</div>
                         @else
-                            <div class="table-responsive border rounded py-3">
-                                <table class="table mb-0">
+                            <div class="table-responsive border rounded py-3 approval-routing-table-scroll">
+                                <table class="table mb-0 approval-routing-table approval-routing-simulator-route-table">
+                                    <colgroup>
+                                        <col style="width: 190px">
+                                        <col style="width: 240px">
+                                        <col style="width: 260px">
+                                        <col style="width: 130px">
+                                    </colgroup>
                                     <thead>
                                         <tr>
                                             <th>{{ __('app.admin.approval_routing.approval_code') }}</th>
@@ -248,8 +290,14 @@
                         @elseif ($draftSimulationRoutes->isEmpty())
                             <div class="text-muted">{{ __('app.admin.approval_routing.simulator_empty_routes') }}</div>
                         @else
-                            <div class="table-responsive border rounded py-3">
-                                <table class="table mb-0">
+                            <div class="table-responsive border rounded py-3 approval-routing-table-scroll">
+                                <table class="table mb-0 approval-routing-table approval-routing-simulator-route-table">
+                                    <colgroup>
+                                        <col style="width: 190px">
+                                        <col style="width: 240px">
+                                        <col style="width: 260px">
+                                        <col style="width: 130px">
+                                    </colgroup>
                                     <thead>
                                         <tr>
                                             <th>{{ __('app.admin.approval_routing.approval_code') }}</th>
@@ -324,8 +372,14 @@
                     @if ($simulationChanges['added']->isEmpty() && $simulationChanges['removed']->isEmpty() && $simulationChanges['changed']->isEmpty())
                         <div class="text-muted">{{ __('app.admin.approval_routing.simulator_change_empty') }}</div>
                     @else
-                        <div class="table-responsive border rounded py-3">
-                            <table class="table mb-0">
+                        <div class="table-responsive border rounded py-3 approval-routing-table-scroll">
+                            <table class="table mb-0 approval-routing-table approval-routing-simulator-change-table">
+                                <colgroup>
+                                    <col style="width: 160px">
+                                    <col style="width: 220px">
+                                    <col style="width: 290px">
+                                    <col style="width: 290px">
+                                </colgroup>
                                 <thead>
                                     <tr>
                                         <th>{{ __('app.admin.approval_routing.simulator_change_type') }}</th>

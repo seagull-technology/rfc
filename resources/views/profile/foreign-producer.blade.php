@@ -65,6 +65,25 @@
             vertical-align: middle;
         }
 
+        .foreign-producer-profile-layout .foreign-producer-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .foreign-producer-profile-layout .foreign-producer-table {
+            min-width: 1120px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .foreign-producer-profile-layout .foreign-producer-table thead th,
+        .foreign-producer-profile-layout .foreign-producer-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+
         .foreign-producer-profile-layout .foreign-producer-declaration {
             font-size: 1rem;
             line-height: 1.85;
@@ -97,9 +116,18 @@
                     </h2>
                 </div>
                 <div class="card-body pt-0">
-                    <div class="mt-4 table-responsive">
-                        <div class="table-responsive rounded py-4">
-                            <table class="table" data-toggle="data-table">
+                    <div class="mt-4">
+                        <div class="table-responsive rounded py-4 foreign-producer-table-scroll">
+                            <table class="table foreign-producer-table foreign-producer-applications-table" data-toggle="data-table">
+                                <colgroup>
+                                    <col style="width: 70px">
+                                    <col style="width: 170px">
+                                    <col style="width: 260px">
+                                    <col style="width: 210px">
+                                    <col style="width: 170px">
+                                    <col style="width: 130px">
+                                    <col style="width: 110px">
+                                </colgroup>
                                 <thead>
                                     <tr class="ligth">
                                         <th>#</th>
@@ -155,9 +183,18 @@
                     </h2>
                 </div>
                 <div class="card-body pt-0">
-                    <div class="mt-4 table-responsive">
-                        <div class="table-responsive rounded py-4">
-                            <table class="table" data-toggle="data-table">
+                    <div class="mt-4">
+                        <div class="table-responsive rounded py-4 foreign-producer-table-scroll">
+                            <table class="table foreign-producer-table foreign-producer-scouting-table" data-toggle="data-table">
+                                <colgroup>
+                                    <col style="width: 70px">
+                                    <col style="width: 170px">
+                                    <col style="width: 260px">
+                                    <col style="width: 210px">
+                                    <col style="width: 170px">
+                                    <col style="width: 130px">
+                                    <col style="width: 110px">
+                                </colgroup>
                                 <thead>
                                     <tr class="ligth">
                                         <th>#</th>
