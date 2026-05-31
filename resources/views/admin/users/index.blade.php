@@ -64,6 +64,25 @@
             white-space: nowrap;
             vertical-align: middle;
         }
+
+        .admin-users-index-layout .admin-users-directory-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .admin-users-index-layout .admin-users-directory-table {
+            min-width: 1040px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .admin-users-index-layout .admin-users-directory-table thead th,
+        .admin-users-index-layout .admin-users-directory-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
     </style>
 @endpush
 
@@ -138,8 +157,16 @@
                         <div class="row">
                             <div class="col-sm-12">
                                 <div class="streamit-wraper-table">
-                                    <div class="table-view table-space">
+                                    <div class="table-view table-space admin-users-directory-table-scroll">
                                         <table id="users-table-{{ $type }}" class="data-tables table custom-table data-table-one custom-table-height admin-users-directory-table" role="grid" data-toggle="data-table">
+                                            <colgroup>
+                                                <col style="width: 72px">
+                                                <col style="width: 170px">
+                                                <col style="width: 270px">
+                                                <col style="width: 260px">
+                                                <col style="width: 150px">
+                                                <col style="width: 120px">
+                                            </colgroup>
                                             <thead>
                                                 <tr class="ligth">
                                                     <th>#</th>

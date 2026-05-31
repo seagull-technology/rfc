@@ -830,7 +830,9 @@ class AdminPanelTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('admin-entities-index-layout', false)
+            ->assertSee('admin-entities-directory-table-scroll', false)
             ->assertSee('admin-entities-directory-table', false)
+            ->assertSee('<col style="width: 180px">', false)
             ->assertSeeText('Filter Match Entity')
             ->assertDontSeeText('Other Entity');
     }
@@ -846,7 +848,9 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('admin-entities-internal-table-scroll', false)
             ->assertSee('admin-entities-internal-table', false)
+            ->assertSee('<col style="width: 130px">', false)
             ->assertSeeText('Official and Internal Entities')
             ->assertSeeText('Authorities')
             ->assertSeeText('Public Security Directorate');
@@ -1399,7 +1403,9 @@ class AdminPanelTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('admin-users-index-layout', false)
+            ->assertSee('admin-users-directory-table-scroll', false)
             ->assertSee('admin-users-directory-table', false)
+            ->assertSee('<col style="width: 270px">', false)
             ->assertSeeText('Pending NGO User')
             ->assertDontSeeText('Active Student User');
     }
