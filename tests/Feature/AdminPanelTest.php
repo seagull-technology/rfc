@@ -47,7 +47,11 @@ class AdminPanelTest extends TestCase
         $response
             ->assertOk()
             ->assertSeeText('Super Admin Dashboard')
-            ->assertSeeText('Platform Administration');
+            ->assertSeeText('Platform Administration')
+            ->assertSee('admin-dashboard-table-scroll', false)
+            ->assertSee('workflow-queue-table', false)
+            ->assertSee('admin-recent-requests-table', false)
+            ->assertSee('data-toggle="data-table"', false);
     }
 
     public function test_admin_dashboard_profile_dropdown_contains_shared_profile_route(): void
@@ -181,6 +185,8 @@ class AdminPanelTest extends TestCase
             ->assertSeeText(__('app.admin.dashboard.workflow_context_title'))
             ->assertSeeText(__('app.roles.rfc_reviewer'))
             ->assertSeeText($entity->displayName())
+            ->assertSee('admin-dashboard-table-scroll', false)
+            ->assertSee('workflow-queue-table', false)
             ->assertDontSee('href="'.route('admin.users.index').'"', false)
             ->assertDontSee('href="'.route('admin.entities.index').'"', false)
             ->assertDontSee('href="'.route('admin.groups.index').'"', false)
@@ -765,6 +771,8 @@ class AdminPanelTest extends TestCase
         $response
             ->assertOk()
             ->assertSeeText('Producers')
+            ->assertSee('admin-producers-table-scroll', false)
+            ->assertSee('admin-producers-table', false)
             ->assertSeeText('Creative Production House')
             ->assertSeeText('Film Student')
             ->assertSeeText('Company Owner')

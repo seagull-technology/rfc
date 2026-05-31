@@ -113,6 +113,27 @@
             margin: auto;
         }
 
+        .authority-request-show-layout .authority-request-table-scroll {
+            overflow-x: auto;
+        }
+
+        .authority-request-show-layout .authority-detail-table {
+            table-layout: fixed;
+            min-width: 900px;
+            width: 100%;
+        }
+
+        .authority-request-show-layout .authority-detail-table.documents-table {
+            width: 100%;
+        }
+
+        .authority-request-show-layout .authority-detail-table th,
+        .authority-request-show-layout .authority-detail-table td {
+            vertical-align: top;
+            white-space: normal;
+            word-break: break-word;
+        }
+
         .authority-request-show-layout .authority-hero-card {
             margin: 0 1rem 1.5rem;
         }
@@ -517,8 +538,8 @@
                                         </div>
                                     </div>
                                     <div class="card-body">
-                                        <div class="table-responsive">
-                                            <table class="table table-striped mb-0 documents-table approval-overview-table">
+                                        <div class="table-responsive rounded py-4 authority-request-table-scroll">
+                                            <table class="table table-striped mb-0 documents-table authority-detail-table approval-overview-table">
                                                 <colgroup>
                                                     <col style="width: 23%;">
                                                     <col style="width: 27%;">
@@ -579,8 +600,14 @@
                                             </h2>
 
                                             <div class="row">
-                                                <div class="table-responsive mt-4">
-                                                    <table class="table table-striped mb-0 documents-table">
+                                                <div class="table-responsive rounded py-4 mt-4 authority-request-table-scroll">
+                                                    <table class="table table-striped mb-0 documents-table authority-detail-table authority-documents-table">
+                                                        <colgroup>
+                                                            <col style="width: 34%;">
+                                                            <col style="width: 18%;">
+                                                            <col style="width: 18%;">
+                                                            <col style="width: 30%;">
+                                                        </colgroup>
                                                         <thead>
                                                             <tr>
                                                                 <th>{{ __('app.documents.title_label') }}</th>

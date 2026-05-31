@@ -8,7 +8,10 @@
     $importedEquipmentRows = collect(data_get($annex, 'imported_equipment', []));
     $militaryBorderEquipmentRows = collect(data_get($annex, 'military_border_equipment', []));
     $governmentalSceneRows = collect(data_get($annex, 'governmental_scenes', []));
-    $tableClass = $tableClass ?? 'table table-striped mb-0';
+    $baseTableClass = trim($tableClass ?? 'table table-striped mb-0');
+    $annexTableClass = str_contains($baseTableClass, 'annex-summary-table')
+        ? $baseTableClass
+        : trim($baseTableClass.' annex-summary-table');
     $fallback = static fn ($value): string => filled($value) ? (string) $value : __('app.dashboard.not_available');
     $translatedGovernorate = static function (?string $value) use ($fallback): string {
         if (! filled($value)) {
@@ -37,6 +40,39 @@
         || $governmentalSceneRows->isNotEmpty();
 @endphp
 
+@once
+    @push('styles')
+        <style>
+            .annex-summary-table-scroll {
+                overflow-x: auto;
+            }
+
+            .annex-summary-table {
+                table-layout: fixed;
+                width: 100%;
+            }
+
+            .annex-summary-table th,
+            .annex-summary-table td {
+                vertical-align: top;
+                white-space: normal;
+                word-break: break-word;
+            }
+
+            .annex-cast-crew-table,
+            .annex-military-border-table,
+            .annex-governmental-scenes-table {
+                min-width: 920px;
+            }
+
+            .annex-filming-locations-table,
+            .annex-imported-equipment-table {
+                min-width: 1100px;
+            }
+        </style>
+    @endpush
+@endonce
+
 @if (! $hasAnnexData)
     <div class="text-muted">{{ __('app.applications.annex_form_empty_state') }}</div>
 @else
@@ -50,8 +86,15 @@
 
         <div>
             <h5 class="mb-3">{{ __('app.applications.annex_sections.cast_crew') }}</h5>
-            <div class="table-responsive">
-                <table class="{{ $tableClass }}">
+            <div class="table-responsive rounded py-4 annex-summary-table-scroll">
+                <table class="{{ $annexTableClass }} annex-cast-crew-table">
+                    <colgroup>
+                        <col style="width: 64px">
+                        <col style="width: 220px">
+                        <col style="width: 180px">
+                        <col style="width: 170px">
+                        <col style="width: 220px">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>#</th>
@@ -80,8 +123,17 @@
 
         <div>
             <h5 class="mb-3">{{ __('app.applications.annex_sections.filming_locations') }}</h5>
-            <div class="table-responsive">
-                <table class="{{ $tableClass }}">
+            <div class="table-responsive rounded py-4 annex-summary-table-scroll">
+                <table class="{{ $annexTableClass }} annex-filming-locations-table">
+                    <colgroup>
+                        <col style="width: 64px">
+                        <col style="width: 150px">
+                        <col style="width: 220px">
+                        <col style="width: 170px">
+                        <col style="width: 140px">
+                        <col style="width: 140px">
+                        <col style="width: 220px">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>#</th>
@@ -120,8 +172,17 @@
 
         <div>
             <h5 class="mb-3">{{ __('app.applications.annex_sections.imported_equipment') }}</h5>
-            <div class="table-responsive">
-                <table class="{{ $tableClass }}">
+            <div class="table-responsive rounded py-4 annex-summary-table-scroll">
+                <table class="{{ $annexTableClass }} annex-imported-equipment-table">
+                    <colgroup>
+                        <col style="width: 64px">
+                        <col style="width: 220px">
+                        <col style="width: 170px">
+                        <col style="width: 120px">
+                        <col style="width: 170px">
+                        <col style="width: 170px">
+                        <col style="width: 160px">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>#</th>
@@ -154,8 +215,15 @@
 
         <div>
             <h5 class="mb-3">{{ __('app.applications.annex_sections.military_border_equipment') }}</h5>
-            <div class="table-responsive">
-                <table class="{{ $tableClass }}">
+            <div class="table-responsive rounded py-4 annex-summary-table-scroll">
+                <table class="{{ $annexTableClass }} annex-military-border-table">
+                    <colgroup>
+                        <col style="width: 64px">
+                        <col style="width: 220px">
+                        <col style="width: 220px">
+                        <col style="width: 220px">
+                        <col style="width: 260px">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>#</th>
@@ -195,8 +263,15 @@
 
         <div>
             <h5 class="mb-3">{{ __('app.applications.annex_sections.governmental_scenes') }}</h5>
-            <div class="table-responsive">
-                <table class="{{ $tableClass }}">
+            <div class="table-responsive rounded py-4 annex-summary-table-scroll">
+                <table class="{{ $annexTableClass }} annex-governmental-scenes-table">
+                    <colgroup>
+                        <col style="width: 64px">
+                        <col style="width: 220px">
+                        <col style="width: 220px">
+                        <col style="width: 300px">
+                        <col style="width: 160px">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>#</th>

@@ -51,8 +51,13 @@
             @if ($unresolvedApprovals->isNotEmpty())
                 <div class="border rounded p-3">
                     <div class="fw-semibold mb-3">{{ __('app.final_decision.pending_approvals_detail_title') }}</div>
-                    <div class="table-responsive">
-                        <table class="table mb-0">
+                    <div class="table-responsive rounded py-4 admin-application-table-scroll">
+                        <table class="table mb-0 admin-detail-table admin-final-decision-table">
+                            <colgroup>
+                                <col style="width: 34%">
+                                <col style="width: 20%">
+                                <col style="width: 46%">
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>{{ __('app.admin.applications.authority') }}</th>

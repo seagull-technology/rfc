@@ -125,17 +125,28 @@
             white-space: normal;
         }
 
-        .admin-template-layout .workflow-queue-table {
-            min-width: 980px;
+        .admin-template-layout .admin-dashboard-table-scroll {
+            overflow-x: auto;
+        }
+
+        .admin-template-layout .admin-dashboard-table {
             table-layout: fixed;
             width: 100%;
         }
 
-        .admin-template-layout .workflow-queue-table thead th,
-        .admin-template-layout .workflow-queue-table tbody td {
+        .admin-template-layout .admin-dashboard-table thead th,
+        .admin-template-layout .admin-dashboard-table tbody td {
             white-space: normal;
             vertical-align: top;
             word-break: break-word;
+        }
+
+        .admin-template-layout .workflow-queue-table {
+            min-width: 980px;
+        }
+
+        .admin-template-layout .admin-recent-requests-table {
+            min-width: 1040px;
         }
 
         .admin-template-layout .workflow-queue-actions-cell .list-user-action {
@@ -487,8 +498,16 @@
                 </div>
                 <div class="card-body pt-0">
                     <div class="mt-4 table-responsive">
-                        <div class="table-responsive border rounded py-4">
-                            <table class="table" data-toggle="data-table">
+                        <div class="table-responsive border rounded py-4 admin-dashboard-table-scroll">
+                            <table class="table mb-0 admin-dashboard-table workflow-queue-table" data-toggle="data-table">
+                                <colgroup>
+                                    <col style="width: 64px">
+                                    <col style="width: 140px">
+                                    <col style="width: 270px">
+                                    <col style="width: 180px">
+                                    <col style="width: 160px">
+                                    <col style="width: 90px">
+                                </colgroup>
                                 <thead>
                                     <tr class="ligth">
                                         <th>#</th>
@@ -519,7 +538,7 @@
                                                 <span class="text-muted">{{ $queueItem['status_label'] }}</span>
                                             </td>
                                             <td>{{ $queueItem['updated_at']?->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</td>
-                                            <td>
+                                            <td class="workflow-queue-actions-cell">
                                                 <div class="flex align-items-center list-user-action">
                                                     <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ $queueItem['url'] }}">
                                                         <i class="ph ph-eye fs-6"></i>
@@ -566,8 +585,17 @@
                         </div>
                         <div class="card-body pt-0">
                             <div class="mt-4 table-responsive">
-                                <div class="table-responsive border rounded py-4">
-                                    <table id="admin-recent-requests-table" class="table" data-toggle="data-table">
+                                <div class="table-responsive border rounded py-4 admin-dashboard-table-scroll">
+                                    <table id="admin-recent-requests-table" class="table mb-0 admin-dashboard-table admin-recent-requests-table" data-toggle="data-table">
+                                        <colgroup>
+                                            <col style="width: 64px">
+                                            <col style="width: 150px">
+                                            <col style="width: 260px">
+                                            <col style="width: 210px">
+                                            <col style="width: 150px">
+                                            <col style="width: 140px">
+                                            <col style="width: 90px">
+                                        </colgroup>
                                         <thead>
                                             <tr class="ligth">
                                                 <th>#</th>

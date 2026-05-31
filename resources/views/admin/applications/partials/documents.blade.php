@@ -1,8 +1,14 @@
 <div class="card">
     <div class="card-header"><div class="iq-header-title"><h3 class="card-title">{{ __('app.documents.title') }}</h3></div></div>
     <div class="card-body">
-        <div class="table-responsive border rounded py-3">
-            <table class="table mb-0">
+        <div class="table-responsive border rounded py-3 admin-application-table-scroll">
+            <table class="table mb-0 admin-detail-table admin-documents-table">
+                <colgroup>
+                    <col style="width: 30%">
+                    <col style="width: 24%">
+                    <col style="width: 18%">
+                    <col style="width: 28%">
+                </colgroup>
                 <thead>
                     <tr>
                         <th>{{ __('app.documents.title_label') }}</th>

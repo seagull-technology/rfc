@@ -37,10 +37,21 @@
             white-space: nowrap;
         }
 
+        .admin-producers-index-layout .admin-producers-table-scroll {
+            overflow-x: auto;
+        }
+
+        .admin-producers-index-layout .admin-producers-table {
+            min-width: 1080px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
         .admin-producers-index-layout table thead th,
         .admin-producers-index-layout table tbody td {
-            white-space: nowrap;
-            vertical-align: middle;
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
         }
 
         .admin-producers-index-layout .producer-review-note {
@@ -108,8 +119,17 @@
                         <div class="row">
                             <div class="col-sm-12">
                                 <div class="streamit-wraper-table">
-                                    <div class="table-view table-space">
-                                        <table class="data-tables table custom-table data-table-one custom-table-height" role="grid" data-toggle="data-table">
+                                    <div class="table-view table-space admin-producers-table-scroll">
+                                        <table class="data-tables table custom-table data-table-one custom-table-height admin-producers-table" role="grid" data-toggle="data-table">
+                                            <colgroup>
+                                                <col style="width: 64px">
+                                                <col style="width: 170px">
+                                                <col style="width: 230px">
+                                                <col style="width: 230px">
+                                                <col style="width: 150px">
+                                                <col style="width: 140px">
+                                                <col style="width: 96px">
+                                            </colgroup>
                                             <thead>
                                                 <tr class="ligth">
                                                     <th>#</th>

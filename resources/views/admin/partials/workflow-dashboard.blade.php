@@ -134,8 +134,8 @@
                 </div>
                 <div class="card-body pt-0">
                     <div class="mt-4 table-responsive">
-                        <div class="table-responsive rounded py-4">
-                            <table class="table workflow-queue-table" data-toggle="data-table">
+                        <div class="table-responsive rounded py-4 admin-dashboard-table-scroll">
+                            <table class="table mb-0 admin-dashboard-table workflow-queue-table" data-toggle="data-table">
                                 <colgroup>
                                     <col style="width: 64px">
                                     <col style="width: 140px">

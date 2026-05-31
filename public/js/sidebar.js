@@ -9,55 +9,88 @@
 
 (function(){
     "use strict";
-    const sidebarInit = () => {
-        const sidebarType = IQSetting.options.setting.sidebar_type.value
-        const newTypes = sidebarType
-        const sidebarResponsive = document.querySelector('[data-sidebar="responsive"]')
-        if (window.innerWidth < 1025) {
-            if (sidebarResponsive !== null) {
-                if (!sidebarResponsive.classList.contains('sidebar-mini')) {
-                    newTypes.push('sidebar-mini')
-                }
-            } else {
-                if (sidebarResponsive !== null) {
-                    if (sidebarResponsive.classList.contains('sidebar-mini')) {
-                        const indexOf = newTypes.findIndex(x => x == 'sidebar-mini')
-                        newTypes.splice(indexOf, 1)
-                    }
-                }
-            }
-        }
-        IQSetting.sidebar_type(newTypes)
-    }
-//    sidebarInit()
- //   window.addEventListener('resize', function (event) {
- //       sidebarInit()
- //   });
+    const responsiveSidebarBreakpoint = 1200
 
-    /*-------------Sidebar Toggle Start-----------------*/
-    function updateSidebarType() {
-        if(typeof IQSetting !== typeof undefined) {
-        const sidebarType = IQSetting.options.setting.sidebar_type.value
-        const newTypes = sidebarType
-        if(sidebarType.includes('sidebar-mini')) {
-            const indexOf = newTypes.findIndex(x => x == 'sidebar-mini')
-            newTypes.splice(indexOf, 1)
-        } else {
+    const getSidebar = () => document.querySelector('[data-toggle="main-sidebar"]')
+
+    function setSidebarTypePreference(isMini) {
+        if(typeof IQSetting === typeof undefined) {
+            return
+        }
+
+        const sidebarSetting = IQSetting.options?.setting?.sidebar_type
+        if(!sidebarSetting || !Array.isArray(sidebarSetting.value)) {
+            return
+        }
+
+        const newTypes = [...sidebarSetting.value]
+        const indexOf = newTypes.findIndex(x => x == 'sidebar-mini')
+
+        if(isMini && indexOf === -1) {
             newTypes.push('sidebar-mini')
         }
+
+        if(!isMini && indexOf !== -1) {
+            newTypes.splice(indexOf, 1)
+        }
+
         IQSetting.sidebar_type(newTypes)
+    }
+
+    function setSidebarMini(isMini, persistPreference = true) {
+        const sidebar = getSidebar()
+        if(sidebar === null) {
+            return
+        }
+
+        sidebar.classList.toggle('sidebar-mini', isMini)
+
+        if(persistPreference) {
+            setSidebarTypePreference(isMini)
         }
     }
+
+    const sidebarInit = () => {
+        const sidebarResponsive = document.querySelector('[data-sidebar="responsive"]')
+        if (sidebarResponsive === null) {
+            return
+        }
+
+        if (window.innerWidth < responsiveSidebarBreakpoint) {
+            if (!sidebarResponsive.classList.contains('sidebar-mini')) {
+                setSidebarMini(true, false)
+                sidebarResponsive.dataset.responsiveMini = 'true'
+            }
+
+            return
+        }
+
+        if (sidebarResponsive.dataset.responsiveMini === 'true') {
+            setSidebarMini(false, false)
+            delete sidebarResponsive.dataset.responsiveMini
+        }
+    }
+    sidebarInit()
+    window.addEventListener('resize', function (event) {
+        sidebarInit()
+    });
+
+    /*-------------Sidebar Toggle Start-----------------*/
     const sidebarToggle = (elem) => {
         elem.addEventListener('click', (e) => {
-        const sidebar = document.querySelector('.sidebar')
-        if (sidebar.classList.contains('sidebar-mini')) {
-            sidebar.classList.remove('sidebar-mini')
-            updateSidebarType()
-        } else {
-            sidebar.classList.add('sidebar-mini')
-            updateSidebarType()
-        }
+            const sidebar = getSidebar()
+            if (sidebar === null) {
+                return
+            }
+
+            const shouldMini = !sidebar.classList.contains('sidebar-mini')
+            const isResponsiveViewport = window.innerWidth < responsiveSidebarBreakpoint
+
+            setSidebarMini(shouldMini, !isResponsiveViewport)
+
+            if (isResponsiveViewport) {
+                delete sidebar.dataset.responsiveMini
+            }
         })
     }
     const sidebarToggleBtn = document.querySelectorAll('[data-toggle="sidebar"]')

@@ -77,6 +77,30 @@
             vertical-align: middle;
         }
 
+        .admin-application-show-layout .scouting-detail-table-scroll {
+            overflow-x: auto;
+        }
+
+        .admin-application-show-layout .scouting-detail-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .admin-application-show-layout .scouting-locations-table {
+            min-width: 960px;
+        }
+
+        .admin-application-show-layout .scouting-crew-table {
+            min-width: 900px;
+        }
+
+        .admin-application-show-layout .scouting-detail-table thead th,
+        .admin-application-show-layout .scouting-detail-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+
         .admin-application-show-layout .application-hero-card {
             margin: 0 1rem 1.5rem;
         }
@@ -326,8 +350,16 @@
                     <div class="card request-section-card">
                         <div class="card-header"><h2 class="episode-playlist-title wp-heading-inline"><span class="position-relative">{{ __('app.scouting.locations_tab') }}</span></h2></div>
                         <div class="card-body">
-                            <div class="table-responsive">
-                                <table class="table">
+                            <div class="table-responsive rounded py-4 scouting-detail-table-scroll">
+                                <table class="table mb-0 scouting-detail-table scouting-locations-table">
+                                    <colgroup>
+                                        <col style="width: 64px">
+                                        <col style="width: 160px">
+                                        <col style="width: 250px">
+                                        <col style="width: 180px">
+                                        <col style="width: 150px">
+                                        <col style="width: 150px">
+                                    </colgroup>
                                     <thead>
                                         <tr>
                                             <th>#</th>
@@ -360,8 +392,15 @@
                     <div class="card request-section-card">
                         <div class="card-header"><h2 class="episode-playlist-title wp-heading-inline"><span class="position-relative">{{ __('app.scouting.crew_tab') }}</span></h2></div>
                         <div class="card-body">
-                            <div class="table-responsive">
-                                <table class="table">
+                            <div class="table-responsive rounded py-4 scouting-detail-table-scroll">
+                                <table class="table mb-0 scouting-detail-table scouting-crew-table">
+                                    <colgroup>
+                                        <col style="width: 64px">
+                                        <col style="width: 220px">
+                                        <col style="width: 220px">
+                                        <col style="width: 170px">
+                                        <col style="width: 220px">
+                                    </colgroup>
                                     <thead>
                                         <tr>
                                             <th>#</th>

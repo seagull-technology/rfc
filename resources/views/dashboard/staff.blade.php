@@ -90,10 +90,21 @@
             padding-bottom: 1.5rem !important;
         }
 
+        .staff-dashboard-layout .staff-request-table-scroll {
+            overflow-x: auto;
+        }
+
+        .staff-dashboard-layout .staff-request-table {
+            table-layout: fixed;
+            min-width: 860px;
+            width: 100%;
+        }
+
         .staff-dashboard-layout table.table thead th,
         .staff-dashboard-layout table.table tbody td {
-            vertical-align: middle;
-            white-space: nowrap;
+            vertical-align: top;
+            white-space: normal;
+            word-break: break-word;
         }
     </style>
 @endpush
@@ -167,8 +178,15 @@
                     </h2>
                 </div>
                 <div class="card-body pt-0">
-                    <div class="table-responsive rounded py-4">
-                        <table class="table">
+                    <div class="table-responsive rounded py-4 staff-request-table-scroll">
+                        <table class="table mb-0 staff-request-table" data-toggle="data-table">
+                            <colgroup>
+                                <col style="width: 64px">
+                                <col style="width: 160px">
+                                <col style="width: 260px">
+                                <col style="width: 230px">
+                                <col style="width: 140px">
+                            </colgroup>
                             <thead>
                                 <tr class="ligth">
                                     <th>#</th>

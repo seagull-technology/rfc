@@ -201,6 +201,31 @@
             margin: auto;
         }
 
+        .admin-application-show-layout .admin-application-table-scroll {
+            overflow-x: auto;
+        }
+
+        .admin-application-show-layout .admin-detail-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .admin-application-show-layout .admin-documents-table {
+            min-width: 960px;
+        }
+
+        .admin-application-show-layout .admin-annex-documents-table {
+            min-width: 760px;
+        }
+
+        .admin-application-show-layout .admin-final-decision-table {
+            min-width: 760px;
+        }
+
+        .admin-application-show-layout .admin-approval-audit-table {
+            min-width: 1080px;
+        }
+
         .admin-application-show-layout .admin-approval-management-table,
         .admin-application-show-layout .admin-official-letters-table {
             table-layout: fixed;
@@ -218,7 +243,9 @@
         .admin-application-show-layout .admin-approval-management-table th,
         .admin-application-show-layout .admin-approval-management-table td,
         .admin-application-show-layout .admin-official-letters-table th,
-        .admin-application-show-layout .admin-official-letters-table td {
+        .admin-application-show-layout .admin-official-letters-table td,
+        .admin-application-show-layout .admin-detail-table th,
+        .admin-application-show-layout .admin-detail-table td {
             vertical-align: top;
             white-space: normal;
             word-break: break-word;
@@ -591,8 +618,11 @@
                                             </h2>
 
                                             <div class="row">
-                                                <div class="table-responsive mt-4">
-                                                    <table id="basic-table" class="table table-striped mb-0 request-narrow-table" role="grid">
+                                                <div class="table-responsive rounded py-4 mt-4 admin-application-table-scroll">
+                                                    <table id="basic-table" class="table table-striped mb-0 request-narrow-table admin-detail-table admin-annex-documents-table" role="grid">
+                                                        <colgroup>
+                                                            <col style="width: 100%">
+                                                        </colgroup>
                                                         <tbody>
                                                             @forelse ($documentGroups as $group)
                                                                 <tr>
@@ -711,7 +741,7 @@
                                             @endforeach
                                         </div>
 
-                                        <div class="table-responsive mt-4">
+                                        <div class="table-responsive rounded py-4 mt-4 admin-application-table-scroll">
                                             <table id="basic-table-approvals" class="table table-striped mb-0 request-narrow-table admin-approval-management-table" role="grid">
                                                 <colgroup>
                                                     <col style="width: 13%;">
@@ -802,8 +832,17 @@
                                             </table>
                                         </div>
 
-                                        <div class="table-responsive mt-4">
-                                            <table id="basic-table-approval-audit" class="table table-striped mb-0 request-narrow-table" role="grid">
+                                        <div class="table-responsive rounded py-4 mt-4 admin-application-table-scroll">
+                                            <table id="basic-table-approval-audit" class="table table-striped mb-0 request-narrow-table admin-detail-table admin-approval-audit-table" role="grid">
+                                                <colgroup>
+                                                    <col style="width: 17%;">
+                                                    <col style="width: 14%;">
+                                                    <col style="width: 16%;">
+                                                    <col style="width: 16%;">
+                                                    <col style="width: 17%;">
+                                                    <col style="width: 10%;">
+                                                    <col style="width: 10%;">
+                                                </colgroup>
                                                 <thead>
                                                     <tr>
                                                         <th>{{ __('app.admin.applications.authority') }}</th>

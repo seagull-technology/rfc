@@ -67,6 +67,10 @@
             overflow-y: hidden;
         }
 
+        .authority-inbox-layout .authority-requests-table-scroll {
+            overflow-x: auto;
+        }
+
         .authority-inbox-layout .authority-requests-table {
             min-width: 1240px;
             table-layout: fixed;
@@ -311,7 +315,7 @@
                         </form>
 
                         <div class="mt-4 table-responsive authority-directory-table">
-                            <div class="table-responsive rounded py-4">
+                            <div class="table-responsive rounded py-4 authority-requests-table-scroll">
                                 <table class="table mb-0 authority-requests-table">
                                     <colgroup>
                                         <col style="width: 64px">

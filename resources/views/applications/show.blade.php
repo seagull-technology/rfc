@@ -124,6 +124,10 @@
             overflow-y: hidden;
         }
 
+        .applicant-request-show-layout .applicant-request-table-scroll {
+            overflow-x: auto;
+        }
+
         .applicant-request-show-layout .applicant-approval-table {
             table-layout: fixed;
             min-width: 760px;
@@ -529,8 +533,13 @@
                                 </div>
                             </div>
                             <div class="card-body">
-                                <div class="table-responsive">
+                                <div class="table-responsive rounded py-4 applicant-request-table-scroll">
                                     <table class="table mb-0 applicant-approval-table">
+                                        <colgroup>
+                                            <col style="width: 34%">
+                                            <col style="width: 22%">
+                                            <col style="width: 44%">
+                                        </colgroup>
                                         <thead>
                                             <tr>
                                                 <th>{{ __('app.applications.authority') }}</th>

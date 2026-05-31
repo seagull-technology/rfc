@@ -25,8 +25,8 @@
         </div>
     </div>
     <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-striped mb-0 admin-official-letters-table">
+        <div class="table-responsive rounded py-4 admin-application-table-scroll">
+            <table class="table table-striped mb-0 admin-detail-table admin-official-letters-table">
                 <colgroup>
                     <col style="width: 22%;">
                     <col style="width: 18%;">

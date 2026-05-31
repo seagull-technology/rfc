@@ -406,7 +406,7 @@
     <script src="{{ asset('js/widgetcharts.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/dashboard.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/streamit.js') }}?v=5.4.1" defer></script>
-    <script src="{{ asset('js/sidebar.js') }}?v=5.4.0" defer></script>
+    <script src="{{ asset('js/sidebar.js') }}?v=5.4.2" defer></script>
     <script src="{{ asset('js/chart-custom.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/select2.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/flatpickr.js') }}?v=5.4.0" defer></script>

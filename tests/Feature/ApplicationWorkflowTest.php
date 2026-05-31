@@ -161,6 +161,9 @@ class ApplicationWorkflowTest extends TestCase
         $this->actingAs($applicant)
             ->get(route('applications.show', $application))
             ->assertOk()
+            ->assertSee('annex-summary-table-scroll', false)
+            ->assertSee('annex-filming-locations-table', false)
+            ->assertSee('annex-imported-equipment-table', false)
             ->assertSeeText('Jordanian Lead')
             ->assertSeeText('Downtown Amman')
             ->assertSeeText('Queen Alia International Airport');
@@ -471,6 +474,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $adminShowResponse
             ->assertOk()
+            ->assertSee('admin-documents-table', false)
             ->assertSeeText('Latest correspondence')
             ->assertSeeText('Official RFC note')
             ->assertSeeText('Please upload the revised signed form before we continue.');
@@ -587,6 +591,7 @@ class ApplicationWorkflowTest extends TestCase
         $adminShow
             ->assertOk()
             ->assertSeeText('Official Books')
+            ->assertSee('admin-official-letters-table', false)
             ->assertSeeText('AG-REQ-7781-R1')
             ->assertSeeText('Updated facilitation book')
             ->assertSeeText('Automatic recipients')
@@ -723,6 +728,7 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Authority action required')
             ->assertSeeText('Awaiting your decision')
             ->assertSee('streamit-wraper-table', false)
+            ->assertSee('authority-requests-table-scroll', false)
             ->assertSeeText('Desert Dreams')
             ->assertSeeText('Public Security Directorate');
 
@@ -818,6 +824,8 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Approvals and Official Updates')
             ->assertSeeText('Approval type')
             ->assertSeeText('Decision note')
+            ->assertSee('authority-detail-table', false)
+            ->assertSee('official-letters-table', false)
             ->assertSeeText('Attached Forms')
             ->assertSeeText('Form title')
             ->assertSeeText('Authority procedures')
@@ -841,6 +849,9 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Request update received')
             ->assertSeeText('New correspondence: Applicant Reply')
             ->assertSee('streamit-wraper-table', false)
+            ->assertSee('authority-request-table-scroll', false)
+            ->assertSee('authority-detail-table', false)
+            ->assertSee('authority-documents-table', false)
             ->assertSeeText($authorityEntity->displayName('en'));
 
         $updateResponse = $this->actingAs($authorityUser)->post(route('authority.applications.approval.update', $application), [
@@ -1636,7 +1647,9 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Latest official step')
             ->assertSeeText('RFC correspondence: Review Update')
             ->assertSeeText('Final decision readiness')
-            ->assertSeeText('There are 1 authority review responses still pending before the RFC can issue the final decision.');
+            ->assertSeeText('There are 1 authority review responses still pending before the RFC can issue the final decision.')
+            ->assertSee('applicant-request-table-scroll', false)
+            ->assertSee('applicant-approval-table', false);
     }
 
     public function test_company_dashboard_uses_template_sections_and_live_request_rows(): void
@@ -2218,6 +2231,12 @@ class ApplicationWorkflowTest extends TestCase
             ->assertRedirect(route('admin.applications.show', $application))
             ->assertSessionHasErrors('decision');
 
+        $showResponse = $this->actingAs($admin)->get(route('admin.applications.show', $application));
+
+        $showResponse
+            ->assertOk()
+            ->assertSee('admin-final-decision-table', false);
+
         $this->assertDatabaseMissing('applications', [
             'id' => $application->getKey(),
             'final_decision_status' => 'approved',
@@ -2278,6 +2297,7 @@ class ApplicationWorkflowTest extends TestCase
         $permitShowResponse
             ->assertOk()
             ->assertSeeText('Permit Audit Trail')
+            ->assertSee('permit-audit-table', false)
             ->assertSeeText('RFC-PERMIT-2026-010');
     }
 
