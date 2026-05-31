@@ -1,24 +1,33 @@
 @extends('layouts.auth', ['title' => __('app.auth.register_title')])
 
+@push('styles')
+    @include('auth.partials.registration-styles')
+@endpush
+
 @section('content')
     <div class="wrapper">
-        <section class="sign-in-page" style="background-image: url('{{ asset('images/loginBg.jpeg') }}')">
+        <section class="sign-in-page registration-auth-page" style="background-image: url('{{ asset('images/loginBg.jpeg') }}')">
             <div class="container">
                 <div class="justify-content-center align-items-center height-self-center row">
-                    <div class="align-self-center col-lg-10 col-md-12">
-                        <div class="sign-user_card">
-                            <a href="{{ route('login') }}">
-                                <img class="img-fluid logo" src="{{ asset('images/logo.svg') }}" alt="#">
+                    <div class="align-self-center col-12">
+                        <div class="sign-user_card registration-card registration-card-wide">
+                            <a class="registration-logo-link" href="{{ route('login') }}">
+                                <img class="img-fluid logo registration-logo" src="{{ asset('images/logo.svg') }}" alt="#">
                             </a>
-                            <div class="sign-in-page-data pt-5">
+                            <div class="sign-in-page-data registration-page-data">
                                 <div class="sign-in-from w-100 m-auto">
                                     @include('auth.partials.alerts')
 
-                                    <ul class="nav nav-pills mb-3 nav-fill" id="myTab-2" role="tablist">
+                                    <div class="registration-header">
+                                        <h1 class="registration-title">{{ __('app.auth.register_title') }}</h1>
+                                        <p class="registration-subtitle">{{ __('app.auth.register_intro') }}</p>
+                                    </div>
+
+                                    <ul class="nav nav-pills nav-fill registration-tabs" id="myTab-2" role="tablist">
                                         @foreach ($registrationTypes as $type => $config)
                                             <li class="nav-item">
                                                 <a
-                                                    class="nav-link p-4 {{ $activeRegistrationType === $type ? 'active' : '' }}"
+                                                    class="nav-link {{ $activeRegistrationType === $type ? 'active' : '' }}"
                                                     id="{{ $config['tab_link_id'] }}"
                                                     data-bs-toggle="tab"
                                                     href="#{{ $config['tab_id'] }}"
@@ -31,7 +40,7 @@
                                         @endforeach
                                     </ul>
 
-                                    <div class="tab-content p-5 px-6" id="myTabContent-3">
+                                    <div class="tab-content registration-form-panel" id="myTabContent-3">
                                         <div class="tab-pane fade {{ $activeRegistrationType === 'student' ? 'show active' : '' }}" id="home-justify" role="tabpanel" aria-labelledby="home-tab-justify">
                                             <form method="POST" action="{{ route('register.store') }}" id="register-form-student" data-register-form="student">
                                                 @csrf
@@ -96,7 +105,7 @@
                                                     </div>
                                                 </div>
 
-                                                <div class="submit mt-3">
+                                                <div class="registration-actions">
                                                     <button type="submit" id="register-submit-student" data-register-submit="student" class="btn btn-danger w-100">{{ $registrationTypes['student']['submit_label'] }}</button>
                                                 </div>
                                             </form>
@@ -194,12 +203,16 @@
                                                         </div>
                                                     </div>
 
-                                                    <div class="submit mt-3">
+                                                    <div class="registration-actions">
                                                         <button type="submit" id="register-submit-{{ $type }}" data-register-submit="{{ $type }}" class="btn btn-danger w-100">{{ $registrationTypes[$type]['submit_label'] }}</button>
                                                     </div>
                                                 </form>
                                             </div>
                                         @endforeach
+                                    </div>
+
+                                    <div class="registration-secondary-action">
+                                        <a href="{{ route('login') }}">{{ __('app.auth.back_to_login') }}</a>
                                     </div>
                                 </div>
                             </div>

@@ -1,30 +1,34 @@
 @extends('layouts.auth', ['title' => __('app.dashboard.complete_registration_title')])
 
+@push('styles')
+    @include('auth.partials.registration-styles')
+@endpush
+
 @section('content')
     <div class="wrapper">
-        <section class="sign-in-page" style="background-image: url('{{ asset('images/loginBg.jpeg') }}')">
+        <section class="sign-in-page registration-auth-page" style="background-image: url('{{ asset('images/loginBg.jpeg') }}')">
             <div class="container">
                 <div class="justify-content-center align-items-center height-self-center row">
-                    <div class="align-self-center col-lg-10 col-md-12">
-                        <div class="sign-user_card">
-                            <a href="{{ route('login') }}">
-                                <img class="img-fluid logo" src="{{ asset('images/logo.svg') }}" alt="#">
+                    <div class="align-self-center col-12">
+                        <div class="sign-user_card registration-card registration-card-wide">
+                            <a class="registration-logo-link" href="{{ route('login') }}">
+                                <img class="img-fluid logo registration-logo" src="{{ asset('images/logo.svg') }}" alt="#">
                             </a>
-                            <div class="sign-in-page-data pt-5">
+                            <div class="sign-in-page-data registration-page-data">
                                 <div class="sign-in-from w-100 m-auto">
                                     @include('auth.partials.alerts')
 
-                                    <div class="text-center mb-4">
-                                        <h3 class="mb-2">{{ __('app.dashboard.complete_registration_title') }}</h3>
-                                        <p class="mb-0">{{ __('app.dashboard.complete_registration_intro') }}</p>
+                                    <div class="registration-header">
+                                        <h1 class="registration-title">{{ __('app.dashboard.complete_registration_title') }}</h1>
+                                        <p class="registration-subtitle">{{ __('app.dashboard.complete_registration_intro') }}</p>
                                     </div>
 
-                                    <div class="alert alert-warning mb-4">
+                                    <div class="alert alert-warning registration-alert mb-4">
                                         <strong>{{ __('app.dashboard.review_notes') }}</strong>
                                         <div class="mt-2">{{ data_get($entity->metadata, 'review.note', __('app.dashboard.no_review_notes')) }}</div>
                                     </div>
 
-                                    <form method="POST" action="{{ $isSignedLinkFlow ? request()->fullUrl() : route('registration.completion.update') }}" enctype="multipart/form-data">
+                                    <form class="registration-form-panel" method="POST" action="{{ $isSignedLinkFlow ? request()->fullUrl() : route('registration.completion.update') }}" enctype="multipart/form-data">
                                         @csrf
 
                                         <div class="row">
@@ -100,9 +104,9 @@
                                             </div>
                                         </div>
 
-                                        <div class="d-flex gap-3 mt-3">
-                                            <button type="submit" class="btn btn-danger flex-grow-1">{{ __('app.dashboard.submit_completion') }}</button>
-                                            <a href="{{ $isSignedLinkFlow ? route('login') : route('dashboard') }}" class="btn btn-outline-secondary flex-grow-1">{{ $isSignedLinkFlow ? __('app.dashboard.back_to_login') : __('app.dashboard.back_to_status') }}</a>
+                                        <div class="registration-actions">
+                                            <button type="submit" class="btn btn-danger">{{ __('app.dashboard.submit_completion') }}</button>
+                                            <a href="{{ $isSignedLinkFlow ? route('login') : route('dashboard') }}" class="btn btn-outline-secondary">{{ $isSignedLinkFlow ? __('app.dashboard.back_to_login') : __('app.dashboard.back_to_status') }}</a>
                                         </div>
                                     </form>
                                 </div>
