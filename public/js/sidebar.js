@@ -13,6 +13,18 @@
 
     const getSidebar = () => document.querySelector('[data-toggle="main-sidebar"]')
 
+    function closeResponsiveSidebar(sidebar) {
+        sidebar.classList.remove('sidebar-mobile-open')
+        sidebar.classList.add('sidebar-mini')
+        sidebar.dataset.responsiveMini = 'true'
+    }
+
+    function openResponsiveSidebar(sidebar) {
+        sidebar.classList.add('sidebar-mobile-open')
+        sidebar.classList.remove('sidebar-mini')
+        delete sidebar.dataset.responsiveMini
+    }
+
     function setSidebarTypePreference(isMini) {
         if(typeof IQSetting === typeof undefined) {
             return
@@ -57,13 +69,12 @@
         }
 
         if (window.innerWidth < responsiveSidebarBreakpoint) {
-            if (!sidebarResponsive.classList.contains('sidebar-mini')) {
-                setSidebarMini(true, false)
-                sidebarResponsive.dataset.responsiveMini = 'true'
-            }
+            closeResponsiveSidebar(sidebarResponsive)
 
             return
         }
+
+        sidebarResponsive.classList.remove('sidebar-mobile-open')
 
         if (sidebarResponsive.dataset.responsiveMini === 'true') {
             setSidebarMini(false, false)
@@ -86,11 +97,20 @@
             const shouldMini = !sidebar.classList.contains('sidebar-mini')
             const isResponsiveViewport = window.innerWidth < responsiveSidebarBreakpoint
 
+            if (isResponsiveViewport) {
+                if (sidebar.classList.contains('sidebar-mobile-open')) {
+                    closeResponsiveSidebar(sidebar)
+                } else {
+                    openResponsiveSidebar(sidebar)
+                }
+
+                return
+            }
+
+            sidebar.classList.remove('sidebar-mobile-open')
             setSidebarMini(shouldMini, !isResponsiveViewport)
 
-            if (isResponsiveViewport) {
-                delete sidebar.dataset.responsiveMini
-            }
+            delete sidebar.dataset.responsiveMini
         })
     }
     const sidebarToggleBtn = document.querySelectorAll('[data-toggle="sidebar"]')

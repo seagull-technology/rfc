@@ -55,6 +55,37 @@
             min-width: 1.5rem;
             text-align: center;
         }
+
+        @media (max-width: 1199.98px) {
+            .sidebar[data-sidebar="responsive"] {
+                transform: translateX(-250%);
+            }
+
+            .sidebar[data-sidebar="responsive"].sidebar-mobile-open {
+                left: 0;
+                right: auto;
+                transform: translateX(0);
+            }
+
+            .sidebar[data-sidebar="responsive"]:not(.sidebar-mobile-open) > .sidebar-header > .sidebar-toggle {
+                display: none !important;
+            }
+
+            [dir="rtl"] .sidebar[data-sidebar="responsive"] {
+                transform: translateX(100%);
+            }
+
+            [dir="rtl"] .sidebar[data-sidebar="responsive"].sidebar-mobile-open {
+                left: auto;
+                right: 0;
+                transform: translateX(0);
+            }
+
+            .sidebar[data-sidebar="responsive"] + .main-content {
+                margin-inline-start: 0;
+                margin-inline-end: 0;
+            }
+        }
     </style>
     @stack('styles')
 </head>
@@ -406,7 +437,7 @@
     <script src="{{ asset('js/widgetcharts.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/dashboard.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/streamit.js') }}?v=5.4.1" defer></script>
-    <script src="{{ asset('js/sidebar.js') }}?v=5.4.2" defer></script>
+    <script src="{{ asset('js/sidebar.js') }}?v=5.4.5" defer></script>
     <script src="{{ asset('js/chart-custom.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/select2.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/flatpickr.js') }}?v=5.4.0" defer></script>

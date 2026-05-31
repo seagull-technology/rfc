@@ -51,6 +51,8 @@ class AdminPanelTest extends TestCase
             ->assertSee('admin-dashboard-table-scroll', false)
             ->assertSee('workflow-queue-table', false)
             ->assertSee('admin-recent-requests-table', false)
+            ->assertSee('.sidebar[data-sidebar="responsive"].sidebar-mobile-open', false)
+            ->assertSee('js/sidebar.js?v=5.4.5', false)
             ->assertSee('data-toggle="data-table"', false);
     }
 
