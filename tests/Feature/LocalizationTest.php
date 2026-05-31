@@ -30,6 +30,28 @@ class LocalizationTest extends TestCase
         $response->assertDontSee($arabicLoginUrl, false);
     }
 
+    public function test_arabic_otp_page_keeps_first_digit_focused_from_rtl_start(): void
+    {
+        $this->refreshApplicationWithLocale('ar');
+
+        $response = $this
+            ->withSession([
+                'pending_auth_user_id' => 1,
+                'pending_auth_phone' => '0791112233',
+                'otp_debug_code' => '12345',
+            ])
+            ->get('/ar/verify-otp');
+
+        $response
+            ->assertOk()
+            ->assertSee('dir="rtl"', false)
+            ->assertSee('data-index="0"', false)
+            ->assertSee('autofocus', false)
+            ->assertSee('data-otp-autofocus="true"', false)
+            ->assertSee('inputmode="numeric"', false)
+            ->assertSee('focus({ preventScroll: true })', false);
+    }
+
     public function test_authenticated_user_can_view_dashboard_in_arabic(): void
     {
         $this->refreshApplicationWithLocale('ar');

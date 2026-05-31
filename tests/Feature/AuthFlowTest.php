@@ -329,6 +329,22 @@ class AuthFlowTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
+    public function test_otp_page_marks_first_digit_for_autofocus(): void
+    {
+        $html = view('auth.verify-otp', [
+            'maskedPhone' => '******2233',
+            'debugCode' => '12345',
+            'errors' => new \Illuminate\Support\ViewErrorBag,
+        ])->render();
+
+        $this->assertStringContainsString('data-index="0"', $html);
+        $this->assertStringContainsString('autofocus', $html);
+        $this->assertStringContainsString('data-otp-autofocus="true"', $html);
+        $this->assertStringContainsString('inputmode="numeric"', $html);
+        $this->assertStringContainsString('autocomplete="one-time-code"', $html);
+        $this->assertStringContainsString('focus({ preventScroll: true })', $html);
+    }
+
     public function test_arabic_registration_validation_messages_are_localized(): void
     {
         $this->refreshApplicationWithLocale('ar');
