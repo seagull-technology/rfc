@@ -56,6 +56,33 @@ class AdminPanelTest extends TestCase
             ->assertSee('data-toggle="data-table"', false);
     }
 
+    public function test_admin_dashboard_handles_pending_registration_review_queue_with_notifications_dropdown(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $group = Group::query()->where('code', 'organizations')->firstOrFail();
+
+        Entity::query()->create([
+            'group_id' => $group->getKey(),
+            'code' => 'dashboard-review-queue',
+            'name_en' => 'Dashboard Review Queue Company',
+            'name_ar' => 'شركة مراجعة لوحة التحكم',
+            'registration_no' => 'DASH-REV-001',
+            'registration_type' => 'company',
+            'status' => 'pending_review',
+            'email' => 'dashboard-review@example.com',
+            'phone' => '065551313',
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('admin.dashboard'));
+
+        $response
+            ->assertOk()
+            ->assertSee('all-notification', false);
+    }
+
     public function test_admin_dashboard_profile_dropdown_contains_shared_profile_route(): void
     {
         $this->refreshApplicationWithLocale('en');

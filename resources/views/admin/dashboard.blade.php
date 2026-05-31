@@ -4,7 +4,6 @@
     $title = $isWorkflowDashboard ? __('app.admin.applications.title') : __('app.admin.dashboard.title');
     $breadcrumb = __('app.admin.navigation.dashboard');
     $dashboardIntro = $isWorkflowDashboard ? __('app.admin.applications.intro') : __('app.admin.dashboard.intro');
-    $notificationItems = $adminHasDirectoryAccess ? $reviewQueue->take(5) : collect();
     $profileEntityName = $entity?->displayName() ?? __('app.dashboard.no_entity');
     $profileEmail = $admin->email;
     $statusClass = static fn (?string $status): string => match ($status) {
