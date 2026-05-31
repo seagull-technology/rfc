@@ -189,82 +189,86 @@
                                         <div class="d-flex justify-content-end py-3">
                                             <button type="button" class="btn btn-success" onclick="addScoutLocationRow()"><i class="fa-solid fa-plus me-2"></i>{{ __('app.scouting.add_location_action') }}</button>
                                         </div>
-                                        <table class="table align-middle" id="scoutLocationTable">
-                                            <thead class="table-light">
-                                                <tr>
-                                                    <th>#</th>
-                                                    <th>{{ __('app.scouting.governorate') }}</th>
-                                                    <th>{{ __('app.scouting.location_name') }}</th>
-                                                    <th>{{ __('app.scouting.google_map_url') }}</th>
-                                                    <th>{{ __('app.scouting.location_nature') }}</th>
-                                                    <th>{{ __('app.scouting.start_date') }}</th>
-                                                    <th>{{ __('app.scouting.end_date') }}</th>
-                                                    <th>{{ __('app.applications.actions') }}</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                @foreach ($locationRows as $index => $location)
+                                        <div class="table-responsive">
+                                            <table class="table align-middle" id="scoutLocationTable">
+                                                <thead class="table-light">
                                                     <tr>
-                                                        <td class="row-number">{{ $index + 1 }}</td>
-                                                        <td>
-                                                            <select class="form-select" name="locations[{{ $index }}][governorate]">
-                                                                @foreach (['amman', 'irbid', 'zarqa', 'balqa', 'madaba', 'karak', 'tafilah', 'maan', 'aqaba', 'mafraq', 'jerash', 'ajloun'] as $option)
-                                                                    <option value="{{ $option }}" @selected(($location['governorate'] ?? 'amman') === $option)>{{ __('app.scouting.governorate_options.'.$option) }}</option>
-                                                                @endforeach
-                                                            </select>
-                                                        </td>
-                                                        <td><input type="text" class="form-control" name="locations[{{ $index }}][location_name]" value="{{ $location['location_name'] ?? '' }}"></td>
-                                                        <td><input type="text" class="form-control" name="locations[{{ $index }}][google_map_url]" value="{{ $location['google_map_url'] ?? '' }}"></td>
-                                                        <td>
-                                                            <select class="form-select" name="locations[{{ $index }}][location_nature]">
-                                                                @foreach (['public_site', 'border_area', 'archaeological', 'religious', 'schools', 'universities', 'museums', 'syrian_camps', 'palestinian_camps', 'petra', 'reserves', 'valleys', 'private_site'] as $option)
-                                                                    <option value="{{ $option }}" @selected(($location['location_nature'] ?? 'public_site') === $option)>{{ __('app.scouting.location_nature_options.'.$option) }}</option>
-                                                                @endforeach
-                                                            </select>
-                                                        </td>
-                                                        <td><input type="date" class="form-control" name="locations[{{ $index }}][start_date]" value="{{ $location['start_date'] ?? '' }}"></td>
-                                                        <td><input type="date" class="form-control" name="locations[{{ $index }}][end_date]" value="{{ $location['end_date'] ?? '' }}"></td>
-                                                        <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeDynamicRow(this, '#scoutLocationTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
+                                                        <th>#</th>
+                                                        <th>{{ __('app.scouting.governorate') }}</th>
+                                                        <th>{{ __('app.scouting.location_name') }}</th>
+                                                        <th>{{ __('app.scouting.google_map_url') }}</th>
+                                                        <th>{{ __('app.scouting.location_nature') }}</th>
+                                                        <th>{{ __('app.scouting.start_date') }}</th>
+                                                        <th>{{ __('app.scouting.end_date') }}</th>
+                                                        <th>{{ __('app.applications.actions') }}</th>
                                                     </tr>
-                                                @endforeach
-                                            </tbody>
-                                        </table>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach ($locationRows as $index => $location)
+                                                        <tr>
+                                                            <td class="row-number">{{ $index + 1 }}</td>
+                                                            <td>
+                                                                <select class="form-select" name="locations[{{ $index }}][governorate]">
+                                                                    @foreach (['amman', 'irbid', 'zarqa', 'balqa', 'madaba', 'karak', 'tafilah', 'maan', 'aqaba', 'mafraq', 'jerash', 'ajloun'] as $option)
+                                                                        <option value="{{ $option }}" @selected(($location['governorate'] ?? 'amman') === $option)>{{ __('app.scouting.governorate_options.'.$option) }}</option>
+                                                                    @endforeach
+                                                                </select>
+                                                            </td>
+                                                            <td><input type="text" class="form-control" name="locations[{{ $index }}][location_name]" value="{{ $location['location_name'] ?? '' }}"></td>
+                                                            <td><input type="text" class="form-control" name="locations[{{ $index }}][google_map_url]" value="{{ $location['google_map_url'] ?? '' }}"></td>
+                                                            <td>
+                                                                <select class="form-select" name="locations[{{ $index }}][location_nature]">
+                                                                    @foreach (['public_site', 'border_area', 'archaeological', 'religious', 'schools', 'universities', 'museums', 'syrian_camps', 'palestinian_camps', 'petra', 'reserves', 'valleys', 'private_site'] as $option)
+                                                                        <option value="{{ $option }}" @selected(($location['location_nature'] ?? 'public_site') === $option)>{{ __('app.scouting.location_nature_options.'.$option) }}</option>
+                                                                    @endforeach
+                                                                </select>
+                                                            </td>
+                                                            <td><input type="date" class="form-control" name="locations[{{ $index }}][start_date]" value="{{ $location['start_date'] ?? '' }}"></td>
+                                                            <td><input type="date" class="form-control" name="locations[{{ $index }}][end_date]" value="{{ $location['end_date'] ?? '' }}"></td>
+                                                            <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeDynamicRow(this, '#scoutLocationTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
+                                                        </tr>
+                                                    @endforeach
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
 
                                     <div class="tab-pane fade" id="crew_tab" role="tabpanel">
                                         <div class="d-flex justify-content-end py-3">
                                             <button type="button" class="btn btn-success" onclick="addScoutCrewRow()"><i class="fa-solid fa-plus me-2"></i>{{ __('app.scouting.add_crew_action') }}</button>
                                         </div>
-                                        <table class="table align-middle" id="scoutCrewTable">
-                                            <thead class="table-light">
-                                                <tr>
-                                                    <th>#</th>
-                                                    <th>{{ __('app.scouting.crew_name') }}</th>
-                                                    <th>{{ __('app.scouting.crew_job_title') }}</th>
-                                                    <th>{{ __('app.scouting.crew_nationality') }}</th>
-                                                    <th>{{ __('app.scouting.crew_identity') }}</th>
-                                                    <th>{{ __('app.applications.actions') }}</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                @foreach ($crewRows as $index => $member)
+                                        <div class="table-responsive">
+                                            <table class="table align-middle" id="scoutCrewTable">
+                                                <thead class="table-light">
                                                     <tr>
-                                                        <td class="row-number">{{ $index + 1 }}</td>
-                                                        <td><input type="text" class="form-control" name="crew[{{ $index }}][name]" value="{{ $member['name'] ?? '' }}"></td>
-                                                        <td><input type="text" class="form-control" name="crew[{{ $index }}][job_title]" value="{{ $member['job_title'] ?? '' }}"></td>
-                                                        <td>
-                                                            <select class="form-select" name="crew[{{ $index }}][nationality]">
-                                                                @foreach (['jordanian', 'international'] as $option)
-                                                                    <option value="{{ $option }}" @selected(($member['nationality'] ?? 'jordanian') === $option)>{{ __('app.applications.project_nationalities.'.$option) }}</option>
-                                                                @endforeach
-                                                            </select>
-                                                        </td>
-                                                        <td><input type="text" class="form-control" name="crew[{{ $index }}][national_id_passport]" value="{{ $member['national_id_passport'] ?? '' }}"></td>
-                                                        <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeDynamicRow(this, '#scoutCrewTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
+                                                        <th>#</th>
+                                                        <th>{{ __('app.scouting.crew_name') }}</th>
+                                                        <th>{{ __('app.scouting.crew_job_title') }}</th>
+                                                        <th>{{ __('app.scouting.crew_nationality') }}</th>
+                                                        <th>{{ __('app.scouting.crew_identity') }}</th>
+                                                        <th>{{ __('app.applications.actions') }}</th>
                                                     </tr>
-                                                @endforeach
-                                            </tbody>
-                                        </table>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach ($crewRows as $index => $member)
+                                                        <tr>
+                                                            <td class="row-number">{{ $index + 1 }}</td>
+                                                            <td><input type="text" class="form-control" name="crew[{{ $index }}][name]" value="{{ $member['name'] ?? '' }}"></td>
+                                                            <td><input type="text" class="form-control" name="crew[{{ $index }}][job_title]" value="{{ $member['job_title'] ?? '' }}"></td>
+                                                            <td>
+                                                                <select class="form-select" name="crew[{{ $index }}][nationality]">
+                                                                    @foreach (['jordanian', 'international'] as $option)
+                                                                        <option value="{{ $option }}" @selected(($member['nationality'] ?? 'jordanian') === $option)>{{ __('app.applications.project_nationalities.'.$option) }}</option>
+                                                                    @endforeach
+                                                                </select>
+                                                            </td>
+                                                            <td><input type="text" class="form-control" name="crew[{{ $index }}][national_id_passport]" value="{{ $member['national_id_passport'] ?? '' }}"></td>
+                                                            <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeDynamicRow(this, '#scoutCrewTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
+                                                        </tr>
+                                                    @endforeach
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

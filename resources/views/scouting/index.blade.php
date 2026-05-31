@@ -75,6 +75,25 @@
         .scouting-index-layout .scouting-request-actions-cell .list-user-action {
             justify-content: center;
         }
+
+        @media (max-width: 575.98px) {
+            .scouting-index-layout .nav-pills {
+                flex-wrap: wrap;
+                gap: .5rem;
+                overflow-x: visible;
+            }
+
+            .scouting-index-layout .nav-pills .nav-item {
+                flex: 1 1 100%;
+                min-width: 0;
+            }
+
+            .scouting-index-layout .nav-pills .nav-link {
+                padding: 1rem !important;
+                white-space: normal;
+                word-break: normal;
+            }
+        }
     </style>
 @endpush
 
