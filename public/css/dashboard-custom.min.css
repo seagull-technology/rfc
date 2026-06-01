@@ -305,4 +305,33 @@
     left: 0
 }
 
+[dir=rtl] div.dataTables_wrapper div.dataTables_filter label,
+[dir=rtl] div.dataTables_wrapper div.dataTables_length label {
+    text-align: right
+}
+
+[dir=rtl] div.dataTables_wrapper div.dataTables_filter input {
+    margin-left: 0;
+    margin-right: .5em;
+    text-align: right
+}
+
+[dir=rtl] div.dataTables_wrapper div.dataTables_paginate ul.pagination {
+    direction: rtl
+}
+
+@media(max-width: 575.98px) {
+    div.dataTables_wrapper div.dataTables_filter label,
+    div.dataTables_wrapper div.dataTables_length label {
+        width: 100%;
+        white-space: normal
+    }
+
+    div.dataTables_wrapper div.dataTables_filter input {
+        display: block;
+        width: 100%;
+        margin: .35rem 0 0 !important
+    }
+}
+
 /*# sourceMappingURL=maps/dashboard-custom.min.css.map */

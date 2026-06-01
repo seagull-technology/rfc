@@ -262,6 +262,48 @@ Index Of Script
   }
   /*-------------Data tables---------------*/
   if ($.fn.DataTable) {
+    const isRtlLocale = (document.documentElement.lang || "").toLowerCase().startsWith("ar")
+      || document.documentElement.dir === "rtl";
+    const dataTableCopy = isRtlLocale
+      ? {
+          searchButton: "بحث",
+          searchPlaceholder: "اكتب هنا ....",
+          language: {
+            decimal: "",
+            emptyTable: "لا توجد بيانات متاحة",
+            info: "إظهار _START_ إلى _END_ من أصل _TOTAL_ سجل",
+            infoEmpty: "إظهار 0 إلى 0 من أصل 0 سجل",
+            infoFiltered: "(تمت التصفية من أصل _MAX_ سجل)",
+            lengthMenu: "إظهار _MENU_ سجلات",
+            loadingRecords: "جار التحميل...",
+            processing: "جار المعالجة...",
+            search: "بحث:",
+            searchPlaceholder: "اكتب للبحث",
+            zeroRecords: "لم يتم العثور على سجلات مطابقة",
+            paginate: {
+              first: "الأول",
+              last: "الأخير",
+              next: "التالي",
+              previous: "السابق"
+            },
+            aria: {
+              sortAscending: ": تفعيل لترتيب العمود تصاعدياً",
+              sortDescending: ": تفعيل لترتيب العمود تنازلياً"
+            }
+          }
+        }
+      : {
+          searchButton: "Search",
+          searchPlaceholder: "Type here ....",
+          language: {
+            searchPlaceholder: "Type to search"
+          }
+        };
+
+    const dataTableLanguage = function (overrides) {
+      return $.extend(true, {}, dataTableCopy.language, overrides || {});
+    };
+
     const canInitializeDataTable = function ($table) {
       return $table.find("tbody td[colspan], tbody th[colspan], tbody td[rowspan], tbody th[rowspan]").length === 0;
     };
@@ -288,6 +330,7 @@ Index Of Script
       initializeDataTables('[data-toggle="data-table"]', {
         autoWidth: false,
         dom: '<"row align-items-center"<"col-md-6" l><"col-md-6" f>><"table-responsive my-3" rt><"row align-items-center" <"col-md-6" i><"col-md-6" p>><"clear">',
+        language: dataTableLanguage(),
       });
     }
 
@@ -297,14 +340,14 @@ Index Of Script
           "autoWidth": false,
           "dom": '<"row align-items-center gy-2"<f>><"table-responsive my-3" rt><"row align-items-center"<"col-md-6 sum"i><"col-md-6"p>><"clear">',
           "pagingType": "full_numbers",
-          "language": {
+          "language": dataTableLanguage({
             "paginate": {
               "first": "«",
               "last": "»",
               "next": "›",
               "previous": "‹"
             }
-          },
+          }),
           buttons: [],
         });
 
@@ -322,8 +365,8 @@ Index Of Script
             `<div class="row align-items-center gy-2">
               <div id="${filterId}">
                 <div class="d-flex gap-2">
-                  <input type="text" id="${searchId}" placeholder="اكتب هنا ...." class="form-control ms-0 custom-search-table w-100">
-                  <button type="button" class="btn btn-danger">بحث</button>
+                  <input type="text" id="${searchId}" placeholder="${dataTableCopy.searchPlaceholder}" class="form-control ms-0 custom-search-table w-100">
+                  <button type="button" class="btn btn-danger">${dataTableCopy.searchButton}</button>
                 </div>
               </div>
             </div>`
@@ -360,14 +403,14 @@ Index Of Script
           "dom": '<"row align-items-center gy-2"<"px-0"f>><"table-responsive my-3" rt><"row align-items-center"<"col-md-6"i><"col-md-6"p>><"clear">',
           "searching": false,
           "pagingType": "full_numbers",
-          "language": {
+          "language": dataTableLanguage({
             "paginate": {
               "first": "«",
               "last": "»",
               "next": "›",
               "previous": "‹"
             }
-          },
+          }),
           buttons: []
         });
 
@@ -394,7 +437,9 @@ Index Of Script
 
     // Column hidden datatable
     if ($('[data-toggle="data-table-column-hidden"]').length) {
-      const hiddenTableInstances = initializeDataTables('[data-toggle="data-table-column-hidden"]', {});
+      const hiddenTableInstances = initializeDataTables('[data-toggle="data-table-column-hidden"]', {
+        language: dataTableLanguage(),
+      });
       var hiddentable = hiddenTableInstances[0];
 
       if (hiddentable) {
@@ -414,6 +459,7 @@ Index Of Script
         );
       });
       initializeDataTables('[data-toggle="data-table-column-filter"]', {
+        language: dataTableLanguage(),
         initComplete: function () {
           this.api()
             .columns()
