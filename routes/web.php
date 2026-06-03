@@ -7,6 +7,7 @@ use App\Http\Controllers\Auth\OtpController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\ResetPasswordController;
+use App\Http\Controllers\Auth\StudentLookupController;
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\AuthorityEscalationController;
@@ -56,6 +57,7 @@ Route::group([
 
         Route::get('/register', [RegisterController::class, 'index'])->name('register');
         Route::post('/register', [RegisterController::class, 'store'])->name('register.store');
+        Route::post('/register/student/lookup', StudentLookupController::class)->name('register.student.lookup');
         Route::get('/register/individual', fn () => redirect()->route('register'))->name('register.individual.create');
         Route::get('/register/organization', fn () => redirect()->route('register'))->name('register.organization.create');
         Route::post('/register/organization/lookup', OrganizationLookupController::class)->name('register.organization.lookup');

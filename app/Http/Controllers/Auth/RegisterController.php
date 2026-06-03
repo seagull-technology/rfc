@@ -7,6 +7,7 @@ use App\Models\Entity;
 use App\Models\Group;
 use App\Models\User;
 use App\Services\RoleAssignmentService;
+use App\Services\StudentRegistrationLookupService;
 use App\Support\PhoneNumber;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Http\RedirectResponse;
@@ -15,6 +16,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class RegisterController extends Controller
@@ -27,8 +30,11 @@ class RegisterController extends Controller
         ]);
     }
 
-    public function store(Request $request, RoleAssignmentService $roleAssignmentService): RedirectResponse
-    {
+    public function store(
+        Request $request,
+        RoleAssignmentService $roleAssignmentService,
+        StudentRegistrationLookupService $studentLookupService,
+    ): RedirectResponse {
         $request->validate([
             'registration_type' => ['required', Rule::in(array_keys($this->registrationTypes()))],
         ]);
@@ -36,28 +42,38 @@ class RegisterController extends Controller
         $registrationType = (string) $request->input('registration_type');
 
         if ($registrationType === 'student') {
-            return $this->storeStudent($request, $roleAssignmentService);
+            return $this->storeStudent($request, $roleAssignmentService, $studentLookupService);
         }
 
         return $this->storeOrganizationLike($request, $roleAssignmentService, $registrationType);
     }
 
-    private function storeStudent(Request $request, RoleAssignmentService $roleAssignmentService): RedirectResponse
-    {
+    private function storeStudent(
+        Request $request,
+        RoleAssignmentService $roleAssignmentService,
+        StudentRegistrationLookupService $studentLookupService,
+    ): RedirectResponse {
         $data = $request->validate([
             'registration_type' => ['required', 'in:student'],
-            'full_name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
-            'national_id' => ['required', 'string', 'max:50', Rule::unique('users', 'national_id'), Rule::unique('entities', 'national_id')],
-            'birth_date' => ['required', 'date'],
-            'gender' => ['required', Rule::in(['male', 'female'])],
-            'nationality' => ['required', 'string', 'max:100'],
-            'phone' => ['required', 'string', 'max:30', Rule::unique('users', 'phone')],
-            'university_name' => ['required', 'string', 'max:255'],
-            'major' => ['required', 'string', 'max:255'],
-            'password' => ['required', 'confirmed', 'min:8'],
+            'national_id' => ['required', 'regex:/^\d{10}$/', Rule::unique('users', 'national_id'), Rule::unique('entities', 'national_id')],
+            'phone' => ['required', 'regex:/^\d{10}$/', Rule::unique('users', 'phone')],
+            'student_lookup_verified' => ['accepted'],
+            'password' => array_merge(['required', 'confirmed'], $this->passwordRules()),
+        ], [
+            'national_id.regex' => __('app.auth.national_id_digits'),
+            'phone.regex' => __('app.auth.phone_digits'),
         ]);
 
+        $lookupState = $request->session()->get(StudentRegistrationLookupService::SESSION_KEY);
+
+        if (! $studentLookupService->lookupStateMatches(is_array($lookupState) ? $lookupState : null, $data['national_id'])) {
+            throw ValidationException::withMessages([
+                'national_id' => __('app.auth.student_lookup_required'),
+            ]);
+        }
+
+        $data = array_merge($data, (array) data_get($lookupState, 'data', []));
         $data['phone'] = PhoneNumber::normalize($data['phone']);
         $username = $this->makeUsername('student', $data['national_id']);
 
@@ -102,6 +118,8 @@ class RegisterController extends Controller
             $roleAssignmentService->assignToEntity($user, $entity, 'applicant_owner');
         });
 
+        $request->session()->forget(StudentRegistrationLookupService::SESSION_KEY);
+
         return redirect()
             ->route('login')
             ->with('status', __('app.auth.account_created'));
@@ -117,11 +135,13 @@ class RegisterController extends Controller
             'entity_name' => ['required', 'string', 'max:255'],
             'registration_number' => ['required', 'string', 'max:50', Rule::unique('entities', 'registration_no')],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
-            'phone' => ['required', 'string', 'max:30', Rule::unique('users', 'phone')],
+            'phone' => ['required', 'regex:/^\d{10}$/', Rule::unique('users', 'phone')],
             'address' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
             'registration_document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
-            'password' => ['required', 'confirmed', 'min:8'],
+            'password' => array_merge(['required', 'confirmed'], $this->passwordRules()),
+        ], [
+            'phone.regex' => __('app.auth.phone_digits'),
         ]);
 
         $data['phone'] = PhoneNumber::normalize($data['phone']);
@@ -221,5 +241,15 @@ class RegisterController extends Controller
     private function storeRegistrationDocument(UploadedFile $document, string $registrationType): string
     {
         return $document->store('registration-documents/'.$registrationType, 'local');
+    }
+
+    /**
+     * @return array<int, \Illuminate\Contracts\Validation\Rule|string>
+     */
+    private function passwordRules(): array
+    {
+        return [
+            Password::min(8)->mixedCase()->numbers()->symbols(),
+        ];
     }
 }

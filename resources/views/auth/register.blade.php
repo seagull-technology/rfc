@@ -4,6 +4,10 @@
     @include('auth.partials.registration-styles')
 @endpush
 
+@php
+    $studentLookupCompleted = old('registration_type') === 'student' && old('student_lookup_verified') === '1';
+@endphp
+
 @section('content')
     <div class="wrapper">
         <section class="sign-in-page registration-auth-page" style="background-image: url('{{ asset('images/loginBg.jpeg') }}')">
@@ -11,9 +15,11 @@
                 <div class="justify-content-center align-items-center height-self-center row">
                     <div class="align-self-center col-12">
                         <div class="sign-user_card registration-card registration-card-wide">
-                            <a class="registration-logo-link" href="{{ route('login') }}">
-                                <img class="img-fluid logo registration-logo" src="{{ asset('images/logo.svg') }}" alt="#">
-                            </a>
+                            <div class="registration-brand-hero">
+                                <a class="registration-logo-link registration-logo-badge" href="{{ route('login') }}">
+                                    <img class="img-fluid logo registration-logo" src="{{ asset('images/logo.svg') }}" alt="#">
+                                </a>
+                            </div>
                             <div class="sign-in-page-data registration-page-data">
                                 <div class="sign-in-from w-100 m-auto">
                                     @include('auth.partials.alerts')
@@ -42,126 +48,149 @@
 
                                     <div class="tab-content registration-form-panel" id="myTabContent-3">
                                         <div class="tab-pane fade {{ $activeRegistrationType === 'student' ? 'show active' : '' }}" id="home-justify" role="tabpanel" aria-labelledby="home-tab-justify">
-                                            <form method="POST" action="{{ route('register.store') }}" id="register-form-student" data-register-form="student">
+                                            <form method="POST" action="{{ route('register.store') }}" id="register-form-student" data-register-form="student" data-student-lookup-url="{{ route('register.student.lookup') }}">
                                                 @csrf
                                                 <input type="hidden" name="registration_type" value="student">
+                                                <input type="hidden" name="student_lookup_verified" value="{{ $studentLookupCompleted ? '1' : '0' }}" data-student-lookup-verified>
 
                                                 <div class="row">
                                                     <div class="col-md-12">
                                                         <div class="mb-3">
                                                             <label class="form-label">{{ __('app.auth.national_id') }}</label>
-                                                            <input type="text" name="national_id" class="form-control @error('national_id') is-invalid @enderror" placeholder="{{ __('app.auth.national_id_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('national_id') : '' }}" autocomplete="off" required>
+                                                            <div class="registration-lookup-control">
+                                                                <input type="text" name="national_id" class="form-control @error('national_id') is-invalid @enderror" placeholder="{{ __('app.auth.national_id_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('national_id') : '' }}" inputmode="numeric" pattern="\d{10}" maxlength="10" autocomplete="off" data-student-national-id required>
+                                                                <button type="button" class="btn btn-danger registration-lookup-button" data-student-lookup-check>
+                                                                    <i class="ph ph-magnifying-glass"></i>
+                                                                    <span>{{ __('app.auth.check_national_id') }}</span>
+                                                                </button>
+                                                            </div>
+                                                            <div class="registration-inline-feedback" data-student-lookup-message>{{ $errors->first('national_id') }}</div>
                                                             @error('national_id')
                                                                 <div class="invalid-feedback d-block">{{ $message }}</div>
                                                             @enderror
                                                         </div>
                                                     </div>
 
-                                                    <div class="col-md-6">
-                                                        <div class="mb-3">
-                                                            <label class="form-label">{{ __('app.auth.full_name') }}</label>
-                                                            <input type="text" name="full_name" class="form-control @error('full_name') is-invalid @enderror" placeholder="{{ __('app.auth.full_name_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('full_name') : '' }}" required>
-                                                            @error('full_name')
-                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                            @enderror
+                                                    <div class="col-12 student-lookup-fields" data-student-lookup-fields @unless($studentLookupCompleted) hidden @endunless>
+                                                        <div class="row">
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.full_name') }}</label>
+                                                                    <input type="hidden" name="full_name" value="{{ old('registration_type') === 'student' ? old('full_name') : '' }}" data-student-lookup-hidden="full_name">
+                                                                    <input type="text" class="form-control @error('full_name') is-invalid @enderror" placeholder="{{ __('app.auth.full_name_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('full_name') : '' }}" data-student-lookup-field="full_name" disabled>
+                                                                    @error('full_name')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.birth_date') }}</label>
+                                                                    <input type="hidden" name="birth_date" value="{{ old('registration_type') === 'student' ? old('birth_date') : '' }}" data-student-lookup-hidden="birth_date">
+                                                                    <input type="date" class="form-control @error('birth_date') is-invalid @enderror" value="{{ old('registration_type') === 'student' ? old('birth_date') : '' }}" data-student-lookup-field="birth_date" disabled>
+                                                                    @error('birth_date')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.gender') }}</label>
+                                                                    <input type="hidden" name="gender" value="{{ old('registration_type') === 'student' ? old('gender') : '' }}" data-student-lookup-hidden="gender">
+                                                                    <select class="form-control @error('gender') is-invalid @enderror" data-student-lookup-field="gender" disabled>
+                                                                        <option value="">{{ __('app.auth.select_placeholder') }}</option>
+                                                                        @foreach (['male', 'female'] as $gender)
+                                                                            <option value="{{ $gender }}" @selected(old('registration_type') === 'student' && old('gender') === $gender)>{{ __('app.auth.gender_options.'.$gender) }}</option>
+                                                                        @endforeach
+                                                                    </select>
+                                                                    @error('gender')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.nationality') }}</label>
+                                                                    <input type="hidden" name="nationality" value="{{ old('registration_type') === 'student' ? old('nationality') : '' }}" data-student-lookup-hidden="nationality">
+                                                                    <input type="text" class="form-control @error('nationality') is-invalid @enderror" placeholder="{{ __('app.auth.nationality_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('nationality') : '' }}" data-student-lookup-field="nationality" disabled>
+                                                                    @error('nationality')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.university_name') }}</label>
+                                                                    <input type="hidden" name="university_name" value="{{ old('registration_type') === 'student' ? old('university_name') : '' }}" data-student-lookup-hidden="university_name">
+                                                                    <input type="text" class="form-control @error('university_name') is-invalid @enderror" placeholder="{{ __('app.auth.university_name_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('university_name') : '' }}" data-student-lookup-field="university_name" disabled>
+                                                                    @error('university_name')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.major') }}</label>
+                                                                    <input type="hidden" name="major" value="{{ old('registration_type') === 'student' ? old('major') : '' }}" data-student-lookup-hidden="major">
+                                                                    <input type="text" class="form-control @error('major') is-invalid @enderror" placeholder="{{ __('app.auth.major_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('major') : '' }}" data-student-lookup-field="major" disabled>
+                                                                    @error('major')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
 
-                                                    <div class="col-md-6">
-                                                        <div class="mb-3">
-                                                            <label class="form-label">{{ __('app.auth.email') }}</label>
-                                                            <input type="email" name="email" class="form-control @error('email') is-invalid @enderror" placeholder="{{ __('app.auth.student_email_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('email') : '' }}" required>
-                                                            @error('email')
-                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                            @enderror
-                                                        </div>
-                                                    </div>
+                                                    <div class="col-12 student-account-fields" data-student-account-fields @unless($studentLookupCompleted) hidden @endunless>
+                                                        <div class="row">
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.email') }}</label>
+                                                                    <input type="email" name="email" class="form-control @error('email') is-invalid @enderror" placeholder="{{ __('app.auth.student_email_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('email') : '' }}" data-student-account-input @if($studentLookupCompleted) required @endif>
+                                                                    @error('email')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
 
-                                                    <div class="col-md-6">
-                                                        <div class="mb-3">
-                                                            <label class="form-label">{{ __('app.auth.birth_date') }}</label>
-                                                            <input type="date" name="birth_date" class="form-control @error('birth_date') is-invalid @enderror" value="{{ old('registration_type') === 'student' ? old('birth_date') : '' }}" required>
-                                                            @error('birth_date')
-                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                            @enderror
-                                                        </div>
-                                                    </div>
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.mobile_number') }}</label>
+                                                                    <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror" placeholder="{{ __('app.auth.phone_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('phone') : '' }}" inputmode="numeric" pattern="\d{10}" maxlength="10" data-student-account-input @if($studentLookupCompleted) required @endif>
+                                                                    @error('phone')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
 
-                                                    <div class="col-md-6">
-                                                        <div class="mb-3">
-                                                            <label class="form-label">{{ __('app.auth.gender') }}</label>
-                                                            <select name="gender" class="form-control @error('gender') is-invalid @enderror" required>
-                                                                <option value="">{{ __('app.auth.select_placeholder') }}</option>
-                                                                @foreach (['male', 'female'] as $gender)
-                                                                    <option value="{{ $gender }}" @selected(old('registration_type') === 'student' && old('gender') === $gender)>{{ __('app.auth.gender_options.'.$gender) }}</option>
-                                                                @endforeach
-                                                            </select>
-                                                            @error('gender')
-                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                            @enderror
-                                                        </div>
-                                                    </div>
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.password_label') }}</label>
+                                                                    <input type="password" name="password" class="form-control @error('password') is-invalid @enderror" placeholder="{{ __('app.auth.password_placeholder') }}" data-password-strength data-student-account-input @if($studentLookupCompleted) required @endif>
+                                                                    @include('auth.partials.password-rules')
+                                                                    @error('password')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
 
-                                                    <div class="col-md-6">
-                                                        <div class="mb-3">
-                                                            <label class="form-label">{{ __('app.auth.nationality') }}</label>
-                                                            <input type="text" name="nationality" class="form-control @error('nationality') is-invalid @enderror" placeholder="{{ __('app.auth.nationality_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('nationality') : '' }}" required>
-                                                            @error('nationality')
-                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                            @enderror
-                                                        </div>
-                                                    </div>
-
-                                                    <div class="col-md-6">
-                                                        <div class="mb-3">
-                                                            <label class="form-label">{{ __('app.auth.mobile_number') }}</label>
-                                                            <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror" placeholder="{{ __('app.auth.phone_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('phone') : '' }}" required>
-                                                            @error('phone')
-                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                            @enderror
-                                                        </div>
-                                                    </div>
-
-                                                    <div class="col-md-6">
-                                                        <div class="mb-3">
-                                                            <label class="form-label">{{ __('app.auth.university_name') }}</label>
-                                                            <input type="text" name="university_name" class="form-control @error('university_name') is-invalid @enderror" placeholder="{{ __('app.auth.university_name_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('university_name') : '' }}" required>
-                                                            @error('university_name')
-                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                            @enderror
-                                                        </div>
-                                                    </div>
-
-                                                    <div class="col-md-6">
-                                                        <div class="mb-3">
-                                                            <label class="form-label">{{ __('app.auth.major') }}</label>
-                                                            <input type="text" name="major" class="form-control @error('major') is-invalid @enderror" placeholder="{{ __('app.auth.major_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('major') : '' }}" required>
-                                                            @error('major')
-                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                            @enderror
-                                                        </div>
-                                                    </div>
-
-                                                    <div class="col-md-6">
-                                                        <div class="mb-3">
-                                                            <label class="form-label">{{ __('app.auth.password_label') }}</label>
-                                                            <input type="password" name="password" class="form-control @error('password') is-invalid @enderror" placeholder="{{ __('app.auth.password_placeholder') }}" required>
-                                                            @error('password')
-                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                            @enderror
-                                                        </div>
-                                                    </div>
-
-                                                    <div class="col-md-6">
-                                                        <div class="mb-3">
-                                                            <label class="form-label">{{ __('app.auth.confirm_password') }}</label>
-                                                            <input type="password" name="password_confirmation" class="form-control" placeholder="{{ __('app.auth.password_placeholder') }}" required>
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.confirm_password') }}</label>
+                                                                    <input type="password" name="password_confirmation" class="form-control" placeholder="{{ __('app.auth.password_placeholder') }}" data-student-account-input @if($studentLookupCompleted) required @endif>
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
 
                                                 <div class="registration-actions">
-                                                    <button type="submit" id="register-submit-student" data-register-submit="student" class="btn btn-danger w-100">{{ $registrationTypes['student']['submit_label'] }}</button>
+                                                    <button type="submit" id="register-submit-student" data-register-submit="student" class="btn btn-danger w-100" @disabled(! $studentLookupCompleted)>{{ $registrationTypes['student']['submit_label'] }}</button>
                                                 </div>
                                             </form>
                                         </div>
@@ -206,7 +235,7 @@
                                                         <div class="col-md-6">
                                                             <div class="mb-3">
                                                                 <label class="form-label">{{ __('app.auth.mobile_number') }}</label>
-                                                                <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror" placeholder="{{ __('app.auth.phone_placeholder') }}" value="{{ old('registration_type') === $type ? old('phone') : '' }}" required>
+                                                                <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror" placeholder="{{ __('app.auth.phone_placeholder') }}" value="{{ old('registration_type') === $type ? old('phone') : '' }}" inputmode="numeric" pattern="\d{10}" maxlength="10" required>
                                                                 @error('phone')
                                                                     <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                 @enderror
@@ -246,7 +275,11 @@
                                                         <div class="col-md-6">
                                                             <div class="mb-3">
                                                                 <label class="form-label">{{ __('app.auth.password_label') }}</label>
-                                                                <input type="password" name="password" class="form-control @error('password') is-invalid @enderror" placeholder="{{ __('app.auth.password_placeholder') }}" required>
+                                                                <input type="password" name="password" class="form-control @error('password') is-invalid @enderror" placeholder="{{ __('app.auth.password_placeholder') }}" data-password-strength required>
+                                                                @include('auth.partials.password-rules')
+                                                                @error('password')
+                                                                    <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                @enderror
                                                             </div>
                                                         </div>
 
@@ -282,12 +315,250 @@
 @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', function () {
+            const registerMessages = {
+                checkingNationalId: @json(__('app.auth.checking_national_id')),
+                nationalIdDigits: @json(__('app.auth.national_id_digits')),
+                studentLookupSuccess: @json(__('app.auth.student_lookup_success')),
+                studentLookupFailed: @json(__('app.auth.student_lookup_failed')),
+                studentLookupRequired: @json(__('app.auth.student_lookup_required')),
+                passwordInvalid: @json(__('app.auth.password_strength_invalid')),
+            };
             const forms = document.querySelectorAll('[data-register-form]');
 
             if (!forms.length) {
                 console.error('Register page initialization failed: no registration forms found.');
                 return;
             }
+
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+            const firstError = function (payload) {
+                if (payload && payload.errors) {
+                    const errorGroups = Object.values(payload.errors);
+
+                    for (const group of errorGroups) {
+                        if (Array.isArray(group) && group.length) {
+                            return group[0];
+                        }
+                    }
+                }
+
+                return payload?.message || registerMessages.studentLookupFailed;
+            };
+
+            const digitsOnly = function (input) {
+                input.addEventListener('input', function () {
+                    const cleaned = input.value.replace(/\D+/g, '').slice(0, 10);
+
+                    if (input.value !== cleaned) {
+                        input.value = cleaned;
+                    }
+                });
+            };
+
+            document.querySelectorAll('input[pattern="\\d{10}"]').forEach(digitsOnly);
+
+            const bindPasswordStrength = function (input) {
+                const rules = input.closest('.mb-3')?.querySelector('[data-password-rules]');
+
+                if (!rules) {
+                    return;
+                }
+
+                const ruleItems = {
+                    length: rules.querySelector('[data-password-rule="length"]'),
+                    mixed: rules.querySelector('[data-password-rule="mixed"]'),
+                    number: rules.querySelector('[data-password-rule="number"]'),
+                    symbol: rules.querySelector('[data-password-rule="symbol"]'),
+                };
+
+                const update = function () {
+                    const value = input.value;
+                    const checks = {
+                        length: value.length >= 8,
+                        mixed: /[a-z]/.test(value) && /[A-Z]/.test(value),
+                        number: /\d/.test(value),
+                        symbol: /[^A-Za-z0-9]/.test(value),
+                    };
+                    const isStarted = value.length > 0;
+                    const isValid = Object.values(checks).every(Boolean);
+
+                    rules.hidden = !isStarted;
+
+                    Object.entries(checks).forEach(function ([key, passes]) {
+                        ruleItems[key]?.classList.toggle('is-valid', passes);
+                    });
+
+                    input.setCustomValidity(isStarted && !isValid ? registerMessages.passwordInvalid : '');
+                };
+
+                input.addEventListener('input', update);
+                input.addEventListener('focus', update);
+                update();
+            };
+
+            document.querySelectorAll('[data-password-strength]').forEach(bindPasswordStrength);
+
+            const setupStudentLookup = function () {
+                const form = document.getElementById('register-form-student');
+
+                if (!form) {
+                    return;
+                }
+
+                const nationalId = form.querySelector('[data-student-national-id]');
+                const checkButton = form.querySelector('[data-student-lookup-check]');
+                const message = form.querySelector('[data-student-lookup-message]');
+                const verifiedInput = form.querySelector('[data-student-lookup-verified]');
+                const profileSection = form.querySelector('[data-student-lookup-fields]');
+                const accountSection = form.querySelector('[data-student-account-fields]');
+                const submitButton = form.querySelector('[data-register-submit="student"]');
+                const accountInputs = form.querySelectorAll('[data-student-account-input]');
+                let verifiedNationalId = verifiedInput?.value === '1' ? nationalId?.value : '';
+
+                const setMessage = function (text, state) {
+                    if (!message) {
+                        return;
+                    }
+
+                    message.textContent = text || '';
+                    message.classList.toggle('is-error', state === 'error');
+                    message.classList.toggle('is-success', state === 'success');
+                };
+
+                const setAccountRequired = function (isRequired) {
+                    accountInputs.forEach(function (input) {
+                        input.required = isRequired;
+                    });
+                };
+
+                const fillLookupFields = function (data) {
+                    Object.entries(data || {}).forEach(function ([key, value]) {
+                        const safeValue = value || '';
+                        const hidden = form.querySelector('[data-student-lookup-hidden="' + key + '"]');
+                        const field = form.querySelector('[data-student-lookup-field="' + key + '"]');
+
+                        if (hidden) {
+                            hidden.value = safeValue;
+                        }
+
+                        if (field) {
+                            field.value = safeValue;
+                            field.disabled = true;
+                        }
+                    });
+                };
+
+                const resetLookup = function () {
+                    verifiedNationalId = '';
+
+                    if (verifiedInput) {
+                        verifiedInput.value = '0';
+                    }
+
+                    if (profileSection) {
+                        profileSection.hidden = true;
+                    }
+
+                    if (accountSection) {
+                        accountSection.hidden = true;
+                    }
+
+                    fillLookupFields({
+                        full_name: '',
+                        birth_date: '',
+                        gender: '',
+                        nationality: '',
+                        university_name: '',
+                        major: '',
+                    });
+
+                    setAccountRequired(false);
+
+                    if (submitButton) {
+                        submitButton.disabled = true;
+                    }
+                };
+
+                if (verifiedInput?.value === '1') {
+                    setAccountRequired(true);
+                } else {
+                    resetLookup();
+                }
+
+                nationalId?.addEventListener('input', function () {
+                    if (verifiedInput?.value === '1' && nationalId.value !== verifiedNationalId) {
+                        resetLookup();
+                        setMessage('', null);
+                    }
+                });
+
+                checkButton?.addEventListener('click', async function () {
+                    const value = nationalId?.value || '';
+
+                    if (!/^\d{10}$/.test(value)) {
+                        resetLookup();
+                        setMessage(registerMessages.nationalIdDigits, 'error');
+                        nationalId?.focus();
+                        return;
+                    }
+
+                    checkButton.disabled = true;
+                    setMessage(registerMessages.checkingNationalId, null);
+
+                    try {
+                        const response = await fetch(form.dataset.studentLookupUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Accept': 'application/json',
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': csrfToken,
+                            },
+                            body: JSON.stringify({ national_id: value }),
+                        });
+                        const payload = await response.json();
+
+                        if (!response.ok) {
+                            resetLookup();
+                            setMessage(firstError(payload), 'error');
+                            return;
+                        }
+
+                        fillLookupFields(payload.data || {});
+
+                        if (verifiedInput) {
+                            verifiedInput.value = '1';
+                        }
+
+                        verifiedNationalId = value;
+                        profileSection.hidden = false;
+                        accountSection.hidden = false;
+                        setAccountRequired(true);
+
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                        }
+
+                        setMessage(payload.message || registerMessages.studentLookupSuccess, 'success');
+                    } catch (error) {
+                        resetLookup();
+                        setMessage(registerMessages.studentLookupFailed, 'error');
+                    } finally {
+                        checkButton.disabled = false;
+                    }
+                });
+
+                form.addEventListener('submit', function (event) {
+                    if (verifiedInput?.value !== '1') {
+                        event.preventDefault();
+                        resetLookup();
+                        setMessage(registerMessages.studentLookupRequired, 'error');
+                        nationalId?.focus();
+                    }
+                });
+            };
+
+            setupStudentLookup();
 
             forms.forEach(function (form) {
                 const type = form.dataset.registerForm;

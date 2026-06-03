@@ -26,9 +26,17 @@ return [
         'string' => 'يجب ألا يقل عدد أحرف حقل :attribute عن :min أحرف.',
     ],
     'required' => 'حقل :attribute مطلوب.',
+    'regex' => 'صيغة حقل :attribute غير صحيحة.',
     'string' => 'يجب أن يكون حقل :attribute نصًا.',
     'unique' => 'قيمة حقل :attribute مستخدمة من قبل.',
     'uploaded' => 'فشل رفع حقل :attribute.',
+    'password' => [
+        'letters' => 'يجب أن يحتوي حقل :attribute على حرف واحد على الأقل.',
+        'mixed' => 'يجب أن يحتوي حقل :attribute على حرف كبير وحرف صغير على الأقل.',
+        'numbers' => 'يجب أن يحتوي حقل :attribute على رقم واحد على الأقل.',
+        'symbols' => 'يجب أن يحتوي حقل :attribute على رمز واحد على الأقل.',
+        'uncompromised' => 'قيمة حقل :attribute ظهرت في تسريب بيانات. يرجى اختيار قيمة أخرى.',
+    ],
 
     'attributes' => [
         'address' => 'العنوان',
@@ -64,6 +72,7 @@ return [
         'registration_type' => 'نوع التسجيل',
         'role' => 'الدور',
         'status' => 'الحالة',
+        'student_lookup_verified' => 'التحقق من الرقم الوطني',
         'university_name' => 'اسم الجامعة',
         'user_id' => 'المستخدم',
         'username' => 'اسم المستخدم',

@@ -26,9 +26,17 @@ return [
         'string' => 'The :attribute field must be at least :min characters.',
     ],
     'required' => 'The :attribute field is required.',
+    'regex' => 'The :attribute field format is invalid.',
     'string' => 'The :attribute field must be a string.',
     'unique' => 'The :attribute field has already been taken.',
     'uploaded' => 'The :attribute field failed to upload.',
+    'password' => [
+        'letters' => 'The :attribute field must contain at least one letter.',
+        'mixed' => 'The :attribute field must contain at least one uppercase and one lowercase letter.',
+        'numbers' => 'The :attribute field must contain at least one number.',
+        'symbols' => 'The :attribute field must contain at least one symbol.',
+        'uncompromised' => 'The given :attribute has appeared in a data leak. Please choose a different :attribute.',
+    ],
 
     'attributes' => [
         'address' => 'address',
@@ -64,6 +72,7 @@ return [
         'registration_type' => 'registration type',
         'role' => 'role',
         'status' => 'status',
+        'student_lookup_verified' => 'national ID verification',
         'university_name' => 'university name',
         'user_id' => 'user',
         'username' => 'username',

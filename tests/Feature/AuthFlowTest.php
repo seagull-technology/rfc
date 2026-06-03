@@ -22,19 +22,21 @@ class AuthFlowTest extends TestCase
     {
         $this->seed(AccessControlSeeder::class);
 
+        $lookupResponse = $this->post(route('register.student.lookup'), [
+            'national_id' => '9876543210',
+        ]);
+
+        $lookupResponse->assertOk();
+        $studentData = $lookupResponse->json('data');
+
         $response = $this->post(route('register.store'), [
             'registration_type' => 'student',
-            'full_name' => 'Ali Ahmad',
             'email' => 'ali@example.com',
             'national_id' => '9876543210',
-            'birth_date' => '2002-04-15',
-            'gender' => 'male',
-            'nationality' => 'Jordanian',
             'phone' => '0791234567',
-            'university_name' => 'University of Jordan',
-            'major' => 'Film Studies',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
+            'student_lookup_verified' => '1',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
         ]);
 
         $response->assertRedirect(route('login'));
@@ -44,11 +46,13 @@ class AuthFlowTest extends TestCase
 
         $this->assertSame('student', $user->registration_type);
         $this->assertSame('student', $entity->registration_type);
-        $this->assertSame('2002-04-15', data_get($entity->metadata, 'birth_date'));
-        $this->assertSame('male', data_get($entity->metadata, 'gender'));
-        $this->assertSame('Jordanian', data_get($entity->metadata, 'nationality'));
-        $this->assertSame('University of Jordan', data_get($entity->metadata, 'university_name'));
-        $this->assertSame('Film Studies', data_get($entity->metadata, 'major'));
+        $this->assertSame($studentData['full_name'], $user->name);
+        $this->assertSame($studentData['full_name'], $entity->name_en);
+        $this->assertSame($studentData['birth_date'], data_get($entity->metadata, 'birth_date'));
+        $this->assertSame($studentData['gender'], data_get($entity->metadata, 'gender'));
+        $this->assertSame($studentData['nationality'], data_get($entity->metadata, 'nationality'));
+        $this->assertSame($studentData['university_name'], data_get($entity->metadata, 'university_name'));
+        $this->assertSame($studentData['major'], data_get($entity->metadata, 'major'));
 
         $this->assertDatabaseHas('entity_user', [
             'entity_id' => $entity->getKey(),
@@ -59,6 +63,29 @@ class AuthFlowTest extends TestCase
         app(PermissionRegistrar::class)->setPermissionsTeamId($entity->getKey());
         $this->assertTrue($user->hasRole('applicant_owner'));
         app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+    }
+
+    public function test_student_registration_requires_verified_national_id_lookup(): void
+    {
+        $this->seed(AccessControlSeeder::class);
+
+        $response = $this->from(route('register'))->post(route('register.store'), [
+            'registration_type' => 'student',
+            'email' => 'unchecked@example.com',
+            'national_id' => '9876543211',
+            'phone' => '0791234568',
+            'student_lookup_verified' => '1',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ]);
+
+        $response
+            ->assertRedirect(route('register'))
+            ->assertSessionHasErrors('national_id');
+
+        $this->assertDatabaseMissing('users', [
+            'email' => 'unchecked@example.com',
+        ]);
     }
 
     public function test_company_registration_creates_entity_account_and_stores_uploaded_document(): void
@@ -75,8 +102,8 @@ class AuthFlowTest extends TestCase
             'address' => 'Amman, Jordan',
             'description' => 'Production house',
             'registration_document' => UploadedFile::fake()->create('license.pdf', 250, 'application/pdf'),
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
         ]);
 
         $response->assertRedirect(route('login'));
@@ -367,8 +394,8 @@ class AuthFlowTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSeeText('حقل الاسم الكامل مطلوب.')
             ->assertSeeText('حقل البريد الإلكتروني مطلوب.')
-            ->assertSeeText('حقل الرقم الوطني مطلوب.');
+            ->assertSeeText('حقل الرقم الوطني مطلوب.')
+            ->assertSeeText('حقل رقم الهاتف مطلوب.');
     }
 }
