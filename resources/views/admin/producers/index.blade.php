@@ -225,9 +225,35 @@
                                         </div>
 
                                         @if ($type === 'student')
+                                            @php($studentGender = data_get($entity->metadata, 'gender'))
                                             <div class="col-md-6 mb-3">
                                                 <label class="form-label">{{ __('app.admin.users.national_id') }}</label>
                                                 <div class="form-control bg-light">{{ $entity->national_id ?: $owner?->national_id ?: __('app.dashboard.not_available') }}</div>
+                                            </div>
+
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">{{ __('app.auth.birth_date') }}</label>
+                                                <div class="form-control bg-light">{{ data_get($entity->metadata, 'birth_date', __('app.dashboard.not_available')) }}</div>
+                                            </div>
+
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">{{ __('app.auth.gender') }}</label>
+                                                <div class="form-control bg-light">{{ $studentGender ? __('app.auth.gender_options.'.$studentGender) : __('app.dashboard.not_available') }}</div>
+                                            </div>
+
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">{{ __('app.auth.nationality') }}</label>
+                                                <div class="form-control bg-light">{{ data_get($entity->metadata, 'nationality', __('app.dashboard.not_available')) }}</div>
+                                            </div>
+
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">{{ __('app.auth.university_name') }}</label>
+                                                <div class="form-control bg-light">{{ data_get($entity->metadata, 'university_name', __('app.dashboard.not_available')) }}</div>
+                                            </div>
+
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">{{ __('app.auth.major') }}</label>
+                                                <div class="form-control bg-light">{{ data_get($entity->metadata, 'major', __('app.dashboard.not_available')) }}</div>
                                             </div>
                                         @else
                                             <div class="col-md-12 mb-3">

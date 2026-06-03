@@ -47,6 +47,16 @@
                                                 <input type="hidden" name="registration_type" value="student">
 
                                                 <div class="row">
+                                                    <div class="col-md-12">
+                                                        <div class="mb-3">
+                                                            <label class="form-label">{{ __('app.auth.national_id') }}</label>
+                                                            <input type="text" name="national_id" class="form-control @error('national_id') is-invalid @enderror" placeholder="{{ __('app.auth.national_id_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('national_id') : '' }}" autocomplete="off" required>
+                                                            @error('national_id')
+                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                            @enderror
+                                                        </div>
+                                                    </div>
+
                                                     <div class="col-md-6">
                                                         <div class="mb-3">
                                                             <label class="form-label">{{ __('app.auth.full_name') }}</label>
@@ -69,9 +79,34 @@
 
                                                     <div class="col-md-6">
                                                         <div class="mb-3">
-                                                            <label class="form-label">{{ __('app.auth.national_id') }}</label>
-                                                            <input type="text" name="national_id" class="form-control @error('national_id') is-invalid @enderror" placeholder="{{ __('app.auth.national_id_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('national_id') : '' }}" required>
-                                                            @error('national_id')
+                                                            <label class="form-label">{{ __('app.auth.birth_date') }}</label>
+                                                            <input type="date" name="birth_date" class="form-control @error('birth_date') is-invalid @enderror" value="{{ old('registration_type') === 'student' ? old('birth_date') : '' }}" required>
+                                                            @error('birth_date')
+                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                            @enderror
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="col-md-6">
+                                                        <div class="mb-3">
+                                                            <label class="form-label">{{ __('app.auth.gender') }}</label>
+                                                            <select name="gender" class="form-control @error('gender') is-invalid @enderror" required>
+                                                                <option value="">{{ __('app.auth.select_placeholder') }}</option>
+                                                                @foreach (['male', 'female'] as $gender)
+                                                                    <option value="{{ $gender }}" @selected(old('registration_type') === 'student' && old('gender') === $gender)>{{ __('app.auth.gender_options.'.$gender) }}</option>
+                                                                @endforeach
+                                                            </select>
+                                                            @error('gender')
+                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                            @enderror
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="col-md-6">
+                                                        <div class="mb-3">
+                                                            <label class="form-label">{{ __('app.auth.nationality') }}</label>
+                                                            <input type="text" name="nationality" class="form-control @error('nationality') is-invalid @enderror" placeholder="{{ __('app.auth.nationality_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('nationality') : '' }}" required>
+                                                            @error('nationality')
                                                                 <div class="invalid-feedback d-block">{{ $message }}</div>
                                                             @enderror
                                                         </div>
@@ -82,6 +117,26 @@
                                                             <label class="form-label">{{ __('app.auth.mobile_number') }}</label>
                                                             <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror" placeholder="{{ __('app.auth.phone_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('phone') : '' }}" required>
                                                             @error('phone')
+                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                            @enderror
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="col-md-6">
+                                                        <div class="mb-3">
+                                                            <label class="form-label">{{ __('app.auth.university_name') }}</label>
+                                                            <input type="text" name="university_name" class="form-control @error('university_name') is-invalid @enderror" placeholder="{{ __('app.auth.university_name_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('university_name') : '' }}" required>
+                                                            @error('university_name')
+                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                            @enderror
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="col-md-6">
+                                                        <div class="mb-3">
+                                                            <label class="form-label">{{ __('app.auth.major') }}</label>
+                                                            <input type="text" name="major" class="form-control @error('major') is-invalid @enderror" placeholder="{{ __('app.auth.major_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('major') : '' }}" required>
+                                                            @error('major')
                                                                 <div class="invalid-feedback d-block">{{ $message }}</div>
                                                             @enderror
                                                         </div>

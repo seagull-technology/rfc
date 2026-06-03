@@ -10,6 +10,7 @@
     };
     $primaryEntityDocumentName = data_get($primaryEntity?->metadata, 'registration_document_name');
     $primaryEntityDocumentMime = data_get($primaryEntity?->metadata, 'registration_document_mime');
+    $primaryEntityStudentGender = data_get($primaryEntity?->metadata, 'gender');
     $reviewData = (array) data_get($primaryEntity?->metadata, 'review', []);
     $profileStats = $userAnalytics['stats'];
     $chartData = $userAnalytics['charts'];
@@ -345,14 +346,21 @@
                             <small class="text-muted d-block">{{ __('app.admin.users.status') }}</small>
                             <div>{{ $user->localizedStatus() }}</div>
                         </div>
-                        <div class="col-md-6">
-                            <small class="text-muted d-block">{{ __('app.auth.registration_number') }}</small>
-                            <div>{{ $primaryEntity?->registration_no ?: __('app.dashboard.not_available') }}</div>
-                        </div>
-                        <div class="col-md-6">
-                            <small class="text-muted d-block">{{ __('app.auth.organization_national_id') }}</small>
-                            <div>{{ $primaryEntity?->national_id ?: __('app.dashboard.not_available') }}</div>
-                        </div>
+                        @if ($primaryEntity?->registration_type === 'student')
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.admin.users.national_id') }}</small>
+                                <div>{{ $primaryEntity?->national_id ?: $user->national_id ?: __('app.dashboard.not_available') }}</div>
+                            </div>
+                        @else
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.registration_number') }}</small>
+                                <div>{{ $primaryEntity?->registration_no ?: __('app.dashboard.not_available') }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.organization_national_id') }}</small>
+                                <div>{{ $primaryEntity?->national_id ?: __('app.dashboard.not_available') }}</div>
+                            </div>
+                        @endif
                         <div class="col-md-6">
                             <small class="text-muted d-block">{{ __('app.auth.email') }}</small>
                             <div>{{ $primaryEntity?->email ?: $user->email ?: __('app.dashboard.not_available') }}</div>
@@ -361,14 +369,37 @@
                             <small class="text-muted d-block">{{ __('app.auth.mobile_number') }}</small>
                             <div>{{ $primaryEntity?->phone ?: $user->phone ?: __('app.dashboard.not_available') }}</div>
                         </div>
-                        <div class="col-12">
-                            <small class="text-muted d-block">{{ __('app.dashboard.address') }}</small>
-                            <div>{{ data_get($primaryEntity?->metadata, 'address', __('app.dashboard.not_available')) }}</div>
-                        </div>
-                        <div class="col-12">
-                            <small class="text-muted d-block">{{ __('app.dashboard.organization_description') }}</small>
-                            <div>{{ data_get($primaryEntity?->metadata, 'description', __('app.dashboard.not_available')) }}</div>
-                        </div>
+                        @if ($primaryEntity?->registration_type === 'student')
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.birth_date') }}</small>
+                                <div>{{ data_get($primaryEntity?->metadata, 'birth_date', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.gender') }}</small>
+                                <div>{{ $primaryEntityStudentGender ? __('app.auth.gender_options.'.$primaryEntityStudentGender) : __('app.dashboard.not_available') }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.nationality') }}</small>
+                                <div>{{ data_get($primaryEntity?->metadata, 'nationality', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.university_name') }}</small>
+                                <div>{{ data_get($primaryEntity?->metadata, 'university_name', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.major') }}</small>
+                                <div>{{ data_get($primaryEntity?->metadata, 'major', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                        @else
+                            <div class="col-12">
+                                <small class="text-muted d-block">{{ __('app.dashboard.address') }}</small>
+                                <div>{{ data_get($primaryEntity?->metadata, 'address', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                            <div class="col-12">
+                                <small class="text-muted d-block">{{ __('app.dashboard.organization_description') }}</small>
+                                <div>{{ data_get($primaryEntity?->metadata, 'description', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                        @endif
                         <div class="col-md-6">
                             <small class="text-muted d-block">{{ __('app.admin.entities.registration_document_name') }}</small>
                             <div>{{ $primaryEntityDocumentName ?: __('app.dashboard.not_available') }}</div>

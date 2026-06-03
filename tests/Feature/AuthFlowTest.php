@@ -27,7 +27,12 @@ class AuthFlowTest extends TestCase
             'full_name' => 'Ali Ahmad',
             'email' => 'ali@example.com',
             'national_id' => '9876543210',
+            'birth_date' => '2002-04-15',
+            'gender' => 'male',
+            'nationality' => 'Jordanian',
             'phone' => '0791234567',
+            'university_name' => 'University of Jordan',
+            'major' => 'Film Studies',
             'password' => 'password123',
             'password_confirmation' => 'password123',
         ]);
@@ -39,6 +44,11 @@ class AuthFlowTest extends TestCase
 
         $this->assertSame('student', $user->registration_type);
         $this->assertSame('student', $entity->registration_type);
+        $this->assertSame('2002-04-15', data_get($entity->metadata, 'birth_date'));
+        $this->assertSame('male', data_get($entity->metadata, 'gender'));
+        $this->assertSame('Jordanian', data_get($entity->metadata, 'nationality'));
+        $this->assertSame('University of Jordan', data_get($entity->metadata, 'university_name'));
+        $this->assertSame('Film Studies', data_get($entity->metadata, 'major'));
 
         $this->assertDatabaseHas('entity_user', [
             'entity_id' => $entity->getKey(),

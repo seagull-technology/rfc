@@ -4,11 +4,31 @@
     }
 
     .registration-card {
+        position: relative;
         width: min(100%, 980px);
         border: 1px solid rgba(255, 255, 255, .14);
         border-radius: .75rem;
         background: rgba(31, 33, 38, .9);
+        overflow: hidden;
         padding: clamp(1.25rem, 3vw, 2rem);
+    }
+
+    .registration-card::before {
+        content: "";
+        position: absolute;
+        inset: 1.25rem;
+        background-image: url('{{ asset('images/logo.svg') }}');
+        background-position: center 1rem;
+        background-repeat: no-repeat;
+        background-size: min(38rem, 82%) auto;
+        opacity: .045;
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    .registration-card > * {
+        position: relative;
+        z-index: 1;
     }
 
     .registration-card-wide {
@@ -160,6 +180,7 @@
     @media (max-width: 991.98px) {
         .registration-tabs {
             display: flex;
+            flex-wrap: nowrap;
             overflow-x: auto;
             padding-bottom: .25rem;
             scrollbar-width: thin;
@@ -173,6 +194,17 @@
     @media (max-width: 767.98px) {
         .registration-card {
             padding: 1rem;
+        }
+
+        .registration-tabs {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            overflow-x: visible;
+            padding-bottom: 0;
+        }
+
+        .registration-tabs .nav-item {
+            flex: initial;
         }
 
         .registration-summary-grid {

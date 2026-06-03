@@ -49,7 +49,12 @@ class RegisterController extends Controller
             'full_name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
             'national_id' => ['required', 'string', 'max:50', Rule::unique('users', 'national_id'), Rule::unique('entities', 'national_id')],
+            'birth_date' => ['required', 'date'],
+            'gender' => ['required', Rule::in(['male', 'female'])],
+            'nationality' => ['required', 'string', 'max:100'],
             'phone' => ['required', 'string', 'max:30', Rule::unique('users', 'phone')],
+            'university_name' => ['required', 'string', 'max:255'],
+            'major' => ['required', 'string', 'max:255'],
             'password' => ['required', 'confirmed', 'min:8'],
         ]);
 
@@ -79,6 +84,13 @@ class RegisterController extends Controller
                 'phone' => $data['phone'],
                 'registration_type' => 'student',
                 'status' => 'active',
+                'metadata' => [
+                    'birth_date' => $data['birth_date'],
+                    'gender' => $data['gender'],
+                    'nationality' => $data['nationality'],
+                    'university_name' => $data['university_name'],
+                    'major' => $data['major'],
+                ],
             ]);
 
             $entity->users()->attach($user->getKey(), [

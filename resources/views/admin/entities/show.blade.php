@@ -10,6 +10,7 @@
     };
     $registrationDocumentName = data_get($entity->metadata, 'registration_document_name');
     $registrationDocumentMime = data_get($entity->metadata, 'registration_document_mime');
+    $studentGender = data_get($entity->metadata, 'gender');
     $profileStats = $entityAnalytics['stats'];
     $chartData = $entityAnalytics['charts'];
     $translateOrFallback = static function (string $translationKey, string $fallback): string {
@@ -297,14 +298,21 @@
                             <small class="text-muted d-block">{{ __('app.admin.entities.code') }}</small>
                             <div>{{ $entity->code ?: __('app.dashboard.not_available') }}</div>
                         </div>
-                        <div class="col-md-6">
-                            <small class="text-muted d-block">{{ __('app.auth.registration_number') }}</small>
-                            <div>{{ $entity->registration_no ?: __('app.dashboard.not_available') }}</div>
-                        </div>
-                        <div class="col-md-6">
-                            <small class="text-muted d-block">{{ __('app.auth.organization_national_id') }}</small>
-                            <div>{{ $entity->national_id ?: __('app.dashboard.not_available') }}</div>
-                        </div>
+                        @if ($entity->registration_type === 'student')
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.admin.users.national_id') }}</small>
+                                <div>{{ $entity->national_id ?: __('app.dashboard.not_available') }}</div>
+                            </div>
+                        @else
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.registration_number') }}</small>
+                                <div>{{ $entity->registration_no ?: __('app.dashboard.not_available') }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.organization_national_id') }}</small>
+                                <div>{{ $entity->national_id ?: __('app.dashboard.not_available') }}</div>
+                            </div>
+                        @endif
                         <div class="col-md-6">
                             <small class="text-muted d-block">{{ __('app.auth.email') }}</small>
                             <div>{{ $entity->email ?: __('app.dashboard.not_available') }}</div>
@@ -313,14 +321,37 @@
                             <small class="text-muted d-block">{{ __('app.auth.mobile_number') }}</small>
                             <div>{{ $entity->phone ?: __('app.dashboard.not_available') }}</div>
                         </div>
-                        <div class="col-12">
-                            <small class="text-muted d-block">{{ __('app.dashboard.address') }}</small>
-                            <div>{{ data_get($entity->metadata, 'address', __('app.dashboard.not_available')) }}</div>
-                        </div>
-                        <div class="col-12">
-                            <small class="text-muted d-block">{{ __('app.dashboard.organization_description') }}</small>
-                            <div>{{ data_get($entity->metadata, 'description', __('app.dashboard.not_available')) }}</div>
-                        </div>
+                        @if ($entity->registration_type === 'student')
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.birth_date') }}</small>
+                                <div>{{ data_get($entity->metadata, 'birth_date', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.gender') }}</small>
+                                <div>{{ $studentGender ? __('app.auth.gender_options.'.$studentGender) : __('app.dashboard.not_available') }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.nationality') }}</small>
+                                <div>{{ data_get($entity->metadata, 'nationality', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.university_name') }}</small>
+                                <div>{{ data_get($entity->metadata, 'university_name', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.major') }}</small>
+                                <div>{{ data_get($entity->metadata, 'major', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                        @else
+                            <div class="col-12">
+                                <small class="text-muted d-block">{{ __('app.dashboard.address') }}</small>
+                                <div>{{ data_get($entity->metadata, 'address', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                            <div class="col-12">
+                                <small class="text-muted d-block">{{ __('app.dashboard.organization_description') }}</small>
+                                <div>{{ data_get($entity->metadata, 'description', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                        @endif
                     </div>
                 </div>
             </div>
