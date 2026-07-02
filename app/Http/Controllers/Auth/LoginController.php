@@ -14,8 +14,7 @@ class LoginController extends Controller
 {
     private function shouldAllowDebugFallback(): bool
     {
-        return app()->environment('local')
-            && filter_var(env('OTP_DEBUG_FALLBACK', false), FILTER_VALIDATE_BOOL);
+        return filter_var(env('OTP_DEBUG_FALLBACK', false), FILTER_VALIDATE_BOOL);
     }
 
     public function create(): View

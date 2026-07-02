@@ -15,7 +15,7 @@ class OtpController extends Controller
     private function shouldShowDebugCode(): bool
     {
         return app()->environment(['local', 'testing'])
-            || (app()->environment('local') && filter_var(env('OTP_DEBUG_FALLBACK', false), FILTER_VALIDATE_BOOL));
+            || filter_var(env('OTP_DEBUG_FALLBACK', false), FILTER_VALIDATE_BOOL);
     }
 
     public function create(Request $request): View|RedirectResponse
@@ -81,7 +81,7 @@ class OtpController extends Controller
             userAgent: (string) $request->userAgent(),
         );
 
-        if (! $issuedOtp['sms']['ok']) {
+        if (! $issuedOtp['sms']['ok'] && ! $this->shouldShowDebugCode()) {
             return back()->withErrors([
                 'code' => __('app.auth.otp_resend_failed'),
             ]);
