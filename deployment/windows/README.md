@@ -104,9 +104,13 @@ C:\php\php.exe artisan key:generate --force
 C:\php\php.exe artisan migrate --seed --force
 C:\php\php.exe artisan storage:link
 C:\php\php.exe artisan config:cache
-C:\php\php.exe artisan route:cache
+C:\php\php.exe artisan route:clear
 C:\php\php.exe artisan view:cache
 ```
+
+Keep route cache disabled for now. The portal uses localized `/ar` and `/en`
+routes through `mcamara/laravel-localization`; caching routes can expose the
+non-prefixed route table and make `/ar/login` return 404.
 
 ## Permissions
 
