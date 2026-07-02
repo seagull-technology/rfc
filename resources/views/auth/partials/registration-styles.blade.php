@@ -79,6 +79,7 @@
     }
 
     .registration-tabs {
+        background: transparent !important;
         display: grid;
         gap: .75rem;
         grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -91,7 +92,8 @@
 
     .registration-tabs .nav-link {
         align-items: center;
-        border: 1px solid rgba(255, 255, 255, .16);
+        background: transparent !important;
+        border: 1px solid transparent;
         border-radius: .5rem;
         color: rgba(255, 255, 255, .78);
         display: flex;
@@ -99,13 +101,22 @@
         justify-content: center;
         min-height: 3.25rem;
         padding: .75rem .875rem;
+        box-shadow: none;
         text-align: center;
         white-space: normal;
     }
 
+    .registration-tabs .nav-link:not(.active):hover,
+    .registration-tabs .nav-link:not(.active):focus {
+        background: transparent !important;
+        border-color: transparent;
+        box-shadow: none;
+        color: var(--bs-white);
+    }
+
     .registration-tabs .nav-link.active {
         border-color: rgba(var(--bs-danger-rgb), .85);
-        background: var(--bs-danger);
+        background: var(--bs-danger) !important;
         color: var(--bs-white);
     }
 
@@ -141,6 +152,36 @@
         white-space: nowrap;
     }
 
+    .registration-password-control {
+        position: relative;
+    }
+
+    .registration-password-control .form-control {
+        padding-inline-end: 3rem;
+    }
+
+    .registration-password-toggle {
+        align-items: center;
+        background: transparent;
+        border: 0;
+        color: rgba(255, 255, 255, .72);
+        display: inline-flex;
+        font-size: 1.1rem;
+        inset-block: 0;
+        inset-inline-end: .25rem;
+        justify-content: center;
+        margin: auto 0;
+        padding: 0;
+        position: absolute;
+        width: 2.5rem;
+    }
+
+    .registration-password-toggle:hover,
+    .registration-password-toggle:focus {
+        color: var(--bs-white);
+        outline: none;
+    }
+
     .registration-inline-feedback {
         color: rgba(255, 255, 255, .72);
         font-size: .875rem;
@@ -158,7 +199,9 @@
     }
 
     .student-lookup-fields,
-    .student-account-fields {
+    .student-account-fields,
+    .company-lookup-fields,
+    .company-account-fields {
         margin-top: .25rem;
     }
 

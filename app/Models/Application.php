@@ -3,10 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 class Application extends Model
@@ -57,6 +59,13 @@ class Application extends Model
             'estimated_budget' => 'decimal:2',
             'metadata' => 'array',
         ];
+    }
+
+    public function scopeNewestFirst(Builder $query): Builder
+    {
+        return $query
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
     }
 
     public function entity(): BelongsTo
@@ -114,6 +123,39 @@ class Application extends Model
         return $this->hasMany(ApplicationOfficialLetter::class)->latest();
     }
 
+    public function wrapReport(): HasOne
+    {
+        return $this->hasOne(ApplicationWrapReport::class);
+    }
+
+    public function wrapReportAvailableDate(): ?Carbon
+    {
+        $wrapEndDate = data_get($this->metadata, 'schedule.phases.wrap.end_date');
+
+        if (! filled($wrapEndDate)) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse((string) $wrapEndDate)->startOfDay();
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function wrapReportIsAvailable(?Carbon $today = null): bool
+    {
+        $availableDate = $this->wrapReportAvailableDate();
+
+        if (! $availableDate) {
+            return false;
+        }
+
+        $today ??= now()->startOfDay();
+
+        return $today->greaterThanOrEqualTo($availableDate);
+    }
+
     public function localizedStatus(): string
     {
         return __('app.statuses.'.Str::lower($this->status ?: 'draft'));
@@ -137,6 +179,11 @@ class Application extends Model
     public function canReceiveApplicantDocuments(): bool
     {
         return ! in_array($this->status, ['approved', 'rejected'], true);
+    }
+
+    public function canUpdateApplicantAnnex(): bool
+    {
+        return $this->status !== 'draft' && $this->canReceiveApplicantDocuments();
     }
 
     public function finalDecisionIssued(): bool
@@ -166,9 +213,22 @@ class Application extends Model
         return $this->authorityApprovals->contains(fn (ApplicationAuthorityApproval $approval): bool => $approval->status === 'rejected');
     }
 
+    public function authorityRoutingStarted(): bool
+    {
+        if ($this->relationLoaded('authorityApprovals')) {
+            return $this->authorityApprovals->isNotEmpty();
+        }
+
+        return $this->authorityApprovals()->exists();
+    }
+
     public function canBeFinallyDecided(): bool
     {
         if (! in_array($this->status, ['submitted', 'under_review', 'needs_clarification', 'approved', 'rejected'], true)) {
+            return false;
+        }
+
+        if (! $this->authorityRoutingStarted()) {
             return false;
         }
 

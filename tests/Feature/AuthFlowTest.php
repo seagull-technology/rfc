@@ -8,7 +8,9 @@ use App\Notifications\RegistrationCompletionRequestedNotification;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\PermissionRegistrar;
@@ -46,6 +48,8 @@ class AuthFlowTest extends TestCase
 
         $this->assertSame('student', $user->registration_type);
         $this->assertSame('student', $entity->registration_type);
+        $this->assertSame('pending_review', $user->status);
+        $this->assertSame('pending_review', $entity->status);
         $this->assertSame($studentData['full_name'], $user->name);
         $this->assertSame($studentData['full_name'], $entity->name_en);
         $this->assertSame($studentData['birth_date'], data_get($entity->metadata, 'birth_date'));
@@ -88,20 +92,102 @@ class AuthFlowTest extends TestCase
         ]);
     }
 
+    public function test_student_lookup_uses_mohe_sanad_when_gsb_is_configured(): void
+    {
+        $this->seed(AccessControlSeeder::class);
+
+        Cache::forget('gsb:mohe_sanad:current:9876543213');
+
+        config()->set('services.gsb.enabled', true);
+        config()->set('services.gsb.client_id', 'client-id');
+        config()->set('services.gsb.client_secret', 'client-secret');
+        config()->set('services.gsb.services.mohe_sanad.enabled', true);
+        config()->set('services.gsb.services.mohe_sanad.base_url', 'https://api-gateway.g2b.gsb.gov.jo:9443');
+        config()->set('services.gsb.services.mohe_sanad.path', '/porg-gsb/g2b-catalog/api/mohe-sanad');
+
+        Http::fake([
+            'https://api-gateway.g2b.gsb.gov.jo:9443/porg-gsb/g2b-catalog/api/mohe-sanad' => Http::response([
+                'code' => null,
+                'data' => [[
+                    'STUDENT_NAME' => 'MOHE Student',
+                    'BIRTH_DATE' => '2002-01-02',
+                    'gender_desc' => 'Female',
+                    'NATIONALITY' => 'Jordanian',
+                    'INSTITUTE_NAME' => 'Yarmouk University',
+                    'S_MAJOR_NAME' => 'Cinema Production',
+                    'degree' => 'Bachelor',
+                    'student_status' => 'currently studying',
+                ]],
+            ], 200),
+        ]);
+
+        $response = $this->post(route('register.student.lookup'), [
+            'national_id' => '9876543213',
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.full_name', 'MOHE Student')
+            ->assertJsonPath('data.birth_date', '2002-01-02')
+            ->assertJsonPath('data.gender', 'female')
+            ->assertJsonPath('data.university_name', 'Yarmouk University')
+            ->assertJsonPath('data.major', 'Cinema Production');
+    }
+
+    public function test_pending_student_user_cannot_sign_in_before_admin_approval(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $this->post(route('register.student.lookup'), [
+            'national_id' => '9876543212',
+        ])->assertOk();
+
+        $this->post(route('register.store'), [
+            'registration_type' => 'student',
+            'email' => 'pending-student@example.com',
+            'national_id' => '9876543212',
+            'phone' => '0791234569',
+            'student_lookup_verified' => '1',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ])->assertRedirect(route('login'));
+
+        $response = $this->from(route('login'))->post(route('login.store'), [
+            'identifier' => 'pending-student@example.com',
+            'password' => 'Password123!',
+        ]);
+
+        $response
+            ->assertRedirect(route('login'))
+            ->assertSessionHasErrors([
+                'identifier' => 'Your registration is pending admin approval. You can sign in after your account has been approved.',
+            ]);
+
+        $this->assertGuest();
+    }
+
     public function test_company_registration_creates_entity_account_and_stores_uploaded_document(): void
     {
         Storage::fake('local');
         $this->seed(AccessControlSeeder::class);
 
+        $lookupResponse = $this->post(route('register.company.lookup'), [
+            'registration_number' => 'REG-1122',
+        ]);
+
+        $lookupResponse->assertOk();
+        $companyData = $lookupResponse->json('data');
+
         $response = $this->post(route('register.store'), [
             'registration_type' => 'company',
-            'entity_name' => 'Future Films',
             'registration_number' => 'REG-1122',
             'email' => 'info@futurefilms.test',
             'phone' => '0790000001',
             'address' => 'Amman, Jordan',
             'description' => 'Production house',
             'registration_document' => UploadedFile::fake()->create('license.pdf', 250, 'application/pdf'),
+            'company_lookup_verified' => '1',
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
         ]);
@@ -115,9 +201,39 @@ class AuthFlowTest extends TestCase
         $this->assertSame('company', $user->registration_type);
         $this->assertSame('pending_review', $entity->status);
         $this->assertSame('pending_review', $user->status);
+        $this->assertSame($companyData['entity_name'], $entity->name_en);
+        $this->assertSame($companyData['company_registration_date'], data_get($entity->metadata, 'company_registration_date'));
+        $this->assertSame($companyData['company_capital'], data_get($entity->metadata, 'company_capital'));
         $this->assertSame('Amman, Jordan', data_get($entity->metadata, 'address'));
         $this->assertSame('Production house', data_get($entity->metadata, 'description'));
         Storage::disk('local')->assertExists((string) data_get($entity->metadata, 'registration_document_path'));
+    }
+
+    public function test_company_registration_requires_verified_commercial_registration_lookup(): void
+    {
+        Storage::fake('local');
+        $this->seed(AccessControlSeeder::class);
+
+        $response = $this->from(route('register'))->post(route('register.store'), [
+            'registration_type' => 'company',
+            'registration_number' => 'REG-3344',
+            'email' => 'unchecked-company@example.com',
+            'phone' => '0790000002',
+            'address' => 'Amman, Jordan',
+            'description' => 'Production house',
+            'registration_document' => UploadedFile::fake()->create('license.pdf', 250, 'application/pdf'),
+            'company_lookup_verified' => '1',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ]);
+
+        $response
+            ->assertRedirect(route('register'))
+            ->assertSessionHasErrors('registration_number');
+
+        $this->assertDatabaseMissing('users', [
+            'email' => 'unchecked-company@example.com',
+        ]);
     }
 
     public function test_pending_organization_user_can_sign_in_and_is_sent_to_registration_status_page(): void

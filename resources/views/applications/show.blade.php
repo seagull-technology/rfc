@@ -5,10 +5,55 @@
     $director = data_get($metadata, 'director', []);
     $international = data_get($metadata, 'international', []);
     $requirements = data_get($metadata, 'requirements', []);
-    $formattedBudget = $application->estimated_budget ? number_format((float) $application->estimated_budget, 2) : __('app.dashboard.not_available');
+    $schedulePhases = data_get($metadata, 'schedule.phases', []);
+    $budgetMeta = data_get($metadata, 'budget', []);
+    $formatMoney = static fn ($value): string => filled($value) ? number_format((float) $value, 2) : __('app.dashboard.not_available');
+    $formattedBudget = $formatMoney($application->estimated_budget);
+    $formattedLocalSpend = $formatMoney(data_get($budgetMeta, 'local_spend_estimate'));
+    $asDate = static function ($value): ?\Carbon\CarbonInterface {
+        if ($value instanceof \Carbon\CarbonInterface) {
+            return $value;
+        }
+
+        if (blank($value)) {
+            return null;
+        }
+
+        try {
+            return \Illuminate\Support\Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
+    };
+    $formatDate = static fn ($value): string => ($asDate($value)?->format('Y-m-d')) ?: __('app.dashboard.not_available');
+    $formatDateRange = static function ($start, $end) use ($formatDate): string {
+        $startLabel = $formatDate($start);
+        $endLabel = $formatDate($end);
+
+        if ($startLabel === __('app.dashboard.not_available') && $endLabel === __('app.dashboard.not_available')) {
+            return __('app.dashboard.not_available');
+        }
+
+        return $startLabel.' - '.$endLabel;
+    };
     $requiredApprovals = collect(data_get($requirements, 'required_approvals', []))
         ->map(fn ($approval) => __('app.applications.required_approval_options.'.$approval))
         ->join('، ') ?: __('app.applications.no_required_approvals');
+    $issuedOfficialLetters = $officialLetters
+        ->where('status', 'issued')
+        ->values();
+    $officialLetterForApproval = static function ($approval) use ($issuedOfficialLetters) {
+        return $issuedOfficialLetters
+            ->filter(function ($letter) use ($approval): bool {
+                if ((int) $letter->application_authority_approval_id === (int) $approval->getKey()) {
+                    return true;
+                }
+
+                return $approval->entity_id !== null && (int) $letter->target_entity_id === (int) $approval->entity_id;
+            })
+            ->sortByDesc(fn ($letter): int => ($letter->issued_at ?? $letter->updated_at ?? $letter->created_at)?->timestamp ?? 0)
+            ->first();
+    };
 
     $statusBadgeClass = match ($application->status) {
         'draft' => 'secondary',
@@ -27,43 +72,94 @@
         'submitted', 'under_review', 'in_review' => 'warning',
         default => 'info',
     };
+    $rfcDecisionStatus = data_get($metadata, 'rfc_decision.status');
+    $rfcDecisionNote = data_get($metadata, 'rfc_decision.note') ?: $application->review_note;
+    $rfcFacilitationIssuedAt = $asDate(data_get($metadata, 'rfc_decision.facilitation_issued_at'));
+    $rfcDate = $rfcFacilitationIssuedAt
+        ?? $asDate($application->reviewed_at)
+        ?? $asDate($application->submitted_at)
+        ?? $asDate($application->created_at);
+    $rfcTimelineStatus = match (true) {
+        $rfcDecisionStatus === 'rejected', $application->status === 'rejected' => 'rejected',
+        $rfcDecisionStatus === 'returned', $application->status === 'needs_clarification' => 'needs_clarification',
+        $rfcDecisionStatus === 'accepted' || $rfcFacilitationIssuedAt !== null => 'approved',
+        in_array($application->status, ['submitted', 'under_review'], true) => 'under_review',
+        default => $application->status,
+    };
+    $rfcTimelineStatusLabel = match (true) {
+        $rfcDecisionStatus === 'accepted' || $rfcFacilitationIssuedAt !== null => __('app.rfc_decision.statuses.accepted'),
+        $rfcDecisionStatus === 'returned' => __('app.rfc_decision.statuses.returned'),
+        $rfcDecisionStatus === 'rejected' => __('app.rfc_decision.statuses.rejected'),
+        default => $application->localizedStatus(),
+    };
+    $rfcTimelineNote = match (true) {
+        $rfcFacilitationIssuedAt !== null => __('app.rfc_decision.history.facilitation_issued'),
+        $rfcDecisionStatus === 'accepted' => __('app.rfc_decision.history.accepted'),
+        $rfcDecisionStatus === 'returned' || $rfcDecisionStatus === 'rejected' => $rfcDecisionNote,
+        default => $application->localizedStage(),
+    };
+
     $timelineEvents = collect([
         [
-            'label' => __('app.workflow.current_stage'),
-            'date' => $application->updated_at,
-            'status' => $application->status,
-            'status_label' => $application->localizedStatus(),
-            'note' => $application->localizedStage(),
+            'label' => __('app.contact_center.stations.rfc'),
+            'date' => $rfcDate,
+            'status' => $rfcTimelineStatus,
+            'status_label' => $rfcTimelineStatusLabel,
+            'note' => $rfcTimelineNote,
             'meta' => null,
         ],
     ]);
 
-    foreach ($authorityApprovals as $approval) {
+    $authorityApprovals
+        ->groupBy(fn ($approval): string => $approval->entity_id ? 'entity-'.$approval->entity_id : 'code-'.$approval->authority_code)
+        ->map(fn ($group) => $group
+            ->sortByDesc(fn ($approval): int => ($asDate($approval->decided_at ?? $approval->updated_at ?? $approval->created_at)?->timestamp ?? 0))
+            ->first())
+        ->sortBy(fn ($approval): int => $approval->id)
+        ->each(function ($approval) use ($timelineEvents, $officialLetterForApproval, $asDate) {
+            $approvalLetter = $officialLetterForApproval($approval);
+
+            $timelineEvents->push([
+                'label' => $approval->localizedAuthority(),
+                'date' => $asDate($approval->decided_at ?? $approval->assigned_at ?? $approval->updated_at ?? $approval->created_at),
+                'status' => $approval->status,
+                'status_label' => $approval->localizedStatus(),
+                'note' => $approval->note,
+                'meta' => $approvalLetter?->serial_number,
+            ]);
+        });
+
+    if ($application->finalDecisionIssued()) {
         $timelineEvents->push([
-            'label' => $approval->localizedAuthority(),
-            'date' => $approval->decided_at ?? $approval->updated_at,
-            'status' => $approval->status,
-            'status_label' => $approval->localizedStatus(),
-            'note' => $approval->note,
+            'label' => __('app.final_decision.title'),
+            'date' => $asDate($application->final_decision_issued_at),
+            'status' => $application->final_decision_status === 'rejected' ? 'rejected' : 'approved',
+            'status_label' => __('app.final_decision.issued_summary'),
+            'note' => filled($application->final_permit_number)
+                ? __('app.final_decision.history.issued', [
+                    'decision' => __('app.statuses.'.($application->final_decision_status ?: 'approved')),
+                    'permit_number' => $application->final_permit_number,
+                ])
+                : $application->final_decision_note,
             'meta' => null,
         ]);
     }
 
-    foreach ($statusHistory as $event) {
-        $timelineEvents->push([
-            'label' => $event->localizedStatus(),
-            'date' => $event->happened_at,
-            'status' => $event->status,
-            'status_label' => $event->localizedStatus(),
-            'note' => $event->note,
-            'meta' => $event->user?->displayName(),
-        ]);
-    }
-
     $timelineEvents = $timelineEvents
-        ->sortByDesc(fn (array $event) => $event['date']?->timestamp ?? 0)
+        ->sortBy(fn (array $event) => $event['date']?->timestamp ?? PHP_INT_MAX)
         ->values();
     $latestCorrespondence = $correspondences->first();
+    $approvalBadgeClass = static fn (string $status): string => match ($status) {
+        'approved' => 'success',
+        'rejected' => 'danger',
+        'needs_revision' => 'warning',
+        default => 'warning',
+    };
+    $approvalTextClass = static fn (string $status): string => match ($status) {
+        'approved' => 'success',
+        'rejected' => 'danger',
+        default => 'warning',
+    };
     $requestState = match ($application->status) {
         'draft' => [
             'title' => __('app.request_state.draft_title'),
@@ -94,7 +190,7 @@
 
 @extends('layouts.portal-dashboard', ['title' => $title])
 
-@section('page_layout_class', 'applicant-request-show-layout')
+@section('page_layout_class', 'applicant-request-show-layout py-0')
 
 @push('styles')
     <style>
@@ -226,10 +322,59 @@
             font-size: .875rem;
             margin-top: .5rem;
         }
+
+        .applicant-request-show-layout .applicant-approval-feed {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .applicant-request-show-layout .applicant-approval-feed-item {
+            border-bottom: 1px solid rgba(17, 24, 39, .1);
+            padding: 1rem 0;
+        }
+
+        .applicant-request-show-layout .applicant-approval-feed-item:first-child {
+            padding-top: 0;
+        }
+
+        .applicant-request-show-layout .applicant-approval-feed-item:last-child {
+            border-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .applicant-request-show-layout .applicant-approval-avatar {
+            background: #fff;
+            border: 1px solid rgba(17, 24, 39, .08);
+            flex: 0 0 auto;
+            height: 50px;
+            object-fit: contain;
+            padding: .35rem;
+            width: 50px;
+        }
+
+        .applicant-request-show-layout .applicant-approval-body {
+            color: #6c757d;
+            line-height: 1.8;
+            margin-top: .75rem;
+            padding-inline-start: 4.1rem;
+            white-space: pre-line;
+        }
+
+        .applicant-request-show-layout .applicant-approval-letter-link img {
+            height: 32px;
+            width: 32px;
+        }
+
+        @media (max-width: 575.98px) {
+            .applicant-request-show-layout .applicant-approval-body {
+                padding-inline-start: 0;
+            }
+        }
     </style>
 @endpush
 
-@section('content')
+@section('hero')
     <div class="card view-request-bg">
         <div class="card-body">
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-4">
@@ -257,11 +402,16 @@
                     <li class="nav-item">
                         <a class="nav-link" data-bs-toggle="tab" href="#profile-approvals" role="tab" aria-selected="false">{{ __('app.applications.approvals_tab') }}</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ $wrapReportAvailable ? '' : 'disabled' }}" data-bs-toggle="tab" href="#profile-wrap-report" role="tab" aria-selected="false" @if (! $wrapReportAvailable) aria-disabled="true" tabindex="-1" @endif>{{ __('app.wrap_report.tab') }}</a>
+                    </li>
                 </ul>
             </div>
         </div>
     </div>
+@endsection
 
+@section('content')
     <div class="row">
         <div class="col-sm-12">
             <div class="streamit-wraper-table">
@@ -279,7 +429,9 @@
                         <div class="iq-timeline0 m-0 d-flex align-items-center justify-content-between position-relative">
                             <ul class="list-inline p-0 m-0">
                                 @foreach ($timelineEvents as $event)
-                                    @php($eventColor = $timelineColor($event['status']))
+                                    @php
+                                        $eventColor = $timelineColor($event['status']);
+                                    @endphp
                                     <li>
                                         <div class="timeline-dots timeline-dot1 border-{{ $eventColor }} text-{{ $eventColor }}"></div>
                                         <h6 class="float-left mb-1 fw-semibold">{{ $event['label'] }}</h6>
@@ -319,7 +471,12 @@
                                     <a class="btn btn-light" href="{{ route('applications.edit', $application) }}">{{ __('app.applications.edit_action') }}</a>
                                 @endif
                                 @if ($application->canBeSubmittedByApplicant())
-                                    <form method="POST" action="{{ route('applications.submit', $application) }}">
+                                    <form method="POST" action="{{ route('applications.submit', $application) }}"
+                                        data-application-submit-confirm
+                                        data-confirm-title="{{ __('app.applications.submit_confirm_title') }}"
+                                        data-confirm-text="{{ __('app.applications.submit_confirm_body') }}"
+                                        data-confirm-button="{{ __('app.applications.submit_confirm_confirm') }}"
+                                        data-cancel-button="{{ __('app.applications.submit_confirm_cancel') }}">
                                         @csrf
                                         <button class="btn btn-danger" type="submit">{{ __('app.applications.submit_action') }}</button>
                                     </form>
@@ -341,32 +498,14 @@
                             </div>
                             <div class="card-body">
                                 <div class="mb-1"><span class="fw-600">{{ __('app.applications.project_name') }}:</span><span class="ms-2">{{ $application->project_name }}</span></div>
-                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.project_nationality') }}:</span><span class="ms-2">{{ __('app.applications.project_nationalities.'.$application->project_nationality) }}</span></div>
-                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.work_category') }}:</span><span class="ms-2">{{ __('app.applications.work_categories.'.$application->work_category) }}</span></div>
-                                <div class="mb-0"><span class="fw-600">{{ __('app.applications.release_method') }}:</span><span class="ms-2">{{ __('app.applications.release_methods.'.$application->release_method) }}</span></div>
-                            </div>
-                        </div>
-
-                        <div class="card request-section-card">
-                            <div class="card-header">
-                                <div class="header-title">
-                                    <h2 class="episode-playlist-title wp-heading-inline">
-                                        <span class="position-relative">{{ __('app.applications.producer_information') }}</span>
-                                    </h2>
-                                </div>
-                            </div>
-                            <div class="card-body">
-                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.producer_name') }}:</span><span class="ms-2">{{ data_get($producer, 'producer_name', __('app.dashboard.not_available')) }}</span></div>
+                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.project_nationality') }}:</span><span class="ms-2">{{ \App\Models\Nationality::labelFor($application->project_nationality) }}</span></div>
+                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.work_category') }}:</span><span class="ms-2">{{ \App\Models\WorkCategory::labelFor($application->work_category) }}</span></div>
                                 <div class="mb-1"><span class="fw-600">{{ __('app.applications.production_company_name') }}:</span><span class="ms-2">{{ data_get($producer, 'production_company_name', __('app.dashboard.not_available')) }}</span></div>
                                 <div class="mb-1"><span class="fw-600">{{ __('app.applications.contact_address') }}:</span><span class="ms-2">{{ data_get($producer, 'contact_address', __('app.dashboard.not_available')) }}</span></div>
                                 <div class="mb-1"><span class="fw-600">{{ __('app.applications.contact_phone') }}:</span><span class="ms-2">{{ data_get($producer, 'contact_phone', __('app.dashboard.not_available')) }}</span></div>
-                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.contact_mobile') }}:</span><span class="ms-2">{{ data_get($producer, 'contact_mobile', __('app.dashboard.not_available')) }}</span></div>
-                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.contact_fax') }}:</span><span class="ms-2">{{ data_get($producer, 'contact_fax', __('app.dashboard.not_available')) }}</span></div>
                                 <div class="mb-1"><span class="fw-600">{{ __('app.applications.contact_email') }}:</span><span class="ms-2">{{ data_get($producer, 'contact_email', __('app.dashboard.not_available')) }}</span></div>
                                 <div class="mb-1"><span class="fw-600">{{ __('app.applications.liaison_name') }}:</span><span class="ms-2">{{ data_get($producer, 'liaison_name', __('app.dashboard.not_available')) }}</span></div>
-                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.liaison_position') }}:</span><span class="ms-2">{{ data_get($producer, 'liaison_position', __('app.dashboard.not_available')) }}</span></div>
-                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.liaison_email') }}:</span><span class="ms-2">{{ data_get($producer, 'liaison_email', __('app.dashboard.not_available')) }}</span></div>
-                                <div class="mb-0"><span class="fw-600">{{ __('app.applications.liaison_mobile') }}:</span><span class="ms-2">{{ data_get($producer, 'liaison_mobile', __('app.dashboard.not_available')) }}</span></div>
+                                <div class="mb-0"><span class="fw-600">{{ __('app.applications.release_method') }}:</span><span class="ms-2">{{ \App\Models\ReleaseMethod::labelFor($application->release_method) }}</span></div>
                             </div>
                         </div>
 
@@ -380,10 +519,10 @@
                             </div>
                             <div class="card-body">
                                 <div class="mb-1"><span class="fw-600">{{ __('app.applications.director_name') }}:</span><span class="ms-2">{{ data_get($director, 'director_name', __('app.dashboard.not_available')) }}</span></div>
-                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.director_nationality') }}:</span><span class="ms-2">{{ data_get($director, 'director_nationality', __('app.dashboard.not_available')) }}</span></div>
+                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.director_nationality') }}:</span><span class="ms-2">{{ \App\Models\Nationality::labelFor(data_get($director, 'director_nationality')) }}</span></div>
                                 <div class="mb-0"><span class="fw-600">{{ __('app.applications.director_profile_url') }}:</span>
                                     @if (filled(data_get($director, 'director_profile_url')))
-                                        <a href="{{ data_get($director, 'director_profile_url') }}" class="ms-2" target="_blank" rel="noreferrer">{{ data_get($director, 'director_profile_url') }}</a>
+                                        <a href="{{ data_get($director, 'director_profile_url') }}" class="ms-2" target="_blank" rel="noreferrer">{{ __('app.applications.open_profile') }}</a>
                                     @else
                                         <span class="ms-2">{{ __('app.dashboard.not_available') }}</span>
                                     @endif
@@ -414,8 +553,10 @@
                                 </h2>
                             </div>
                             <div class="card-body">
-                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.planned_start_date') }}:</span><span class="ms-2">{{ optional($application->planned_start_date)->format('Y-m-d') ?: __('app.dashboard.not_available') }}</span></div>
-                                <div class="mb-0"><span class="fw-600">{{ __('app.applications.planned_end_date') }}:</span><span class="ms-2">{{ optional($application->planned_end_date)->format('Y-m-d') ?: __('app.dashboard.not_available') }}</span></div>
+                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.schedule_phases.preparation') }}:</span><span class="ms-2">{{ $formatDateRange(data_get($schedulePhases, 'preparation.start_date'), data_get($schedulePhases, 'preparation.end_date')) }}</span></div>
+                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.schedule_phases.shooting') }}:</span><span class="ms-2">{{ $formatDateRange($application->planned_start_date, $application->planned_end_date) }}</span></div>
+                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.schedule_phases.wrap') }}:</span><span class="ms-2">{{ $formatDateRange(data_get($schedulePhases, 'wrap.start_date'), data_get($schedulePhases, 'wrap.end_date')) }}</span></div>
+                                <div class="mb-0"><span class="fw-600">{{ __('app.applications.schedule_phases.post_production') }}:</span><span class="ms-2">{{ $formatDateRange(data_get($schedulePhases, 'post_production.start_date'), data_get($schedulePhases, 'post_production.end_date')) }}</span></div>
                             </div>
                         </div>
 
@@ -448,7 +589,8 @@
                                 </h2>
                             </div>
                             <div class="card-body">
-                                <div class="mb-0"><span class="fw-600">{{ __('app.applications.estimated_budget') }}:</span><span class="ms-2">{{ $formattedBudget }}</span></div>
+                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.estimated_budget') }}:</span><span class="ms-2">{{ $formattedBudget }}</span></div>
+                                <div class="mb-0"><span class="fw-600">{{ __('app.applications.local_spend_estimate') }}:</span><span class="ms-2">{{ $formattedLocalSpend }}</span></div>
                             </div>
                         </div>
                     </div>
@@ -458,35 +600,82 @@
                     </div>
 
                     <div id="profile-annex" class="tab-pane fade">
+                        @include('applications.partials.annex-applicant', ['documents' => $documents])
+                    </div>
+
+                    <div id="profile-approvals" class="tab-pane fade">
                         <div class="card">
                             <div class="card-header">
                                 <div class="header-title">
                                     <h2 class="episode-playlist-title wp-heading-inline">
-                                        <span class="position-relative">{{ __('app.applications.annex_title') }}</span>
+                                        <span class="position-relative">{{ __('app.applications.approvals_title') }}</span>
                                     </h2>
                                 </div>
                             </div>
-                            <div class="card-body">
-                                <div class="mb-4">
-                                    <span class="fw-600 d-block mb-2">{{ __('app.applications.required_approvals') }}</span>
-                                    <div>{{ $requiredApprovals }}</div>
-                                </div>
-                                <div class="mb-4">
-                                    <span class="fw-600 d-block mb-2">{{ __('app.applications.supporting_notes') }}</span>
-                                    <div>{{ data_get($requirements, 'supporting_notes', __('app.applications.annex_empty_state')) }}</div>
-                                </div>
-                                <div class="border-top pt-4">
-                                    @include('applications.partials.annex-summary', ['application' => $application])
-                                </div>
-                                @if ($application->review_note)
-                                    <div class="alert alert-warning mb-0">{{ $application->review_note }}</div>
-                                @endif
+                            <div class="card-body p-3 mb-0">
+                                <ul class="applicant-approval-feed">
+                                    @forelse ($authorityApprovals as $approval)
+                                        @php
+                                            $approvalLetter = $officialLetterForApproval($approval);
+                                            $approvalStatusClass = $approvalBadgeClass($approval->status);
+                                            $approvalDate = $approval->decided_at ?? $approval->updated_at;
+                                            $approvalNote = $approval->note
+                                                ?: ($approvalLetter?->body ?: data_get($requestOverview, 'authority_progress.summary'));
+                                            $approvalDisplayName = $approval->entity?->displayName() ?: $approval->localizedAuthority();
+                                        @endphp
+                                        <li class="applicant-approval-feed-item">
+                                            <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
+                                                <div class="d-flex align-items-center min-w-0">
+                                                    <img src="{{ asset('images/logo.svg') }}"
+                                                        class="applicant-approval-avatar rounded-circle img-fluid"
+                                                        alt="{{ $approvalDisplayName }}"
+                                                        loading="lazy">
+                                                    <div class="ms-3 min-w-0">
+                                                        <h5 class="mt-2 mb-1">
+                                                            <span class="fw-600">{{ $approvalDisplayName }}</span>
+                                                        </h5>
+                                                        <div class="small text-muted">
+                                                            {{ $approvalDate?->format('Y-m-d') ?: __('app.dashboard.not_available') }}
+                                                            @if ($approvalLetter?->serial_number)
+                                                                <span class="mx-1">|</span>{{ $approvalLetter->serial_number }}
+                                                            @endif
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                                    <h6 class="mt-2 mb-0">
+                                                        <span class="badge bg-{{ $approvalStatusClass }}">{{ $approval->localizedStatus() }}</span>
+                                                    </h6>
+                                                    @if ($approvalLetter)
+                                                        <button type="button"
+                                                            class="btn p-0 applicant-approval-letter-link"
+                                                            data-bs-toggle="offcanvas"
+                                                            data-bs-target="#applicantOfficialLetterView{{ $approvalLetter->getKey() }}"
+                                                            aria-controls="applicantOfficialLetterView{{ $approvalLetter->getKey() }}"
+                                                            title="{{ __('app.official_letters.view_action') }}">
+                                                            <img src="{{ asset('images/envelope.png') }}" alt="{{ __('app.official_letters.view_action') }}" loading="lazy">
+                                                        </button>
+                                                    @endif
+                                                </div>
+                                            </div>
+
+                                            <div class="applicant-approval-body text-break">
+                                                @if ($approvalNote)
+                                                    {{ $approvalNote }}
+                                                @else
+                                                    <span class="text-{{ $approvalTextClass($approval->status) }}">{{ data_get($requestOverview, 'authority_progress.summary') }}</span>
+                                                @endif
+                                            </div>
+                                        </li>
+                                    @empty
+                                        <li class="text-center text-muted py-4">{{ __('app.applications.no_required_approvals') }}</li>
+                                    @endforelse
+                                </ul>
                             </div>
                         </div>
-                    </div>
 
-                    <div id="profile-approvals" class="tab-pane fade">
-                        <div class="row g-3 mb-4">
+                        <div class="row g-3 my-4">
                             @foreach (['authority_progress', 'latest_official_step', 'final_decision_readiness'] as $overviewKey)
                                 <div class="col-lg-4">
                                     <div class="request-state-meta">
@@ -524,50 +713,17 @@
                             </div>
                         @endif
 
-                        <div class="card">
-                            <div class="card-header">
-                                <div class="header-title">
-                                    <h2 class="episode-playlist-title wp-heading-inline">
-                                        <span class="position-relative">{{ __('app.applications.approvals_title') }}</span>
-                                    </h2>
-                                </div>
-                            </div>
-                            <div class="card-body">
-                                <div class="table-responsive rounded py-4 applicant-request-table-scroll">
-                                    <table class="table mb-0 applicant-approval-table">
-                                        <colgroup>
-                                            <col style="width: 34%">
-                                            <col style="width: 22%">
-                                            <col style="width: 44%">
-                                        </colgroup>
-                                        <thead>
-                                            <tr>
-                                                <th>{{ __('app.applications.authority') }}</th>
-                                                <th>{{ __('app.applications.status') }}</th>
-                                                <th>{{ __('app.applications.decision_note') }}</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @forelse ($authorityApprovals as $approval)
-                                                <tr>
-                                                    <td>{{ $approval->localizedAuthority() }}</td>
-                                                    <td>{{ $approval->localizedStatus() }}</td>
-                                                    <td>{{ $approval->note ?: __('app.dashboard.not_available') }}</td>
-                                                </tr>
-                                            @empty
-                                                <tr>
-                                                    <td colspan="3">{{ __('app.applications.no_required_approvals') }}</td>
-                                                </tr>
-                                            @endforelse
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-
                         @include('applications.partials.official-letters-applicant', ['officialLetters' => $officialLetters])
                         @include('applications.partials.correspondence-applicant', ['correspondences' => $correspondences])
                         @include('applications.partials.final-decision-applicant')
+                    </div>
+
+                    <div id="profile-wrap-report" class="tab-pane fade">
+                        @include('applications.partials.wrap-report-applicant', [
+                            'wrapReport' => $wrapReport,
+                            'wrapReportAvailable' => $wrapReportAvailable,
+                            'wrapReportOptions' => $wrapReportOptions,
+                        ])
                     </div>
                 </div>
                     </div>
@@ -575,4 +731,5 @@
             </div>
         </div>
     </div>
+    @include('applications.partials.submit-confirmation-script')
 @endsection

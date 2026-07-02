@@ -18,9 +18,12 @@ class AdminWorkflowState
             $application->status === 'needs_clarification' => self::state('waiting_on_applicant'),
             in_array($application->status, ['approved', 'rejected'], true) => self::state('resolved'),
             $application->status === 'draft' => self::state('draft'),
-            blank($application->assigned_to_user_id) => self::state('assign_reviewer'),
+            $application->current_stage === 'rfc_facilitation'
+                && filled(data_get($application->metadata ?? [], 'rfc_decision.facilitation_issued_at'))
+                && ! $application->authorityRoutingStarted() => self::state('review_official_books'),
+            $application->current_stage === 'rfc_facilitation' && ! $application->authorityRoutingStarted() => self::state('needs_facilitation_letter'),
             $pendingApprovals > 0 => self::state('waiting_authorities'),
-            in_array($application->status, ['submitted', 'under_review'], true) && $application->hasResolvedAuthorityApprovals() => self::state('ready_final_decision'),
+            $application->canBeFinallyDecided() => self::state('ready_final_decision'),
             default => self::state('needs_admin_review'),
         };
     }
@@ -62,7 +65,7 @@ class AdminWorkflowState
             'class' => match ($key) {
                 'ready_final_decision', 'resolved' => 'success',
                 'waiting_on_applicant' => 'danger',
-                'waiting_authorities', 'assign_reviewer' => 'warning',
+                'waiting_authorities', 'needs_facilitation_letter', 'review_official_books' => 'warning',
                 'draft' => 'secondary',
                 default => 'info',
             },

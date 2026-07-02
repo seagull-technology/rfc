@@ -25,6 +25,8 @@ class AdminIntegrationDiagnosticsTest extends TestCase
         $response
             ->assertOk()
             ->assertSeeText('Integration Diagnostics')
+            ->assertSeeText('Government Service Bus')
+            ->assertSeeText('MOHE-SANAD')
             ->assertSeeText('OTP SMS Gateway')
             ->assertSeeText('Government Company Registry');
     }
@@ -95,5 +97,52 @@ class AdminIntegrationDiagnosticsTest extends TestCase
         $response
             ->assertRedirect(route('admin.integrations.index'))
             ->assertSessionHas('diagnostics.company_registry');
+    }
+
+    public function test_super_admin_can_run_mohe_sanad_diagnostic(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        Cache::forget('gsb:mohe_sanad:current:9876543210');
+
+        config()->set('services.gsb.enabled', true);
+        config()->set('services.gsb.client_id', 'client-id');
+        config()->set('services.gsb.client_secret', 'client-secret');
+        config()->set('services.gsb.services.mohe_sanad.enabled', true);
+        config()->set('services.gsb.services.mohe_sanad.base_url', 'https://api-gateway.g2b.gsb.gov.jo:9443');
+        config()->set('services.gsb.services.mohe_sanad.path', '/porg-gsb/g2b-catalog/api/mohe-sanad');
+
+        Http::fake([
+            'https://api-gateway.g2b.gsb.gov.jo:9443/porg-gsb/g2b-catalog/api/mohe-sanad' => Http::response([
+                'code' => null,
+                'data' => [[
+                    'STUDENT_NAME' => 'RFC Student',
+                    'BIRTH_DATE' => '2001-04-05',
+                    'gender_desc' => 'Male',
+                    'NATIONALITY' => 'Jordanian',
+                    'INSTITUTE_NAME' => 'University of Jordan',
+                    'major' => 'Film Studies',
+                    'degree' => 'Bachelor',
+                    'student_status' => 'currently studying',
+                ]],
+            ], 200),
+        ]);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+
+        $response = $this->actingAs($admin)->post(route('admin.integrations.mohe-student-test'), [
+            'national_id' => '9876543210',
+        ]);
+
+        $response
+            ->assertRedirect(route('admin.integrations.index'))
+            ->assertSessionHas('diagnostics.mohe_sanad', fn (array $result): bool => ($result['ok'] ?? false)
+                && data_get($result, 'data.university_name') === 'University of Jordan');
+
+        Http::assertSent(fn ($request): bool => $request->hasHeader('X-MODEE-Client-Id', 'client-id')
+            && $request->hasHeader('X-MODEE-Client-Secret', 'client-secret')
+            && $request['NationalNo'] === '9876543210'
+            && $request['Check'] === 1);
     }
 }

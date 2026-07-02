@@ -352,7 +352,7 @@
                                                 <td>{{ $approval->application?->code }}</td>
                                                 <td>
                                                     <div class="fw-semibold">{{ $approval->application?->project_name }}</div>
-                                                    <div class="text-muted">{{ __('app.applications.work_categories.'.($approval->application?->work_category ?? 'feature_film')) }}</div>
+                                                    <div class="text-muted">{{ \App\Models\WorkCategory::labelFor($approval->application?->work_category ?? 'feature_film') }}</div>
                                                     @if ($approvalSignal['active'])
                                                         <div class="authority-signal">
                                                             <span class="badge bg-{{ $approvalSignal['class'] }}">{{ $approvalSignal['label'] }}</span>

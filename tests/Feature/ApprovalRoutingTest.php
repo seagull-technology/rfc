@@ -6,8 +6,12 @@ use App\Models\Application;
 use App\Models\ApprovalRoutingRule;
 use App\Models\ApprovalRoutingRuleAudit;
 use App\Models\Entity;
+use App\Models\FormLookupOption;
 use App\Models\Group;
 use App\Models\User;
+use App\Services\ApplicationAuthorityApprovalSyncService;
+use App\Services\ApprovalRoutingService;
+use App\Services\AuthorityApprovalNotificationService;
 use App\Support\ApplicationWorkflowRegistry;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -68,6 +72,134 @@ class ApprovalRoutingTest extends TestCase
         ], ApprovalRoutingRule::query()->where('name', 'Public security to GAM')->firstOrFail()->conditions);
     }
 
+    public function test_create_form_groups_annex_triggers_by_form_and_dynamic_options(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+
+        $response = $this->actingAs($admin)->get(route('admin.approval-routing.create'));
+
+        $response
+            ->assertOk()
+            ->assertSee('approval-annex-trigger-list', false)
+            ->assertSeeText('Filming locations list')
+            ->assertSeeText('Any filled Filming locations list')
+            ->assertSeeText('Location type')
+            ->assertSeeText('Reserves')
+            ->assertSee('value="location_type_reserves"', false)
+            ->assertSeeText('Special location requirements')
+            ->assertSeeText('Road closures')
+            ->assertSee('value="special_requirement_road_closures"', false)
+            ->assertSeeText('Equipment categories')
+            ->assertSeeText('Camera equipment')
+            ->assertSee('value="imported_equipment_category_camera_equipment"', false)
+            ->assertSeeText('Shipping methods')
+            ->assertSee('value="imported_equipment_shipping_method_shipping"', false)
+            ->assertSeeText('Entry points')
+            ->assertSee('value="imported_equipment_entry_point_queen_alia_international_airport"', false)
+            ->assertSeeText('Military/border location types')
+            ->assertSee('value="military_location_type_border_area"', false)
+            ->assertSeeText('Airports')
+            ->assertSee('value="airport_filming_airport_queen_alia_international_airport"', false);
+    }
+
+    public function test_form_lookup_child_options_are_dynamic_in_approval_routing(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+
+        FormLookupOption::query()->create([
+            'type' => FormLookupOption::TYPE_EQUIPMENT_CATEGORY,
+            'code' => 'test_routing_category',
+            'name_en' => 'Test routing category',
+            'name_ar' => 'تصنيف توجيه اختبار',
+            'sort_order' => 999,
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('admin.approval-routing.create'));
+
+        $response
+            ->assertOk()
+            ->assertSeeText('Test routing category')
+            ->assertSee('value="imported_equipment_category_test_routing_category"', false)
+            ->assertSee('value="military_equipment_category_test_routing_category"', false);
+    }
+
+    public function test_specific_annex_child_trigger_removes_broad_form_trigger(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $targetEntity = Entity::query()->where('code', 'public-security-directorate')->firstOrFail();
+
+        $response = $this->actingAs($admin)->post(route('admin.approval-routing.store'), [
+            'name' => 'Public security for reserve locations only',
+            'request_type' => 'application',
+            'approval_code' => 'public_security',
+            'target_entity_id' => $targetEntity->getKey(),
+            'priority' => 30,
+            'is_active' => '1',
+            'conditions' => [
+                'annex_flags' => ['filming_locations', 'location_type_reserves'],
+            ],
+        ]);
+
+        $response->assertRedirect(route('admin.approval-routing.index'));
+
+        $conditions = ApprovalRoutingRule::query()
+            ->where('name', 'Public security for reserve locations only')
+            ->firstOrFail()
+            ->conditions;
+
+        $this->assertSame(['location_type_reserves'], data_get($conditions, 'annex_flags'));
+        $this->assertNotContains('filming_locations', data_get($conditions, 'annex_flags'));
+    }
+
+    public function test_specific_non_jordanian_project_nationality_matches_international_routing_rules(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$applicant] = $this->createApplicantContext();
+        $targetEntity = Entity::query()->where('code', 'public-security-directorate')->firstOrFail();
+
+        ApprovalRoutingRule::query()
+            ->where('request_type', 'application')
+            ->update(['is_active' => false]);
+
+        ApprovalRoutingRule::query()->create([
+            'name' => 'International projects to PSD',
+            'request_type' => 'application',
+            'approval_code' => 'public_security',
+            'target_entity_id' => $targetEntity->getKey(),
+            'conditions' => [
+                'project_nationalities' => ['international'],
+                'work_categories' => [],
+                'release_methods' => [],
+                'annex_flags' => [],
+                'governorates' => [],
+            ],
+            'priority' => 10,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
+            'project_nationality' => 'egyptian',
+            'director_nationality' => 'egyptian',
+        ]));
+
+        $application = Application::query()->firstOrFail();
+        $routes = app(ApprovalRoutingService::class)->routesForApplication($application);
+
+        $this->assertTrue($routes->contains(fn (array $route): bool => $route['target_entity_id'] === $targetEntity->getKey()));
+    }
+
     public function test_application_submission_uses_dynamic_target_entity_for_authority_approval(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -116,6 +248,11 @@ class ApprovalRoutingTest extends TestCase
         $response = $this->actingAs($applicant)->post(route('applications.submit', $application));
 
         $response->assertRedirect(route('applications.show', $application));
+        $this->assertDatabaseMissing('application_authority_approvals', [
+            'application_id' => $application->getKey(),
+        ]);
+
+        $this->syncAuthorityApprovals($application);
 
         $this->assertDatabaseHas('application_authority_approvals', [
             'application_id' => $application->getKey(),
@@ -168,7 +305,7 @@ class ApprovalRoutingTest extends TestCase
             'filming_locations' => [[
                 'governorate' => 'aqaba',
                 'location_name' => 'King Hussein International Airport',
-                'location_type' => 'airport terminal',
+                'location_type' => 'public_locations',
                 'start_date' => '2026-05-02',
                 'end_date' => '2026-05-03',
                 'notes' => 'Exterior and terminal filming.',
@@ -185,6 +322,11 @@ class ApprovalRoutingTest extends TestCase
         $response = $this->actingAs($applicant)->post(route('applications.submit', $application));
 
         $response->assertRedirect(route('applications.show', $application));
+        $this->assertDatabaseMissing('application_authority_approvals', [
+            'application_id' => $application->getKey(),
+        ]);
+
+        $this->syncAuthorityApprovals($application);
 
         $this->assertDatabaseHas('application_authority_approvals', [
             'application_id' => $application->getKey(),
@@ -201,7 +343,7 @@ class ApprovalRoutingTest extends TestCase
             'filming_locations' => [[
                 'governorate' => 'amman',
                 'location_name' => 'Downtown Amman',
-                'location_type' => 'street',
+                'location_type' => 'public_locations',
                 'start_date' => '2026-05-04',
                 'end_date' => '2026-05-05',
                 'notes' => 'No airport activity.',
@@ -240,9 +382,68 @@ class ApprovalRoutingTest extends TestCase
         $this->assertTrue($customsRule->is_active);
         $this->assertSame(80, (int) $customsRule->priority);
         $this->assertSame(['annex_flags' => ['imported_equipment']], $customsRule->conditions);
-        $this->assertSame(['annex_flags' => ['military_border_equipment']], $militaryRule->conditions);
+        $this->assertSame([
+            'annex_flags' => [
+                'military_border_equipment',
+                'location_type_border_areas',
+                'special_requirement_armed_forces',
+            ],
+        ], $militaryRule->conditions);
         $this->assertSame(['jordan-customs'], ApplicationWorkflowRegistry::entityCodesForApproval('customs'));
         $this->assertContains('military_border', ApplicationWorkflowRegistry::approvalCodesForEntity($militaryEntity));
+    }
+
+    public function test_empty_routing_conditions_do_not_route_without_a_form_signal(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$applicant, $entity] = $this->createApplicantContext();
+        $targetEntity = Entity::query()->where('code', 'public-security-directorate')->firstOrFail();
+
+        ApprovalRoutingRule::query()
+            ->where('request_type', 'application')
+            ->update(['is_active' => false]);
+
+        ApprovalRoutingRule::query()->create([
+            'name' => 'Legacy broad public security rule',
+            'request_type' => 'application',
+            'approval_code' => 'public_security',
+            'target_entity_id' => $targetEntity->getKey(),
+            'conditions' => [],
+            'priority' => 10,
+            'is_active' => true,
+        ]);
+
+        $application = Application::query()->create([
+            'code' => 'REQ-EMPTY-RULE',
+            'entity_id' => $entity->getKey(),
+            'submitted_by_user_id' => $applicant->getKey(),
+            'project_name' => 'No Form Signal',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'feature_film',
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-05-01',
+            'planned_end_date' => '2026-05-10',
+            'project_summary' => 'This request has no filled annex routing signal.',
+            'status' => 'submitted',
+            'current_stage' => 'intake',
+            'metadata' => [
+                'requirements' => [
+                    'required_approvals' => ['public_security'],
+                ],
+                'annex' => [],
+            ],
+        ]);
+
+        $this->assertTrue(app(ApprovalRoutingService::class)->routesForApplication($application)->isEmpty());
+
+        $this->syncAuthorityApprovals($application);
+
+        $this->assertDatabaseMissing('application_authority_approvals', [
+            'application_id' => $application->getKey(),
+        ]);
+        $this->assertSame([], data_get($application->fresh()->metadata, 'requirements.required_approvals'));
     }
 
     public function test_application_workflow_approval_map_uses_one_structured_shape(): void
@@ -300,12 +501,68 @@ class ApprovalRoutingTest extends TestCase
         $application = Application::query()->where('project_name', 'Customs Equipment Shoot')->firstOrFail();
 
         $this->actingAs($applicant)->post(route('applications.submit', $application));
+        $this->assertDatabaseMissing('application_authority_approvals', [
+            'application_id' => $application->getKey(),
+        ]);
+
+        $this->syncAuthorityApprovals($application);
 
         $this->assertDatabaseHas('application_authority_approvals', [
             'application_id' => $application->getKey(),
             'authority_code' => 'customs',
             'entity_id' => $customsEntity->getKey(),
             'approval_routing_rule_id' => $customsRule->getKey(),
+            'status' => 'pending',
+        ]);
+        $this->assertSame(['customs'], data_get($application->fresh()->metadata, 'requirements.required_approvals'));
+    }
+
+    public function test_application_routes_from_lookup_backed_annex_child_conditions(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$applicant] = $this->createApplicantContext();
+        $customsEntity = Entity::query()->where('code', 'jordan-customs')->firstOrFail();
+
+        ApprovalRoutingRule::query()
+            ->where('request_type', 'application')
+            ->update(['is_active' => false]);
+
+        $rule = ApprovalRoutingRule::query()->create([
+            'name' => 'Customs for camera equipment only',
+            'request_type' => 'application',
+            'approval_code' => 'customs',
+            'target_entity_id' => $customsEntity->getKey(),
+            'conditions' => [
+                'annex_flags' => ['imported_equipment_category_camera_equipment'],
+            ],
+            'priority' => 10,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
+            'project_name' => 'Camera Category Routing',
+            'imported_equipment' => [[
+                'item' => 'Cinema camera',
+                'serial_number' => 'CAM-1',
+                'quantity' => 1,
+                'classification' => 'camera_equipment',
+                'shipping_method' => 'shipping',
+                'entry_point' => 'queen_alia_international_airport',
+            ]],
+        ]));
+
+        $application = Application::query()->where('project_name', 'Camera Category Routing')->firstOrFail();
+
+        $this->actingAs($applicant)->post(route('applications.submit', $application));
+        $this->syncAuthorityApprovals($application);
+
+        $this->assertDatabaseHas('application_authority_approvals', [
+            'application_id' => $application->getKey(),
+            'authority_code' => 'customs',
+            'entity_id' => $customsEntity->getKey(),
+            'approval_routing_rule_id' => $rule->getKey(),
             'status' => 'pending',
         ]);
         $this->assertSame(['customs'], data_get($application->fresh()->metadata, 'requirements.required_approvals'));
@@ -347,6 +604,7 @@ class ApprovalRoutingTest extends TestCase
         $application = Application::query()->firstOrFail();
 
         $this->actingAs($applicant)->post(route('applications.submit', $application));
+        $this->syncAuthorityApprovals($application);
 
         $indexResponse = $this->actingAs($targetAuthorityUser)->get(route('authority.applications.index'));
 
@@ -1528,16 +1786,36 @@ class ApprovalRoutingTest extends TestCase
     /**
      * @return array<string, mixed>
      */
+    private function syncAuthorityApprovals(Application $application): void
+    {
+        $approvals = app(ApplicationAuthorityApprovalSyncService::class)->sync($application);
+
+        $application->forceFill([
+            'status' => 'under_review',
+            'current_stage' => $approvals->isNotEmpty() ? 'authority_review' : 'final_decision',
+        ])->save();
+
+        $notificationService = app(AuthorityApprovalNotificationService::class);
+        $approvals->each(fn ($approval): int => $notificationService->notifyRecipientsForApproval($approval));
+
+        $application->refresh();
+    }
+
     private function applicationPayload(array $overrides = []): array
     {
         return array_merge([
             'project_name' => 'Desert Dreams',
             'project_nationality' => 'jordanian',
             'work_category' => 'feature_film',
-            'release_method' => 'cinema',
-            'planned_start_date' => '2026-05-01',
-            'planned_end_date' => '2026-05-10',
-            'estimated_crew_count' => 35,
+	            'release_method' => 'cinema',
+	            'planned_start_date' => '2026-05-01',
+	            'planned_end_date' => '2026-05-10',
+	            'schedule_phases' => [
+	                'preparation' => ['start_date' => '2026-04-20', 'end_date' => '2026-04-30'],
+	                'wrap' => ['start_date' => '2026-05-11', 'end_date' => '2026-05-12'],
+	                'post_production' => ['start_date' => '2026-05-13', 'end_date' => '2026-06-01'],
+	            ],
+	            'estimated_crew_count' => 35,
             'estimated_budget' => 120000,
             'project_summary' => 'A feature film production in Wadi Rum.',
             'producer_name' => 'Local Producer',
@@ -1552,11 +1830,13 @@ class ApprovalRoutingTest extends TestCase
             'liaison_email' => 'liaison@example.com',
             'liaison_mobile' => '0792222222',
             'director_name' => 'Director Name',
-            'director_nationality' => 'Jordanian',
+            'director_nationality' => 'jordanian',
             'director_profile_url' => 'https://example.com/director',
             'international_producer_name' => 'Global Partner',
+            'international_producer_nationality' => 'non_jordanian',
             'international_producer_company' => 'Global Films',
             'required_approvals' => ['public_security'],
+            'safety_guidelines_acknowledged' => '1',
             'supporting_notes' => 'Need desert location and crowd management support.',
         ], $overrides);
     }

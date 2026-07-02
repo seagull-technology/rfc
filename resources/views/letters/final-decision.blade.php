@@ -75,11 +75,11 @@
             <div class="grid">
                 <div>
                     <div class="field-label">{{ __('app.applications.project_nationality') }}</div>
-                    <div class="field-value">{{ __('app.applications.project_nationalities.'.$application->project_nationality) }}</div>
+                    <div class="field-value">{{ \App\Models\Nationality::labelFor($application->project_nationality) }}</div>
                 </div>
                 <div>
                     <div class="field-label">{{ __('app.applications.work_category') }}</div>
-                    <div class="field-value">{{ __('app.applications.work_categories.'.$application->work_category) }}</div>
+                    <div class="field-value">{{ \App\Models\WorkCategory::labelFor($application->work_category) }}</div>
                 </div>
                 <div>
                     <div class="field-label">{{ __('app.applications.planned_start_date') }}</div>

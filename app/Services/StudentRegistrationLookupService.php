@@ -2,9 +2,18 @@
 
 namespace App\Services;
 
+use App\Services\Gsb\CspdPersonalInfoService;
+use App\Services\Gsb\MoheSanadService;
+
 class StudentRegistrationLookupService
 {
     public const SESSION_KEY = 'student_registration_lookup';
+
+    public function __construct(
+        private readonly MoheSanadService $moheSanadService,
+        private readonly CspdPersonalInfoService $cspdPersonalInfoService,
+    ) {
+    }
 
     /**
      * @return array<string, mixed>
@@ -20,12 +29,58 @@ class StudentRegistrationLookupService
             ];
         }
 
+        if ($this->shouldUseLocalLookup()) {
+            return [
+                'ok' => true,
+                'national_id' => $nationalId,
+                'data' => $this->localProfile($nationalId),
+                'meta' => [
+                    'source' => 'local_mock',
+                ],
+            ];
+        }
+
+        $data = $this->localProfile($nationalId);
+        $sources = ['local_fallback'];
+
+        if ($this->cspdPersonalInfoService->isRunnable()) {
+            $personLookup = $this->cspdPersonalInfoService->lookup($nationalId);
+
+            if (! ($personLookup['ok'] ?? false)) {
+                return [
+                    'ok' => false,
+                    'error' => $personLookup['error'] ?? 'PERSON_LOOKUP_FAILED',
+                    'technical_message' => $personLookup['technical_message'] ?? null,
+                ];
+            }
+
+            $data = $this->mergeFilled($data, (array) ($personLookup['data'] ?? []));
+            $sources[] = (string) data_get($personLookup, 'meta.source', 'gsb_cspd_personal_info_masked');
+        }
+
+        if ($this->moheSanadService->isRunnable()) {
+            $educationLookup = $this->moheSanadService->lookupCurrentStudent($nationalId);
+
+            if (! ($educationLookup['ok'] ?? false)) {
+                return [
+                    'ok' => false,
+                    'error' => ($educationLookup['error'] ?? null) === 'NOT_FOUND'
+                        ? 'NOT_CURRENT_STUDENT'
+                        : ($educationLookup['error'] ?? 'EDUCATION_LOOKUP_FAILED'),
+                    'technical_message' => $educationLookup['technical_message'] ?? null,
+                ];
+            }
+
+            $data = $this->mergeFilled($data, (array) ($educationLookup['data'] ?? []));
+            $sources[] = (string) data_get($educationLookup, 'meta.source', 'gsb_mohe_sanad');
+        }
+
         return [
             'ok' => true,
             'national_id' => $nationalId,
-            'data' => $this->localProfile($nationalId),
+            'data' => $data,
             'meta' => [
-                'source' => 'local_mock',
+                'source' => implode('+', array_values(array_unique($sources))),
             ],
         ];
     }
@@ -74,5 +129,27 @@ class StudentRegistrationLookupService
             'university_name' => 'University of Jordan',
             'major' => 'Film Studies',
         ];
+    }
+
+    private function shouldUseLocalLookup(): bool
+    {
+        return ! $this->cspdPersonalInfoService->isRunnable()
+            && ! $this->moheSanadService->isRunnable();
+    }
+
+    /**
+     * @param  array<string, mixed>  $base
+     * @param  array<string, mixed>  $override
+     * @return array<string, mixed>
+     */
+    private function mergeFilled(array $base, array $override): array
+    {
+        foreach ($override as $key => $value) {
+            if (filled($value)) {
+                $base[$key] = $value;
+            }
+        }
+
+        return $base;
     }
 }

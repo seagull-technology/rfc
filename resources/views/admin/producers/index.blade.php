@@ -256,6 +256,17 @@
                                                 <div class="form-control bg-light">{{ data_get($entity->metadata, 'major', __('app.dashboard.not_available')) }}</div>
                                             </div>
                                         @else
+                                            @if ($type === 'company')
+                                                <div class="col-md-6 mb-3">
+                                                    <label class="form-label">{{ __('app.auth.company_registration_date') }}</label>
+                                                    <div class="form-control bg-light">{{ data_get($entity->metadata, 'company_registration_date', __('app.dashboard.not_available')) }}</div>
+                                                </div>
+
+                                                <div class="col-md-6 mb-3">
+                                                    <label class="form-label">{{ __('app.auth.company_capital') }}</label>
+                                                    <div class="form-control bg-light">{{ data_get($entity->metadata, 'company_capital', __('app.dashboard.not_available')) }}</div>
+                                                </div>
+                                            @endif
                                             <div class="col-md-12 mb-3">
                                                 <label class="form-label">{{ __('app.dashboard.address') }}</label>
                                                 <div class="form-control bg-light">{{ data_get($entity->metadata, 'address', __('app.dashboard.not_available')) }}</div>

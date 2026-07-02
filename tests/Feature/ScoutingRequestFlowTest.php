@@ -31,7 +31,65 @@ class ScoutingRequestFlowTest extends TestCase
             ->assertOk()
             ->assertSeeText(__('app.scouting.create_title'))
             ->assertSeeText(__('app.scouting.producer_tab'))
-            ->assertSeeText(__('app.scouting.locations_tab'));
+            ->assertDontSeeText(__('app.scouting.responsible_person_tab'))
+            ->assertDontSee('name="responsible_person_name"', false)
+            ->assertSeeText(__('app.scouting.locations_tab'))
+            ->assertSee('data-scouting-wizard-previous', false)
+            ->assertSee('data-scouting-wizard-next', false)
+            ->assertSee('value="egyptian"', false)
+            ->assertSeeText('Animation')
+            ->assertSee('data-scout-governorate-select', false)
+            ->assertSee('data-scout-location-type-select', false)
+            ->assertSeeText('Location type')
+            ->assertSeeText('Location nature description');
+    }
+
+    public function test_scouting_form_validates_location_type_against_selected_governorate(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $this
+            ->from(route('scouting-requests.create'))
+            ->actingAs($user)
+            ->post(route('scouting-requests.store'), $this->scoutingPayload([
+                'locations' => [
+                    [
+                        'governorate' => 'amman',
+                        'location_type' => 'petra',
+                        'location_name' => 'Impossible Petra Location',
+                        'google_map_url' => 'https://maps.example.com/impossible',
+                        'location_description' => 'Petra is not available under Amman.',
+                        'start_date' => '2026-05-01',
+                        'end_date' => '2026-05-02',
+                    ],
+                ],
+            ]))
+            ->assertRedirect(route('scouting-requests.create'))
+            ->assertSessionHasErrors('locations.0.location_type');
+    }
+
+    public function test_arabic_scouting_validation_messages_use_localized_field_names(): void
+    {
+        $this->refreshApplicationWithLocale('ar');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $this
+            ->from(route('scouting-requests.create'))
+            ->actingAs($user)
+            ->post(route('scouting-requests.store'), [])
+            ->assertRedirect(route('scouting-requests.create'))
+            ->assertSessionHasErrors('project_name');
+
+        $errors = session('errors')->get('project_name');
+
+        $this->assertNotEmpty($errors);
+        $this->assertStringContainsString('اسم المشروع', $errors[0]);
+        $this->assertStringNotContainsString('project name', $errors[0]);
     }
 
     public function test_scouting_directory_uses_template_table_shell(): void
@@ -77,6 +135,8 @@ class ScoutingRequestFlowTest extends TestCase
         $this->assertSame('065555555', data_get($requestRecord->metadata, 'producer.producer_phone'));
         $this->assertSame('065555556', data_get($requestRecord->metadata, 'producer.producer_fax'));
         $this->assertSame('Coordinator', data_get($requestRecord->metadata, 'producer.liaison_job_title'));
+        $this->assertSame('archaeological_sites', data_get($requestRecord->metadata, 'locations.0.location_type'));
+        $this->assertSame('Historic hilltop ruins.', data_get($requestRecord->metadata, 'locations.0.location_description'));
 
         Storage::disk('local')->assertExists($requestRecord->story_file_path);
 
@@ -118,10 +178,6 @@ class ScoutingRequestFlowTest extends TestCase
                     'liaison_name' => 'Liaison',
                     'liaison_email' => 'liaison@example.com',
                     'liaison_mobile' => '0799999999',
-                ],
-                'responsible_person' => [
-                    'name' => 'Scout Lead',
-                    'nationality' => 'jordanian',
                 ],
                 'production' => [
                     'types' => ['documentary'],
@@ -255,7 +311,7 @@ class ScoutingRequestFlowTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('admin-scouting-table', false)
-            ->assertSeeText('Needs admin review')
+            ->assertSeeText('Waiting for RFC decision')
             ->assertSeeText('Waiting on applicant')
             ->assertSeeText('Needs Admin Review Scout')
             ->assertSeeText('Waiting Applicant Scout');
@@ -381,7 +437,7 @@ class ScoutingRequestFlowTest extends TestCase
         $adminReplyNotification = $admin->fresh()->unreadNotifications->firstWhere('data.type_key', 'scouting_correspondence');
 
         $this->assertNotNull($adminReplyNotification);
-        $this->assertSame('Needs admin review', data_get($adminReplyNotification?->data, 'workflow_checkpoint_label'));
+        $this->assertSame('Waiting for RFC decision', data_get($adminReplyNotification?->data, 'workflow_checkpoint_label'));
         $this->assertTrue((bool) data_get($adminReplyNotification?->data, 'applicant_response_active'));
         $this->assertSame('Applicant response received', data_get($adminReplyNotification?->data, 'applicant_response_title'));
         $this->assertSame('Applicant sent correspondence: Updated Details', data_get($adminReplyNotification?->data, 'applicant_response_summary'));
@@ -459,9 +515,9 @@ class ScoutingRequestFlowTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function scoutingPayload(): array
+    private function scoutingPayload(array $overrides = []): array
     {
-        return [
+        $payload = [
             'project_name' => 'Border Light',
             'project_nationality' => 'jordanian',
             'producer_name' => 'Local Producer',
@@ -478,8 +534,6 @@ class ScoutingRequestFlowTest extends TestCase
             'liaison_job_title' => 'Coordinator',
             'liaison_email' => 'liaison@example.com',
             'liaison_mobile' => '0799999999',
-            'responsible_person_name' => 'Scout Lead',
-            'responsible_person_nationality' => 'jordanian',
             'production_types' => ['documentary'],
             'production_type_other' => null,
             'scout_start_date' => '2026-05-01',
@@ -494,7 +548,8 @@ class ScoutingRequestFlowTest extends TestCase
                     'governorate' => 'amman',
                     'location_name' => 'Amman Citadel',
                     'google_map_url' => 'https://maps.example.com/citadel',
-                    'location_nature' => 'archaeological',
+                    'location_type' => 'archaeological_sites',
+                    'location_description' => 'Historic hilltop ruins.',
                     'start_date' => '2026-05-01',
                     'end_date' => '2026-05-02',
                 ],
@@ -508,5 +563,7 @@ class ScoutingRequestFlowTest extends TestCase
                 ],
             ],
         ];
+
+        return array_merge($payload, $overrides);
     }
 }

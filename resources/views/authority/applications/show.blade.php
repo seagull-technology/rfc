@@ -9,6 +9,49 @@
     $requiredApprovals = collect(data_get($requirements, 'required_approvals', []))
         ->map(fn ($approval) => __('app.applications.required_approval_options.'.$approval))
         ->join('، ') ?: __('app.applications.no_required_approvals');
+    $asDate = static function ($value): ?\Carbon\CarbonInterface {
+        if ($value instanceof \Carbon\CarbonInterface) {
+            return $value;
+        }
+
+        if (blank($value)) {
+            return null;
+        }
+
+        try {
+            return \Illuminate\Support\Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
+    };
+    $rfcDecision = (array) data_get($metadata, 'rfc_decision', []);
+    $rfcDecisionStatus = data_get($rfcDecision, 'status');
+    $rfcDecisionNote = data_get($rfcDecision, 'note') ?: $application->review_note;
+    $rfcFacilitationIssuedAt = $asDate(data_get($rfcDecision, 'facilitation_issued_at'));
+    $rfcDate = $rfcFacilitationIssuedAt
+        ?? $asDate(data_get($rfcDecision, 'decided_at'))
+        ?? $asDate($application->reviewed_at)
+        ?? $asDate($application->submitted_at)
+        ?? $asDate($application->created_at);
+    $rfcTimelineStatus = match (true) {
+        $rfcDecisionStatus === 'rejected', $application->status === 'rejected' => 'rejected',
+        $rfcDecisionStatus === 'returned', $application->status === 'needs_clarification' => 'needs_clarification',
+        $rfcDecisionStatus === 'accepted' || $rfcFacilitationIssuedAt !== null => 'approved',
+        in_array($application->status, ['submitted', 'under_review'], true) => 'under_review',
+        default => $application->status,
+    };
+    $rfcTimelineStatusLabel = match (true) {
+        $rfcDecisionStatus === 'accepted' || $rfcFacilitationIssuedAt !== null => __('app.rfc_decision.statuses.accepted'),
+        $rfcDecisionStatus === 'returned' => __('app.rfc_decision.statuses.returned'),
+        $rfcDecisionStatus === 'rejected' => __('app.rfc_decision.statuses.rejected'),
+        default => $application->localizedStatus(),
+    };
+    $rfcTimelineNote = match (true) {
+        $rfcFacilitationIssuedAt !== null => __('app.rfc_decision.history.facilitation_issued'),
+        $rfcDecisionStatus === 'accepted' => __('app.rfc_decision.history.accepted'),
+        $rfcDecisionStatus === 'returned' || $rfcDecisionStatus === 'rejected' => $rfcDecisionNote,
+        default => $application->localizedStage(),
+    };
 
     $decisionBadgeClass = match ($currentApproval->status) {
         'approved' => 'success',
@@ -27,34 +70,52 @@
         'rejected' => 'danger',
         default => 'secondary',
     };
-    $timelineEvents = collect();
+    $timelineEvents = collect([
+        [
+            'label' => __('app.contact_center.stations.rfc'),
+            'date' => $rfcDate,
+            'status' => $rfcTimelineStatus,
+            'status_label' => $rfcTimelineStatusLabel,
+            'note' => $rfcTimelineNote,
+            'meta' => null,
+        ],
+    ]);
 
-    foreach ($statusHistory as $event) {
+    $authorityApprovals
+        ->groupBy(fn ($approval): string => $approval->entity_id ? 'entity-'.$approval->entity_id : 'code-'.$approval->authority_code)
+        ->map(fn ($group) => $group
+            ->sortByDesc(fn ($approval): int => ($asDate($approval->decided_at ?? $approval->updated_at ?? $approval->created_at)?->timestamp ?? 0))
+            ->first())
+        ->sortBy(fn ($approval): int => $approval->id)
+        ->each(function ($approval) use ($timelineEvents, $asDate) {
+            $timelineEvents->push([
+                'label' => $approval->localizedAuthority(),
+                'date' => $asDate($approval->decided_at ?? $approval->assigned_at ?? $approval->updated_at ?? $approval->created_at),
+                'status' => $approval->status,
+                'status_label' => $approval->localizedStatus(),
+                'note' => $approval->note,
+                'meta' => null,
+            ]);
+        });
+
+    if ($application->finalDecisionIssued()) {
         $timelineEvents->push([
-            'label' => $event->user?->displayName() ?? __('app.admin.authority_escalations.system_actor'),
-            'date' => $event->happened_at,
-            'status' => $event->status,
-            'status_label' => $event->localizedStatus(),
-            'note' => $event->note,
-        ]);
-    }
-
-    $hasCurrentApprovalHistory = $statusHistory->contains(
-        fn ($event): bool => (int) data_get($event->metadata, 'approval_id') === (int) $currentApproval->getKey()
-    );
-
-    if (! $hasCurrentApprovalHistory) {
-        $timelineEvents->push([
-            'label' => $currentApproval->localizedAuthority(),
-            'date' => $currentApproval->updated_at,
-            'status' => $currentApproval->status,
-            'status_label' => $currentApproval->localizedStatus(),
-            'note' => __('app.authority.applications.current_decision'),
+            'label' => __('app.final_decision.title'),
+            'date' => $asDate($application->final_decision_issued_at),
+            'status' => $application->final_decision_status === 'rejected' ? 'rejected' : 'approved',
+            'status_label' => __('app.final_decision.issued_summary'),
+            'note' => filled($application->final_permit_number)
+                ? __('app.final_decision.history.issued', [
+                    'decision' => __('app.statuses.'.($application->final_decision_status ?: 'approved')),
+                    'permit_number' => $application->final_permit_number,
+                ])
+                : $application->final_decision_note,
+            'meta' => null,
         ]);
     }
 
     $timelineEvents = $timelineEvents
-        ->sortByDesc(fn (array $event): int => $event['date']?->timestamp ?? 0)
+        ->sortBy(fn (array $event): int => $event['date']?->timestamp ?? PHP_INT_MAX)
         ->values();
 @endphp
 
@@ -242,22 +303,6 @@
             min-width: 8rem;
         }
 
-        .authority-request-show-layout .official-letters-table {
-            table-layout: fixed;
-            width: 100%;
-        }
-
-        .authority-request-show-layout .official-letters-table th,
-        .authority-request-show-layout .official-letters-table td {
-            vertical-align: top;
-            white-space: normal;
-            word-break: break-word;
-        }
-
-        .authority-request-show-layout .official-letters-table .official-letter-action-cell {
-            text-align: center;
-        }
-
         .authority-request-show-layout .authority-correspondence-list {
             display: grid;
             gap: .75rem;
@@ -305,8 +350,7 @@
                 width: 100%;
             }
 
-            .authority-request-show-layout .approval-overview-table,
-            .authority-request-show-layout .official-letters-table {
+            .authority-request-show-layout .approval-overview-table {
                 min-width: 760px;
             }
         }
@@ -341,9 +385,6 @@
                     <li class="nav-item">
                         <a class="nav-link" data-bs-toggle="tab" href="#authority-documents" role="tab" aria-selected="false">{{ __('app.documents.tab') }}</a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" data-bs-toggle="tab" href="#authority-official-letters" role="tab" aria-selected="false">{{ __('app.official_letters.tab') }}</a>
-                    </li>
                 </ul>
             </div>
         </div>
@@ -368,8 +409,8 @@
                                     </div>
                                     <div class="card-body">
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.project_name') }}:</span><span class="ms-2">{{ $application->project_name }}</span></div>
-                                        <div class="mb-1"><span class="fw-600">{{ __('app.applications.project_nationality') }}:</span><span class="ms-2">{{ __('app.applications.project_nationalities.'.$application->project_nationality) }}</span></div>
-                                        <div class="mb-1"><span class="fw-600">{{ __('app.applications.work_category') }}:</span><span class="ms-2">{{ __('app.applications.work_categories.'.$application->work_category) }}</span></div>
+                                        <div class="mb-1"><span class="fw-600">{{ __('app.applications.project_nationality') }}:</span><span class="ms-2">{{ \App\Models\Nationality::labelFor($application->project_nationality) }}</span></div>
+                                        <div class="mb-1"><span class="fw-600">{{ __('app.applications.work_category') }}:</span><span class="ms-2">{{ \App\Models\WorkCategory::labelFor($application->work_category) }}</span></div>
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.production_company_name') }}:</span><span class="ms-2">{{ data_get($producer, 'production_company_name', __('app.dashboard.not_available')) }}</span></div>
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.contact_address') }}:</span><span class="ms-2">{{ data_get($producer, 'contact_address', __('app.dashboard.not_available')) }}</span></div>
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.contact_phone') }}:</span><span class="ms-2">{{ data_get($producer, 'contact_phone', __('app.dashboard.not_available')) }}</span></div>
@@ -393,7 +434,7 @@
                                     </div>
                                     <div class="card-body">
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.director_name') }}:</span><span class="ms-2">{{ data_get($director, 'director_name', __('app.dashboard.not_available')) }}</span></div>
-                                        <div class="mb-1"><span class="fw-600">{{ __('app.applications.director_nationality') }}:</span><span class="ms-2">{{ data_get($director, 'director_nationality', __('app.dashboard.not_available')) }}</span></div>
+                                        <div class="mb-1"><span class="fw-600">{{ __('app.applications.director_nationality') }}:</span><span class="ms-2">{{ \App\Models\Nationality::labelFor(data_get($director, 'director_nationality')) }}</span></div>
                                         <div class="mb-0"><span class="fw-600">{{ __('app.applications.director_profile_url') }}:</span>
                                             @if (filled(data_get($director, 'director_profile_url')))
                                                 <a href="{{ data_get($director, 'director_profile_url') }}" class="ms-2" target="_blank" rel="noreferrer">{{ data_get($director, 'director_profile_url') }}</a>
@@ -517,6 +558,9 @@
                                                             @if (filled($event['note']))
                                                                 <p class="mb-0 timeline-note">{{ $event['note'] }}</p>
                                                             @endif
+                                                            @if (filled($event['meta']))
+                                                                <p class="mb-0 text-muted timeline-note">{{ $event['meta'] }}</p>
+                                                            @endif
                                                         </div>
                                                     </li>
                                                 @empty
@@ -595,83 +639,83 @@
                                 <div class="card request-pane-card">
                                     <div class="card-body">
                                         <div class="form-card text-start pb-4">
-                                            <h2 class="episode-playlist-title wp-heading-inline">
-                                                <span class="position-relative">{{ __('app.documents.title') }}</span>
-                                            </h2>
-
-                                            <div class="row">
-                                                <div class="table-responsive rounded py-4 mt-4 authority-request-table-scroll">
-                                                    <table class="table table-striped mb-0 documents-table authority-detail-table authority-documents-table">
-                                                        <colgroup>
-                                                            <col style="width: 34%;">
-                                                            <col style="width: 18%;">
-                                                            <col style="width: 18%;">
-                                                            <col style="width: 30%;">
-                                                        </colgroup>
-                                                        <thead>
-                                                            <tr>
-                                                                <th>{{ __('app.documents.title_label') }}</th>
-                                                                <th>{{ __('app.documents.file') }}</th>
-                                                                <th>{{ __('app.documents.last_action') }}</th>
-                                                                <th>{{ __('app.documents.status') }}</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            @forelse ($documents as $document)
-                                                                @php
-                                                                    $documentClass = match ($document->status) {
-                                                                        'approved' => 'text-success',
-                                                                        'needs_revision' => 'text-warning',
-                                                                        'rejected' => 'text-danger',
-                                                                        default => 'text-secondary',
-                                                                    };
-                                                                @endphp
-                                                                <tr>
-                                                                    <td>
-                                                                        <div class="d-flex align-items-center">
-                                                                            <img class="rounded img-fluid avatar-40 me-3 bg-primary-subtle" src="{{ asset('images/clapboard.png') }}" alt="document" loading="lazy">
-                                                                            <h6>{{ $document->title }}</h6>
-                                                                        </div>
-                                                                    </td>
-                                                                    <td>
-                                                                        <a class="btn btn-danger" href="{{ route('authority.applications.documents.download', [$application, $document]) }}">
-                                                                            <i class="ph ph-eye fs-6 me-2"></i>{{ __('app.documents.download_action') }}
-                                                                        </a>
-                                                                    </td>
-                                                                    <td>
-                                                                        <span class="text-danger">{{ __('app.documents.last_action') }} :</span>
-                                                                        <p>{{ ($document->reviewed_at ?? $document->created_at)?->format('Y-m-d') }}</p>
-                                                                    </td>
-                                                                    <td>
-                                                                        <div class="{{ $documentClass }}">
-                                                                            @if ($document->status === 'approved')
-                                                                                <i class="ph-fill ph-check fa-xl me-2 lh-lg"></i>
-                                                                            @elseif ($document->status === 'needs_revision')
-                                                                                <i class="ph-fill ph-note-pencil fa-xl me-2 lh-lg"></i>
-                                                                            @else
-                                                                                <i class="ph-fill ph-clock fa-xl me-2 lh-lg"></i>
-                                                                            @endif
-                                                                            {{ $document->localizedStatus() }}
-                                                                        </div>
-                                                                    </td>
-                                                                </tr>
-                                                            @empty
-                                                                <tr>
-                                                                    <td colspan="4" class="text-center text-muted py-4">{{ __('app.documents.empty_state') }}</td>
-                                                                </tr>
-                                                            @endforelse
-                                                        </tbody>
-                                                    </table>
-                                                </div>
+                                            <div class="authority-attached-annex-summary" data-authority-annex-sections="{{ collect($authorityAnnexSections ?? [])->join(',') }}">
+                                                @include('applications.partials.documents-applicant', [
+                                                    'application' => $application,
+                                                    'documents' => $documents,
+                                                    'onlySections' => $authorityAnnexSections ?? [],
+                                                    'hideEmptySections' => true,
+                                                ])
                                             </div>
+
+                                            @if ($documents->isNotEmpty())
+                                                <div class="row mt-4">
+                                                    <div class="table-responsive rounded py-4 authority-request-table-scroll">
+                                                        <table class="table table-striped mb-0 documents-table authority-detail-table authority-documents-table">
+                                                            <colgroup>
+                                                                <col style="width: 34%;">
+                                                                <col style="width: 18%;">
+                                                                <col style="width: 18%;">
+                                                                <col style="width: 30%;">
+                                                            </colgroup>
+                                                            <thead>
+                                                                <tr>
+                                                                    <th>{{ __('app.documents.title_label') }}</th>
+                                                                    <th>{{ __('app.documents.file') }}</th>
+                                                                    <th>{{ __('app.documents.last_action') }}</th>
+                                                                    <th>{{ __('app.documents.status') }}</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                @foreach ($documents as $document)
+                                                                    @php
+                                                                        $documentClass = match ($document->status) {
+                                                                            'approved' => 'text-success',
+                                                                            'needs_revision' => 'text-warning',
+                                                                            'rejected' => 'text-danger',
+                                                                            default => 'text-secondary',
+                                                                        };
+                                                                    @endphp
+                                                                    <tr>
+                                                                        <td>
+                                                                            <div class="d-flex align-items-center">
+                                                                                <img class="rounded img-fluid avatar-40 me-3 bg-primary-subtle" src="{{ asset('images/clapboard.png') }}" alt="document" loading="lazy">
+                                                                                <h6>{{ $document->title }}</h6>
+                                                                            </div>
+                                                                        </td>
+                                                                        <td>
+                                                                            <a class="btn btn-danger" href="{{ route('authority.applications.documents.download', [$application, $document]) }}">
+                                                                                <i class="ph ph-eye fs-6 me-2"></i>{{ __('app.documents.download_action') }}
+                                                                            </a>
+                                                                        </td>
+                                                                        <td>
+                                                                            <span class="text-danger">{{ __('app.documents.last_action') }} :</span>
+                                                                            <p>{{ ($document->reviewed_at ?? $document->created_at)?->format('Y-m-d') }}</p>
+                                                                        </td>
+                                                                        <td>
+                                                                            <div class="{{ $documentClass }}">
+                                                                                @if ($document->status === 'approved')
+                                                                                    <i class="ph-fill ph-check fa-xl me-2 lh-lg"></i>
+                                                                                @elseif ($document->status === 'needs_revision')
+                                                                                    <i class="ph-fill ph-note-pencil fa-xl me-2 lh-lg"></i>
+                                                                                @else
+                                                                                    <i class="ph-fill ph-clock fa-xl me-2 lh-lg"></i>
+                                                                                @endif
+                                                                                {{ $document->localizedStatus() }}
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                @endforeach
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            @endif
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <div id="authority-official-letters" class="tab-pane fade">
-                                @include('authority.applications.partials.official-letters', ['officialLetters' => $officialLetters])
-                            </div>
                         </div>
                     </div>
 
@@ -741,11 +785,23 @@
                                         <div class="small text-muted mt-3">{{ __('app.authority.applications.current_note_label') }}</div>
                                         <div class="mt-1">{{ $currentApproval->note }}</div>
                                     @endif
+                                    @if ($currentApproval->response_attachment_path)
+                                        <div class="small text-muted mt-3">{{ __('app.approvals.response_book') }}</div>
+                                        <div class="mt-1 d-flex flex-wrap align-items-center gap-2">
+                                            <a class="btn btn-sm btn-outline-primary" href="{{ route('authority.applications.approvals.attachment.download', [$application, $currentApproval]) }}">
+                                                <i class="ph ph-download-simple me-1"></i>{{ __('app.approvals.response_book_download') }}
+                                            </a>
+                                            <span class="text-muted">{{ $currentApproval->response_attachment_name ?: __('app.approvals.response_book') }}</span>
+                                        </div>
+                                        @if ($currentApproval->response_attachment_uploaded_at)
+                                            <div class="small text-muted mt-1">{{ __('app.approvals.response_book_uploaded_at', ['date' => $currentApproval->response_attachment_uploaded_at->format('Y-m-d H:i')]) }}</div>
+                                        @endif
+                                    @endif
                                 </div>
                                 @if (! $canResolveAuthorityDecision && $approvalIsResolved)
                                     <div class="alert alert-secondary mb-0">{{ __('app.authority.applications.reviewer_decision_locked') }}</div>
                                 @else
-                                    <form method="POST" action="{{ route('authority.applications.approval.update', $application) }}" class="authority-decision-panel">
+                                    <form method="POST" action="{{ route('authority.applications.approval.update', $application) }}" class="authority-decision-panel" enctype="multipart/form-data">
                                         @csrf
                                         <div class="mb-3">
                                             <div class="fw-semibold">{{ __('app.authority.applications.decision_actions_title') }}</div>
@@ -755,6 +811,13 @@
                                             <label class="form-label" for="note">{{ __('app.authority.applications.approval_note') }}</label>
                                             <textarea id="note" name="note" rows="5" class="form-control" placeholder="{{ __('app.authority.applications.note_placeholder') }}">{{ old('note', $currentApproval->note) }}</textarea>
                                         </div>
+                                        @if ($canResolveAuthorityDecision)
+                                            <div class="mb-3">
+                                                <label class="form-label" for="response_attachment">{{ __('app.approvals.response_book') }}</label>
+                                                <input id="response_attachment" name="response_attachment" type="file" class="form-control" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                                <div class="form-text">{{ __('app.approvals.response_book_hint') }}</div>
+                                            </div>
+                                        @endif
                                         <div class="authority-decision-actions">
                                             <button class="btn btn-warning authority-decision-action d-flex gap-2" type="submit" name="status" value="in_review">
                                                 <i class="ph ph-list-checks"></i>

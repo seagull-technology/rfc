@@ -3,14 +3,7 @@
     $breadcrumb = __('app.admin.navigation.approval_routing');
     $conditions = collect((array) ($rule->conditions ?? []));
     $translateCondition = static function (string $type, string $value): string {
-        return match ($type) {
-            'project_nationalities' => __('app.applications.project_nationalities.'.$value),
-            'work_categories' => __('app.applications.work_categories.'.$value),
-            'release_methods' => __('app.applications.release_methods.'.$value),
-            'annex_flags' => __('app.admin.approval_routing.annex_flag_options.'.$value),
-            'governorates' => __('app.scouting.governorate_options.'.$value),
-            default => $value,
-        };
+        return \App\Support\ApprovalRoutingConditionLabels::label($type, $value);
     };
     $auditBadgeClass = static function (?string $action): string {
         return match ($action) {

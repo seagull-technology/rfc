@@ -8,7 +8,13 @@ use App\Models\ApplicationAuthorityApproval;
 use App\Models\ApprovalRoutingRule;
 use App\Models\ApprovalRoutingRuleAudit;
 use App\Models\Entity;
+use App\Models\FilmingLocationType;
+use App\Models\FormLookupOption;
+use App\Models\Governorate;
+use App\Models\Nationality;
+use App\Models\ReleaseMethod;
 use App\Models\User;
+use App\Models\WorkCategory;
 use App\Services\ApprovalRoutingService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -235,6 +241,10 @@ class ApprovalRoutingRuleController extends Controller
 
     public function simulator(Request $request): View
     {
+        $projectNationalityCodes = Nationality::activeCodesFor(Nationality::USAGE_PROJECT);
+        $workCategoryCodes = WorkCategory::activeCodes();
+        $releaseMethodCodes = ReleaseMethod::activeCodes();
+
         $filters = $request->validate([
             'application_id' => ['nullable', 'integer', 'exists:applications,id'],
             'q' => ['nullable', 'string', 'max:255'],
@@ -243,15 +253,15 @@ class ApprovalRoutingRuleController extends Controller
             'draft.target_entity_id' => ['nullable', 'integer', 'exists:entities,id'],
             'draft.priority' => ['nullable', 'integer', 'min:1', 'max:9999'],
             'draft.conditions.project_nationalities' => ['nullable', 'array'],
-            'draft.conditions.project_nationalities.*' => [Rule::in(['jordanian', 'international'])],
+            'draft.conditions.project_nationalities.*' => [Rule::in($projectNationalityCodes)],
             'draft.conditions.work_categories' => ['nullable', 'array'],
-            'draft.conditions.work_categories.*' => [Rule::in(['feature_film', 'documentary', 'series', 'commercial', 'tv_program', 'student_project'])],
+            'draft.conditions.work_categories.*' => [Rule::in($workCategoryCodes)],
             'draft.conditions.release_methods' => ['nullable', 'array'],
-            'draft.conditions.release_methods.*' => [Rule::in(['cinema', 'television', 'streaming', 'festival', 'digital'])],
+            'draft.conditions.release_methods.*' => [Rule::in($releaseMethodCodes)],
             'draft.conditions.annex_flags' => ['nullable', 'array'],
             'draft.conditions.annex_flags.*' => [Rule::in($this->annexFlagCodes())],
             'draft.conditions.governorates' => ['nullable', 'array'],
-            'draft.conditions.governorates.*' => [Rule::in($this->governorateCodes())],
+            'draft.conditions.governorates.*' => [Rule::in(Governorate::activeCodes())],
         ]);
 
         $applicationOptionsQuery = Application::query()
@@ -305,6 +315,7 @@ class ApprovalRoutingRuleController extends Controller
             'draftSimulation' => $draftSimulation,
             'simulationChanges' => $simulationChanges,
             'conditionOptions' => $this->conditionOptions(),
+            'annexTriggerGroups' => $this->annexTriggerGroups(),
             'authorityEntities' => $this->authorityEntities(),
             'approvalCodes' => $this->approvalCodes(),
             'filters' => [
@@ -450,6 +461,7 @@ class ApprovalRoutingRuleController extends Controller
             'authorityEntities' => $this->authorityEntities(),
             'approvalCodes' => $this->approvalCodes(),
             'conditionOptions' => $this->conditionOptions(),
+            'annexTriggerGroups' => $this->annexTriggerGroups(),
         ];
     }
 
@@ -458,6 +470,10 @@ class ApprovalRoutingRuleController extends Controller
      */
     private function validatedPayload(Request $request, ?ApprovalRoutingRule $currentRule = null): array
     {
+        $projectNationalityCodes = Nationality::activeCodesFor(Nationality::USAGE_PROJECT);
+        $workCategoryCodes = WorkCategory::activeCodes();
+        $releaseMethodCodes = ReleaseMethod::activeCodes();
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'request_type' => ['required', Rule::in(['application'])],
@@ -480,15 +496,15 @@ class ApprovalRoutingRuleController extends Controller
             'priority' => ['required', 'integer', 'min:1', 'max:9999'],
             'is_active' => ['nullable', 'boolean'],
             'conditions.project_nationalities' => ['nullable', 'array'],
-            'conditions.project_nationalities.*' => [Rule::in(['jordanian', 'international'])],
+            'conditions.project_nationalities.*' => [Rule::in($projectNationalityCodes)],
             'conditions.work_categories' => ['nullable', 'array'],
-            'conditions.work_categories.*' => [Rule::in(['feature_film', 'documentary', 'series', 'commercial', 'tv_program', 'student_project'])],
+            'conditions.work_categories.*' => [Rule::in($workCategoryCodes)],
             'conditions.release_methods' => ['nullable', 'array'],
-            'conditions.release_methods.*' => [Rule::in(['cinema', 'television', 'streaming', 'festival', 'digital'])],
+            'conditions.release_methods.*' => [Rule::in($releaseMethodCodes)],
             'conditions.annex_flags' => ['nullable', 'array'],
             'conditions.annex_flags.*' => [Rule::in($this->annexFlagCodes())],
             'conditions.governorates' => ['nullable', 'array'],
-            'conditions.governorates.*' => [Rule::in($this->governorateCodes())],
+            'conditions.governorates.*' => [Rule::in(Governorate::activeCodes())],
         ]);
 
         $conditions = $this->normalizedConditions((array) ($validated['conditions'] ?? []));
@@ -539,11 +555,11 @@ class ApprovalRoutingRuleController extends Controller
     private function conditionOptions(): array
     {
         return [
-            'project_nationalities' => ['jordanian', 'international'],
-            'work_categories' => ['feature_film', 'documentary', 'series', 'commercial', 'tv_program', 'student_project'],
-            'release_methods' => ['cinema', 'television', 'streaming', 'festival', 'digital'],
+            'project_nationalities' => Nationality::activeCodesFor(Nationality::USAGE_PROJECT),
+            'work_categories' => WorkCategory::activeCodes(),
+            'release_methods' => ReleaseMethod::activeCodes(),
             'annex_flags' => $this->annexFlagCodes(),
-            'governorates' => $this->governorateCodes(),
+            'governorates' => Governorate::activeCodes(),
         ];
     }
 
@@ -552,15 +568,146 @@ class ApprovalRoutingRuleController extends Controller
      */
     private function annexFlagCodes(): array
     {
+        return collect($this->annexTriggerGroups())
+            ->flatMap(function (array $group): array {
+                return [
+                    $group['flag'],
+                    ...collect($group['child_groups'] ?? [])
+                        ->flatMap(fn (array $childGroup): array => collect($childGroup['options'] ?? [])
+                            ->pluck('flag')
+                            ->filter()
+                            ->all())
+                        ->all(),
+                ];
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, array{key:string,label:string,flag:string,child_groups:array<int, array{key:string,label:string,options:array<int, array{flag:string,label:string}>}>}>
+     */
+    private function annexTriggerGroups(): array
+    {
         return [
-            'work_content_confirmed',
-            'filming_locations',
-            'safety_guidelines',
-            'imported_equipment',
-            'military_border_equipment',
-            'airport_filming',
-            'governmental_scenes',
+            $this->annexTriggerGroup('work_content_summary', 'work_content_confirmed'),
+            $this->annexTriggerGroup('cast_crew', 'cast_crew'),
+            $this->annexTriggerGroup('filming_locations', 'filming_locations', [
+                [
+                    'key' => 'location_types',
+                    'label' => __('app.admin.approval_routing.annex_trigger_child_groups.location_types'),
+                    'options' => collect(FilmingLocationType::activeCodes())
+                        ->map(fn (string $code): array => [
+                            'flag' => 'location_type_'.$code,
+                            'label' => FilmingLocationType::labelFor($code),
+                        ])
+                        ->values()
+                        ->all(),
+                ],
+                [
+                    'key' => 'special_location_requirements',
+                    'label' => __('app.admin.approval_routing.annex_trigger_child_groups.special_location_requirements'),
+                    'options' => $this->formLookupFlagOptions(
+                        FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT,
+                        'special_requirement_',
+                    ),
+                ],
+            ]),
+            $this->annexTriggerGroup('safety_guidelines', 'safety_guidelines'),
+            $this->annexTriggerGroup('imported_equipment', 'imported_equipment', [
+                [
+                    'key' => 'equipment_categories',
+                    'label' => __('app.admin.approval_routing.annex_trigger_child_groups.equipment_categories'),
+                    'options' => $this->formLookupFlagOptions(
+                        FormLookupOption::TYPE_EQUIPMENT_CATEGORY,
+                        'imported_equipment_category_',
+                    ),
+                ],
+                [
+                    'key' => 'equipment_shipping_methods',
+                    'label' => __('app.admin.approval_routing.annex_trigger_child_groups.shipping_methods'),
+                    'options' => $this->formLookupFlagOptions(
+                        FormLookupOption::TYPE_EQUIPMENT_SHIPPING_METHOD,
+                        'imported_equipment_shipping_method_',
+                    ),
+                ],
+                [
+                    'key' => 'equipment_entry_points',
+                    'label' => __('app.admin.approval_routing.annex_trigger_child_groups.entry_points'),
+                    'options' => $this->formLookupFlagOptions(
+                        FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT,
+                        'imported_equipment_entry_point_',
+                    ),
+                ],
+            ]),
+            $this->annexTriggerGroup('military_border_equipment', 'military_border_equipment', [
+                [
+                    'key' => 'military_location_types',
+                    'label' => __('app.admin.approval_routing.annex_trigger_child_groups.military_location_types'),
+                    'options' => $this->formLookupFlagOptions(
+                        FormLookupOption::TYPE_MILITARY_BORDER_LOCATION_TYPE,
+                        'military_location_type_',
+                    ),
+                ],
+                [
+                    'key' => 'military_equipment_categories',
+                    'label' => __('app.admin.approval_routing.annex_trigger_child_groups.equipment_categories'),
+                    'options' => $this->formLookupFlagOptions(
+                        FormLookupOption::TYPE_EQUIPMENT_CATEGORY,
+                        'military_equipment_category_',
+                    ),
+                ],
+                [
+                    'key' => 'military_equipment_entry_points',
+                    'label' => __('app.admin.approval_routing.annex_trigger_child_groups.entry_points'),
+                    'options' => $this->formLookupFlagOptions(
+                        FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT,
+                        'military_equipment_entry_point_',
+                    ),
+                ],
+            ]),
+            $this->annexTriggerGroup('airport_filming', 'airport_filming', [
+                [
+                    'key' => 'airports',
+                    'label' => __('app.admin.approval_routing.annex_trigger_child_groups.airports'),
+                    'options' => $this->formLookupFlagOptions(
+                        FormLookupOption::TYPE_AIRPORT,
+                        'airport_filming_airport_',
+                    ),
+                ],
+            ]),
+            $this->annexTriggerGroup('governmental_scenes', 'governmental_scenes'),
         ];
+    }
+
+    /**
+     * @param  array<int, array{key:string,label:string,options:array<int, array{flag:string,label:string}>}>  $childGroups
+     * @return array{key:string,label:string,flag:string,child_groups:array<int, array{key:string,label:string,options:array<int, array{flag:string,label:string}>}>}
+     */
+    private function annexTriggerGroup(string $section, string $flag, array $childGroups = []): array
+    {
+        return [
+            'key' => $section,
+            'label' => __('app.applications.annex_sections.'.$section),
+            'flag' => $flag,
+            'child_groups' => $childGroups,
+        ];
+    }
+
+    /**
+     * @return array<int, array{flag:string,label:string}>
+     */
+    private function formLookupFlagOptions(string $type, string $flagPrefix): array
+    {
+        return collect(FormLookupOption::activeCodesForType($type))
+            ->map(fn (string $code): array => [
+                'flag' => $flagPrefix.$code,
+                'label' => FormLookupOption::labelFor($type, $code),
+            ])
+            ->values()
+            ->all();
     }
 
     /**
@@ -804,10 +951,40 @@ class ApprovalRoutingRuleController extends Controller
      */
     private function normalizedConditions(array $conditions): array
     {
-        return collect(array_keys($this->conditionOptions()))
+        $normalized = collect(array_keys($this->conditionOptions()))
             ->mapWithKeys(fn (string $key): array => [
                 $key => $this->normalizeConditionValues((array) data_get($conditions, $key, [])),
             ])
+            ->all();
+
+        $normalized['annex_flags'] = $this->normalizeAnnexFlagConditions($normalized['annex_flags'] ?? []);
+
+        return $normalized;
+    }
+
+    /**
+     * @param  array<int, string>  $flags
+     * @return array<int, string>
+     */
+    private function normalizeAnnexFlagConditions(array $flags): array
+    {
+        $normalized = collect($flags)->values();
+
+        foreach ($this->annexTriggerGroups() as $group) {
+            $childFlags = collect($group['child_groups'] ?? [])
+                ->flatMap(fn (array $childGroup): array => collect($childGroup['options'] ?? [])->pluck('flag')->all())
+                ->filter()
+                ->values();
+
+            if ($childFlags->isNotEmpty() && $normalized->intersect($childFlags)->isNotEmpty()) {
+                $normalized = $normalized->reject(fn (string $flag): bool => $flag === $group['flag'])->values();
+            }
+        }
+
+        return $normalized
+            ->unique()
+            ->sort()
+            ->values()
             ->all();
     }
 

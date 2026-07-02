@@ -2,10 +2,20 @@
     $title = $requestRecord->project_name;
     $metadata = $requestRecord->metadata ?? [];
     $producer = data_get($metadata, 'producer', []);
-    $responsiblePerson = data_get($metadata, 'responsible_person', []);
     $production = data_get($metadata, 'production', []);
     $locations = data_get($metadata, 'locations', []);
     $crew = data_get($metadata, 'crew', []);
+    $legacyLocationTypeMap = [
+        'public_site' => 'public_locations',
+        'border_area' => 'border_areas',
+        'archaeological' => 'archaeological_sites',
+        'religious' => 'religious_sites',
+        'syrian_camps' => 'syrian_refugee_camps',
+        'palestinian_camps' => 'palestinian_refugee_camps',
+        'private_site' => 'private_location',
+    ];
+    $locationTypeCode = static fn (array $location): ?string => data_get($location, 'location_type') ?: ($legacyLocationTypeMap[(string) data_get($location, 'location_nature')] ?? data_get($location, 'location_nature'));
+    $locationDescription = static fn (array $location): string => data_get($location, 'location_description') ?: __('app.dashboard.not_available');
     $statusClass = match ($requestRecord->status) {
         'submitted' => 'warning',
         'under_review' => 'info',
@@ -88,7 +98,7 @@
         }
 
         .scouting-show-layout .scouting-locations-table {
-            min-width: 1120px;
+            min-width: 1320px;
         }
 
         .scouting-show-layout .scouting-crew-table {
@@ -259,8 +269,8 @@
                             <div class="card-header"><h2 class="episode-playlist-title wp-heading-inline"><span class="position-relative">{{ __('app.applications.project_information') }}</span></h2></div>
                             <div class="card-body">
                                 <div class="mb-1"><span class="fw-600">{{ __('app.applications.project_name') }}:</span><span class="ms-2">{{ $requestRecord->project_name }}</span></div>
-                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.project_nationality') }}:</span><span class="ms-2">{{ __('app.applications.project_nationalities.'.$requestRecord->project_nationality) }}</span></div>
-                                <div class="mb-1"><span class="fw-600">{{ __('app.scouting.production_type') }}:</span><span class="ms-2">{{ collect(data_get($production, 'types', []))->map(fn ($type) => __('app.scouting.production_type_options.'.$type))->join('، ') ?: __('app.dashboard.not_available') }}</span></div>
+                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.project_nationality') }}:</span><span class="ms-2">{{ \App\Models\Nationality::labelFor($requestRecord->project_nationality) }}</span></div>
+                                <div class="mb-1"><span class="fw-600">{{ __('app.scouting.production_type') }}:</span><span class="ms-2">{{ collect(data_get($production, 'types', []))->map(fn ($type) => \App\Models\WorkCategory::labelFor($type))->join('، ') ?: __('app.dashboard.not_available') }}</span></div>
                                 <div class="mb-0"><span class="fw-600">{{ __('app.scouting.project_summary') }}:</span><span class="ms-2">{{ $requestRecord->project_summary }}</span></div>
                             </div>
                         </div>
@@ -269,7 +279,7 @@
                             <div class="card-header"><h2 class="episode-playlist-title wp-heading-inline"><span class="position-relative">{{ __('app.scouting.producer_tab') }}</span></h2></div>
                             <div class="card-body">
                                 <div class="mb-1"><span class="fw-600">{{ __('app.scouting.producer_name') }}:</span><span class="ms-2">{{ data_get($producer, 'producer_name', __('app.dashboard.not_available')) }}</span></div>
-                                <div class="mb-1"><span class="fw-600">{{ __('app.scouting.producer_nationality') }}:</span><span class="ms-2">{{ __('app.applications.project_nationalities.'.data_get($producer, 'producer_nationality', 'jordanian')) }}</span></div>
+                                <div class="mb-1"><span class="fw-600">{{ __('app.scouting.producer_nationality') }}:</span><span class="ms-2">{{ \App\Models\Nationality::labelFor(data_get($producer, 'producer_nationality', 'jordanian')) }}</span></div>
                                 <div class="mb-1"><span class="fw-600">{{ __('app.applications.production_company_name') }}:</span><span class="ms-2">{{ data_get($producer, 'production_company_name', __('app.dashboard.not_available')) }}</span></div>
                                 <div class="mb-1"><span class="fw-600">{{ __('app.applications.contact_address') }}:</span><span class="ms-2">{{ data_get($producer, 'contact_address', __('app.dashboard.not_available')) }}</span></div>
                                 <div class="mb-1"><span class="fw-600">{{ __('app.scouting.producer_phone') }}:</span><span class="ms-2">{{ data_get($producer, 'producer_phone', __('app.dashboard.not_available')) }}</span></div>
@@ -279,14 +289,6 @@
                                 <div class="mb-1"><span class="fw-600">{{ __('app.scouting.liaison_name') }}:</span><span class="ms-2">{{ data_get($producer, 'liaison_name', __('app.dashboard.not_available')) }}</span></div>
                                 <div class="mb-1"><span class="fw-600">{{ __('app.scouting.liaison_job_title') }}:</span><span class="ms-2">{{ data_get($producer, 'liaison_job_title', __('app.dashboard.not_available')) }}</span></div>
                                 <div class="mb-0"><span class="fw-600">{{ __('app.scouting.liaison_email') }}:</span><span class="ms-2">{{ data_get($producer, 'liaison_email', __('app.dashboard.not_available')) }}</span></div>
-                            </div>
-                        </div>
-
-                        <div class="card request-section-card">
-                            <div class="card-header"><h2 class="episode-playlist-title wp-heading-inline"><span class="position-relative">{{ __('app.scouting.responsible_person_tab') }}</span></h2></div>
-                            <div class="card-body">
-                                <div class="mb-1"><span class="fw-600">{{ __('app.scouting.responsible_person_name') }}:</span><span class="ms-2">{{ data_get($responsiblePerson, 'name', __('app.dashboard.not_available')) }}</span></div>
-                                <div class="mb-0"><span class="fw-600">{{ __('app.scouting.responsible_person_nationality') }}:</span><span class="ms-2">{{ __('app.applications.project_nationalities.'.data_get($responsiblePerson, 'nationality', 'jordanian')) }}</span></div>
                             </div>
                         </div>
 
@@ -318,9 +320,10 @@
                                         <colgroup>
                                             <col style="width: 64px">
                                             <col style="width: 150px">
+                                            <col style="width: 190px">
                                             <col style="width: 220px">
                                             <col style="width: 240px">
-                                            <col style="width: 170px">
+                                            <col style="width: 220px">
                                             <col style="width: 140px">
                                             <col style="width: 140px">
                                         </colgroup>
@@ -328,9 +331,10 @@
                                             <tr>
                                                 <th>#</th>
                                                 <th>{{ __('app.scouting.governorate') }}</th>
+                                                <th>{{ __('app.scouting.location_type') }}</th>
                                                 <th>{{ __('app.scouting.location_name') }}</th>
                                                 <th>{{ __('app.scouting.google_map_url') }}</th>
-                                                <th>{{ __('app.scouting.location_nature') }}</th>
+                                                <th>{{ __('app.scouting.location_description') }}</th>
                                                 <th>{{ __('app.scouting.start_date') }}</th>
                                                 <th>{{ __('app.scouting.end_date') }}</th>
                                             </tr>
@@ -339,15 +343,16 @@
                                             @forelse ($locations as $location)
                                                 <tr>
                                                     <td>{{ $loop->iteration }}</td>
-                                                    <td>{{ __('app.scouting.governorate_options.'.($location['governorate'] ?? 'amman')) }}</td>
+                                                    <td>{{ \App\Models\Governorate::labelFor($location['governorate'] ?? null) }}</td>
+                                                    <td>{{ \App\Models\FilmingLocationType::labelFor($locationTypeCode((array) $location)) }}</td>
                                                     <td>{{ $location['location_name'] ?? __('app.dashboard.not_available') }}</td>
                                                     <td>{{ $location['google_map_url'] ?? __('app.dashboard.not_available') }}</td>
-                                                    <td>{{ __('app.scouting.location_nature_options.'.($location['location_nature'] ?? 'public_site')) }}</td>
+                                                    <td>{{ $locationDescription((array) $location) }}</td>
                                                     <td>{{ $location['start_date'] ?? __('app.dashboard.not_available') }}</td>
                                                     <td>{{ $location['end_date'] ?? __('app.dashboard.not_available') }}</td>
                                                 </tr>
                                             @empty
-                                                <tr><td colspan="7">{{ __('app.scouting.empty_state') }}</td></tr>
+                                                <tr><td colspan="8">{{ __('app.scouting.empty_state') }}</td></tr>
                                             @endforelse
                                         </tbody>
                                     </table>
@@ -382,7 +387,7 @@
                                                     <td>{{ $loop->iteration }}</td>
                                                     <td>{{ $member['name'] ?? __('app.dashboard.not_available') }}</td>
                                                     <td>{{ $member['job_title'] ?? __('app.dashboard.not_available') }}</td>
-                                                    <td>{{ __('app.applications.project_nationalities.'.($member['nationality'] ?? 'jordanian')) }}</td>
+                                                    <td>{{ \App\Models\Nationality::labelFor($member['nationality'] ?? 'jordanian') }}</td>
                                                     <td>{{ $member['national_id_passport'] ?? __('app.dashboard.not_available') }}</td>
                                                 </tr>
                                             @empty

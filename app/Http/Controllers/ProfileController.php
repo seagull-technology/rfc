@@ -27,12 +27,12 @@ class ProfileController extends Controller
         $applications = FilmApplication::query()
             ->with(['authorityApprovals', 'submittedBy'])
             ->where('entity_id', $entity->getKey())
-            ->latest()
+            ->newestFirst()
             ->get();
         $scoutingRequests = ScoutingRequest::query()
             ->with('submittedBy')
             ->where('entity_id', $entity->getKey())
-            ->latest()
+            ->newestFirst()
             ->get();
         $monthlyApplications = collect(range(5, 0))
             ->map(fn (int $offset) => now()->copy()->startOfMonth()->subMonths($offset))
@@ -131,6 +131,7 @@ class ProfileController extends Controller
                     'status_class' => $this->statusClass($application->status),
                     'url' => route('applications.show', $application),
                     'sort_at' => $application->reviewed_at ?? $application->updated_at ?? $application->submitted_at ?? $application->created_at,
+                    'sort_id' => $application->getKey(),
                 ];
             })
             ->all())
@@ -148,10 +149,11 @@ class ProfileController extends Controller
                         'status_class' => $this->statusClass($request->status),
                         'url' => route('scouting-requests.show', $request),
                         'sort_at' => $request->reviewed_at ?? $request->updated_at ?? $request->submitted_at ?? $request->created_at,
+                        'sort_id' => $request->getKey(),
                     ];
                 })
                 ->all())
-            ->sortByDesc(fn (array $item): int => data_get($item, 'sort_at')?->timestamp ?? 0)
+            ->sortByDesc(fn (array $item): int => ((data_get($item, 'sort_at')?->timestamp ?? 0) * 1_000_000) + (int) data_get($item, 'sort_id', 0))
             ->values();
 
         return view($variant === 'foreign_producer' ? 'profile.foreign-producer' : 'profile.show', [

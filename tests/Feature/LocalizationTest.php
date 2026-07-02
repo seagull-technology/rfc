@@ -94,8 +94,9 @@ class LocalizationTest extends TestCase
 
         $dashboardResponse->assertOk();
         $dashboardResponse->assertSee('الهيئة الملكية الأردنية للأفلام');
-        $dashboardResponse->assertSee(__('app.admin.applications.title'));
-        $dashboardResponse->assertSee(__('app.admin.applications.intro'));
+        $dashboardResponse->assertSee(__('app.admin.dashboard.title'));
+        $dashboardResponse->assertSee(__('app.admin.dashboard.operational_kpis_title'));
+        $dashboardResponse->assertSee('dashboard-demo2-shell', false);
         $dashboardResponse->assertDontSeeText('This is the temporary testing dashboard');
     }
 }

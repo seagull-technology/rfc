@@ -27,8 +27,13 @@ class AccessControlSeeder extends Seeder
 
         $this->seedGroupRoleMap($groups, $roles);
         $this->seedEntities($groups);
+        $this->call(NationalitySeeder::class);
+        $this->call(FilmingLocationLookupSeeder::class);
+        $this->call(WorkAndReleaseLookupSeeder::class);
+        $this->call(FormLookupOptionSeeder::class);
         $this->call(ApprovalRoutingSeeder::class);
         $this->seedInitialSuperAdmin($roles);
+        $this->seedInitialRfcOwner($roles);
 
         $registrar->forgetCachedPermissions();
     }
@@ -164,6 +169,50 @@ class AccessControlSeeder extends Seeder
 
         try {
             $user->assignRole($roles['super_admin']);
+        } finally {
+            $registrar->setPermissionsTeamId(null);
+        }
+    }
+
+    /**
+     * @param  array<string, Role>  $roles
+     */
+    private function seedInitialRfcOwner(array $roles): void
+    {
+        $rfcEntity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+
+        $user = User::query()->updateOrCreate(
+            ['email' => env('INITIAL_RFC_OWNER_EMAIL', 'ref@ref.test')],
+            [
+                'name' => env('INITIAL_RFC_OWNER_NAME', 'RFC Owner Account'),
+                'username' => env('INITIAL_RFC_OWNER_USERNAME', 'rfc_owner'),
+                'national_id' => env('INITIAL_RFC_OWNER_NATIONAL_ID', '2000012345'),
+                'phone' => env('INITIAL_RFC_OWNER_PHONE', '0791231233'),
+                'status' => 'active',
+                'registration_type' => 'staff',
+                'password' => Hash::make(env('INITIAL_RFC_OWNER_PASSWORD', 'Admin@12345')),
+            ],
+        );
+
+        $user->entities()->syncWithoutDetaching([
+            $rfcEntity->getKey() => [
+                'job_title' => 'RFC Project Owner',
+                'is_primary' => true,
+                'status' => 'active',
+                'joined_at' => now(),
+            ],
+        ]);
+
+        $registrar = app(PermissionRegistrar::class);
+        $registrar->setPermissionsTeamId($rfcEntity->getKey());
+
+        try {
+            $user->assignRole([
+                $roles['rfc_admin'],
+                $roles['rfc_intake_officer'],
+                $roles['rfc_reviewer'],
+                $roles['rfc_approver'],
+            ]);
         } finally {
             $registrar->setPermissionsTeamId(null);
         }

@@ -21,7 +21,7 @@
     };
     $formatFallback = static fn (?string $value): string => filled($value) ? str((string) $value)->replace('_', ' ')->title()->toString() : __('app.dashboard.not_available');
     $applicationsByTypeChart = $chartData['applications_by_type']
-        ->map(fn (int $count, string $key): array => ['label' => $translateOrFallback('app.applications.work_categories.'.$key, $formatFallback($key)), 'value' => $count])
+        ->map(fn (int $count, string $key): array => ['label' => \App\Models\WorkCategory::labelFor($key), 'value' => $count])
         ->values();
     $budgetByProjectChart = collect($chartData['budget_by_project'])->values();
     $applicationsByMonthLabels = collect($chartData['applications_by_month'])->pluck('label')->values();
@@ -229,7 +229,7 @@
                         @forelse ($userApplications as $project)
                             <tr>
                                 <td><a href="{{ route('admin.applications.show', $project) }}">{{ $project->project_name }}</a></td>
-                                <td>{{ $translateOrFallback('app.applications.work_categories.'.$project->work_category, $formatFallback($project->work_category)) }}</td>
+                                <td>{{ \App\Models\WorkCategory::labelFor($project->work_category) }}</td>
                                 <td>{{ $project->estimated_budget ? number_format((float) $project->estimated_budget, 2) : __('app.dashboard.not_available') }}</td>
                                 <td><span class="badge bg-{{ $statusClass($project->status) }}">{{ $project->localizedStatus() }}</span></td>
                                 <td>{{ optional($project->created_at)->format('Y') ?: __('app.dashboard.not_available') }}</td>
@@ -391,6 +391,16 @@
                                 <div>{{ data_get($primaryEntity?->metadata, 'major', __('app.dashboard.not_available')) }}</div>
                             </div>
                         @else
+                            @if ($primaryEntity?->registration_type === 'company')
+                                <div class="col-md-6">
+                                    <small class="text-muted d-block">{{ __('app.auth.company_registration_date') }}</small>
+                                    <div>{{ data_get($primaryEntity?->metadata, 'company_registration_date', __('app.dashboard.not_available')) }}</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <small class="text-muted d-block">{{ __('app.auth.company_capital') }}</small>
+                                    <div>{{ data_get($primaryEntity?->metadata, 'company_capital', __('app.dashboard.not_available')) }}</div>
+                                </div>
+                            @endif
                             <div class="col-12">
                                 <small class="text-muted d-block">{{ __('app.dashboard.address') }}</small>
                                 <div>{{ data_get($primaryEntity?->metadata, 'address', __('app.dashboard.not_available')) }}</div>

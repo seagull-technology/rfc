@@ -13,6 +13,8 @@ use App\Models\Permit;
 use App\Models\User;
 use App\Notifications\FinalDecisionIssuedNotification;
 use App\Notifications\InboxMessageNotification;
+use App\Services\ApprovalRoutingService;
+use App\Services\AuthorityApprovalNotificationService;
 use App\Services\AuthorityEscalationService;
 use App\Services\FinalDecisionDeliveryService;
 use App\Support\AdminApplicantResponseState;
@@ -36,6 +38,8 @@ class ApplicationManagementController extends Controller
     public function __construct(
         private readonly FinalDecisionDeliveryService $finalDecisionDeliveryService,
         private readonly AuthorityEscalationService $authorityEscalationService,
+        private readonly ApprovalRoutingService $approvalRoutingService,
+        private readonly AuthorityApprovalNotificationService $authorityApprovalNotificationService,
     ) {
     }
 
@@ -43,46 +47,40 @@ class ApplicationManagementController extends Controller
     {
         $filters = $this->directoryFilters($request);
         $applications = $this->directoryQuery($filters)
-            ->latest()
+            ->newestFirst()
             ->get();
-        $responsibilitySummaries = $applications
-            ->mapWithKeys(function (FilmApplication $application): array {
-                $authorityItems = $application->authorityApprovals
+        $checkpointStats = $applications
+            ->map(fn (FilmApplication $application): string => AdminWorkflowState::applicationCheckpoint($application)['key'])
+            ->countBy();
+        $overdueAuthorityCount = $applications
+            ->filter(fn (FilmApplication $application): bool => $application->authorityApprovals
+                ->whereIn('status', ['pending', 'in_review'])
+                ->contains(fn (ApplicationAuthorityApproval $approval): bool => $this->authorityEscalationService->signalForApproval($approval)['is_overdue']))
+            ->count();
+        $applicationAuthoritySignals = $applications
+            ->mapWithKeys(fn (FilmApplication $application): array => [
+                $application->getKey() => $application->authorityApprovals
                     ->whereIn('status', ['pending', 'in_review'])
                     ->map(function (ApplicationAuthorityApproval $approval): array {
                         $signal = $this->authorityEscalationService->signalForApproval($approval);
 
                         return [
-                            'authority' => $approval->localizedAuthority(),
-                            'owner' => $approval->assignedTo?->displayName() ?? __('app.admin.applications.authority_shared_inbox'),
-                            'status' => $approval->localizedStatus(),
-                            'is_shared' => blank($approval->assigned_user_id),
-                            'signal_label' => $signal['label'],
+                            'label' => $signal['label'],
                             'is_overdue' => $signal['is_overdue'],
                             'is_escalated' => $signal['is_escalated'],
+                            'authority' => $approval->localizedAuthority(),
                         ];
                     })
-                    ->values();
-
-                return [
-                    $application->getKey() => [
-                        'rfc_owner' => $application->assignedTo?->displayName() ?? __('app.workflow.unassigned'),
-                        'authority_items' => $authorityItems,
-                        'has_overdue_authority' => $authorityItems->contains(fn (array $item): bool => $item['is_overdue']),
-                    ],
-                ];
-            });
-        $checkpointStats = $applications
-            ->map(fn (FilmApplication $application): string => AdminWorkflowState::applicationCheckpoint($application)['key'])
-            ->countBy();
+                    ->filter(fn (array $signal): bool => filled($signal['label']))
+                    ->sortByDesc(fn (array $signal): int => ((int) $signal['is_overdue'] * 10) + ((int) $signal['is_escalated'] * 5))
+                    ->values(),
+            ]);
 
         return view('admin.applications.index', [
             'applications' => $applications,
             'openApplications' => $applications->whereNotIn('status', ['approved', 'rejected'])->values(),
             'closedApplications' => $applications->whereIn('status', ['approved', 'rejected'])->values(),
-            'responsibilitySummaries' => $responsibilitySummaries,
-            'applicantResponses' => $applications
-                ->mapWithKeys(fn (FilmApplication $application): array => [$application->getKey() => AdminApplicantResponseState::application($application)]),
+            'applicationAuthoritySignals' => $applicationAuthoritySignals,
             'filters' => [
                 'q' => $filters['q'] ?? '',
                 'status' => $filters['status'] ?? 'all',
@@ -92,10 +90,10 @@ class ApplicationManagementController extends Controller
                 'submitted' => $applications->where('status', 'submitted')->count(),
                 'under_review' => $applications->where('status', 'under_review')->count(),
                 'resolved' => $applications->whereIn('status', ['approved', 'rejected'])->count(),
-                'assign_reviewer' => $checkpointStats->get('assign_reviewer', 0),
+                'needs_admin_review' => $checkpointStats->get('needs_admin_review', 0),
                 'waiting_on_applicant' => $checkpointStats->get('waiting_on_applicant', 0),
                 'waiting_authorities' => $checkpointStats->get('waiting_authorities', 0),
-                'overdue_authorities' => $responsibilitySummaries->where('has_overdue_authority', true)->count(),
+                'overdue_authorities' => $overdueAuthorityCount,
                 'ready_final_decision' => $checkpointStats->get('ready_final_decision', 0),
             ],
         ]);
@@ -105,7 +103,7 @@ class ApplicationManagementController extends Controller
     {
         $filters = $this->directoryFilters($request);
         $applications = $this->directoryQuery($filters)
-            ->latest()
+            ->newestFirst()
             ->get();
 
         $rows = $applications->map(fn (FilmApplication $application): array => [
@@ -147,6 +145,7 @@ class ApplicationManagementController extends Controller
             'officialLetters.updatedBy',
             'officialLetters.targetEntity',
             'officialLetters.authorityApproval.entity',
+            'wrapReport.submittedBy',
         ]);
         $reviewers = $this->workflowAssignableUsers();
         $authorityApprovals = $record->authorityApprovals()->with(['reviewedBy', 'assignedTo', 'entity'])->get();
@@ -154,6 +153,15 @@ class ApplicationManagementController extends Controller
             ->mapWithKeys(fn (ApplicationAuthorityApproval $approval): array => [
                 $approval->getKey() => $this->authorityEscalationService->signalForApproval($approval),
             ]);
+        $rfcDecisionUserIds = collect([
+            data_get($record->metadata ?? [], 'rfc_decision.decided_by_user_id'),
+            data_get($record->metadata ?? [], 'rfc_decision.facilitation_issued_by_user_id'),
+            $record->reviewed_by_user_id,
+            $record->final_decision_issued_by_user_id,
+        ])->filter()->unique()->values();
+
+        $officialLetterTargets = $this->officialLetterRouteTargets($record);
+        $officialLetters = $this->ensureOfficialLetterSerialNumbers($record, $officialLetterTargets);
 
         return view('admin.applications.show', [
             'application' => $record,
@@ -175,9 +183,15 @@ class ApplicationManagementController extends Controller
             'reviewers' => $reviewers,
             'documents' => $record->documents,
             'correspondences' => $record->correspondences,
-            'officialLetters' => $record->officialLetters,
-            'officialLetterApprovals' => $this->officialLetterApprovalTargets($record),
+            'officialLetters' => $officialLetters,
+            'officialLetterApprovals' => $officialLetterTargets,
             'applicantResponse' => AdminApplicantResponseState::application($record),
+            'rfcDecisionUsers' => $rfcDecisionUserIds->isEmpty()
+                ? collect()
+                : User::query()->whereIn('id', $rfcDecisionUserIds)->get()->keyBy('id'),
+            'wrapReport' => $record->wrapReport,
+            'wrapReportAvailable' => $record->wrapReportIsAvailable(),
+            'wrapReportOptions' => $this->wrapReportOptions(),
         ]);
     }
 
@@ -186,34 +200,80 @@ class ApplicationManagementController extends Controller
         $record = $this->findApplication($application);
 
         $validated = $request->validate([
-            'decision' => ['required', Rule::in(['under_review', 'needs_clarification'])],
-            'note' => ['nullable', 'string', 'max:2000', Rule::requiredIf($request->input('decision') === 'needs_clarification')],
+            'decision' => ['required', Rule::in(['accepted', 'returned', 'rejected'])],
+            'note' => ['nullable', 'string', 'max:2000', Rule::requiredIf(in_array($request->input('decision'), ['returned', 'rejected'], true))],
         ]);
 
-        $record->forceFill([
-            'status' => $validated['decision'],
-            'current_stage' => match ($validated['decision']) {
-                'under_review' => 'rfc_review',
-                'needs_clarification' => 'clarification',
-            },
-            'review_note' => $validated['note'] ?: null,
-            'reviewed_at' => now(),
-            'reviewed_by_user_id' => $request->user()?->getKey(),
-        ])->save();
+        $decision = $validated['decision'];
+        $note = ($validated['note'] ?? null) ?: null;
+        $actorId = $request->user()?->getKey();
+        $decidedAt = now();
 
-        $record->statusHistory()->create([
-            'user_id' => $request->user()?->getKey(),
-            'status' => $validated['decision'],
-            'note' => $validated['note'] ?: null,
-            'happened_at' => now(),
-        ]);
+        DB::transaction(function () use ($record, $decision, $note, $actorId, $decidedAt): void {
+            $metadata = $record->metadata ?? [];
+            $existingDecision = (array) data_get($metadata, 'rfc_decision', []);
+
+            data_set($metadata, 'rfc_decision', [
+                ...$existingDecision,
+                'status' => $decision,
+                'note' => $note,
+                'decided_at' => $decidedAt->toISOString(),
+                'decided_by_user_id' => $actorId,
+                'facilitation_issued_at' => $decision === 'accepted'
+                    ? data_get($existingDecision, 'facilitation_issued_at')
+                    : null,
+                'facilitation_issued_by_user_id' => $decision === 'accepted'
+                    ? data_get($existingDecision, 'facilitation_issued_by_user_id')
+                    : null,
+            ]);
+
+            $record->forceFill([
+                'status' => match ($decision) {
+                    'accepted' => 'under_review',
+                    'returned' => 'needs_clarification',
+                    'rejected' => 'rejected',
+                },
+                'current_stage' => match ($decision) {
+                    'accepted' => 'rfc_facilitation',
+                    'returned' => 'clarification',
+                    'rejected' => 'rejected',
+                },
+                'review_note' => $note,
+                'reviewed_at' => $decidedAt,
+                'reviewed_by_user_id' => $actorId,
+                'final_decision_status' => $decision === 'rejected' ? 'rejected' : null,
+                'final_decision_note' => $decision === 'rejected' ? $note : null,
+                'final_decision_issued_at' => $decision === 'rejected' ? $decidedAt : null,
+                'final_decision_issued_by_user_id' => $decision === 'rejected' ? $actorId : null,
+                'final_permit_number' => null,
+                'final_letter_path' => null,
+                'final_letter_name' => null,
+                'final_letter_mime_type' => null,
+                'metadata' => $metadata,
+            ])->save();
+
+            if ($decision === 'rejected') {
+                Permit::query()->where('application_id', $record->getKey())->delete();
+            }
+
+            $record->statusHistory()->create([
+                'user_id' => $actorId,
+                'status' => $record->status,
+                'note' => $note ?: __('app.rfc_decision.history.'.$decision),
+                'metadata' => [
+                    'type' => 'rfc_decision_recorded',
+                    'rfc_decision' => $decision,
+                ],
+                'happened_at' => $decidedAt,
+            ]);
+        });
 
         NotificationRecipients::except(NotificationRecipients::applicationApplicants($record), $request->user()?->getKey())
             ->each(fn (User $recipient) => $recipient->notify(new InboxMessageNotification(
                 typeKey: 'application_status_changed',
                 title: $record->project_name,
                 body: __('app.notifications.application_status_changed_body', [
-                    'status' => __('app.statuses.'.$validated['decision']),
+                    'status' => __('app.rfc_decision.statuses.'.$decision),
                 ]),
                 routeName: 'applications.show',
                 routeParameters: ['application' => $record->getKey()],
@@ -223,6 +283,68 @@ class ApplicationManagementController extends Controller
         return redirect()
             ->route('admin.applications.show', $record)
             ->with('status', __('app.applications.review_saved'));
+    }
+
+    public function issueFacilitationLetter(Request $request, string $application): RedirectResponse
+    {
+        $record = $this->findApplication($application);
+        $actorId = $request->user()?->getKey();
+
+        if (data_get($record->metadata ?? [], 'rfc_decision.status') !== 'accepted') {
+            return redirect()
+                ->route('admin.applications.show', $record)
+                ->withErrors(['rfc_decision' => __('app.rfc_decision.accept_required')]);
+        }
+
+        DB::transaction(function () use ($record, $actorId): void {
+            $targets = $this->officialLetterRouteTargets($record);
+            $letters = $this->prepareOfficialLettersForTargets($record, $targets, $actorId);
+            $record->refresh();
+
+            $metadata = $record->metadata ?? [];
+            data_set($metadata, 'rfc_decision.status', 'accepted');
+            data_set($metadata, 'rfc_decision.facilitation_issued_at', now()->toISOString());
+            data_set($metadata, 'rfc_decision.facilitation_issued_by_user_id', $actorId);
+            data_set(
+                $metadata,
+                'requirements.required_approvals',
+                $targets->pluck('approval_code')->filter()->unique()->values()->all(),
+            );
+            data_set(
+                $metadata,
+                'requirements.official_book_targets',
+                $targets
+                    ->map(fn (array $target): array => [
+                        'approval_code' => $target['approval_code'],
+                        'target_entity_id' => $target['target_entity_id'],
+                        'target_entity_name' => $target['target_entity_name'],
+                    ])
+                    ->values()
+                    ->all(),
+            );
+
+            $record->forceFill([
+                'status' => 'under_review',
+                'current_stage' => 'rfc_facilitation',
+                'metadata' => $metadata,
+            ])->save();
+
+            $record->statusHistory()->create([
+                'user_id' => $actorId,
+                'status' => $record->status,
+                'note' => __('app.rfc_decision.history.facilitation_issued'),
+                'metadata' => [
+                    'type' => 'rfc_facilitation_issued',
+                    'official_letter_ids' => $letters->pluck('id')->all(),
+                    'official_book_targets' => $targets->values()->all(),
+                ],
+                'happened_at' => now(),
+            ]);
+        });
+
+        return redirect()
+            ->route('admin.applications.show', $record)
+            ->with('status', __('app.rfc_decision.facilitation_issued'));
     }
 
     public function finalize(Request $request, string $application): RedirectResponse
@@ -361,14 +483,16 @@ class ApplicationManagementController extends Controller
         $record->forceFill([
             'assigned_to_user_id' => $assignee->getKey(),
             'assigned_at' => now(),
-            'current_stage' => 'rfc_review',
-            'status' => in_array($record->status, ['draft', 'submitted'], true) ? 'under_review' : $record->status,
         ])->save();
 
         $record->statusHistory()->create([
             'user_id' => $request->user()?->getKey(),
             'status' => $record->status,
             'note' => __('app.workflow.history.assigned_to', ['name' => $assignee->displayName()]),
+            'metadata' => [
+                'type' => 'rfc_internal_assignment',
+                'assigned_to_user_id' => $assignee->getKey(),
+            ],
             'happened_at' => now(),
         ]);
 
@@ -621,6 +745,23 @@ class ApplicationManagementController extends Controller
         return Storage::disk('local')->download($documentRecord->file_path, $documentRecord->original_name);
     }
 
+    public function downloadApprovalAttachment(string $application, ApplicationAuthorityApproval $approval): StreamedResponse|RedirectResponse
+    {
+        $record = $this->findApplication($application);
+        abort_unless($approval->application_id === $record->getKey(), 404);
+
+        if (! $approval->response_attachment_path || ! Storage::disk('local')->exists($approval->response_attachment_path)) {
+            return redirect()
+                ->route('admin.applications.show', $record)
+                ->withErrors(['response_attachment' => __('app.approvals.response_book_missing')]);
+        }
+
+        return Storage::disk('local')->download(
+            $approval->response_attachment_path,
+            $approval->response_attachment_name ?: basename($approval->response_attachment_path),
+        );
+    }
+
     public function storeCorrespondence(Request $request, string $application): RedirectResponse
     {
         $record = $this->findApplication($application);
@@ -696,23 +837,27 @@ class ApplicationManagementController extends Controller
     {
         $record = $this->findApplication($application);
         $validated = $this->validateOfficialLetter($request);
-        $approvalTargets = $this->officialLetterApprovalTargets($record);
+        $letterTargets = $this->officialLetterRouteTargets($record);
 
-        if ($approvalTargets->isEmpty()) {
+        if ($letterTargets->isEmpty()) {
             return redirect()
                 ->route('admin.applications.show', $record)
                 ->withErrors(['official_letters' => __('app.official_letters.no_routed_authorities')]);
         }
 
-        $letters = DB::transaction(function () use ($record, $validated, $approvalTargets, $request): Collection {
-            $createdLetters = $approvalTargets
-                ->map(fn (ApplicationAuthorityApproval $approval): ApplicationOfficialLetter => $record->officialLetters()->create([
+        $letters = DB::transaction(function () use ($record, $validated, $letterTargets, $request): Collection {
+            $firstSequence = $record->officialLetters()->count() + 1;
+
+            $createdLetters = $letterTargets
+                ->map(fn (array $target, int $index): ApplicationOfficialLetter => $record->officialLetters()->create([
                     ...$validated,
-                    'application_authority_approval_id' => $approval->getKey(),
-                    'target_entity_id' => $approval->entity_id,
+                    'application_authority_approval_id' => null,
+                    'target_entity_id' => $target['target_entity_id'],
                     'created_by_user_id' => $request->user()?->getKey(),
                     'updated_by_user_id' => $request->user()?->getKey(),
-                    'issued_at' => $validated['status'] === 'issued' ? now() : null,
+                    'serial_number' => $this->officialLetterSerialNumber($record, $firstSequence + $index),
+                    'status' => 'draft',
+                    'issued_at' => null,
                 ]))
                 ->values();
 
@@ -731,10 +876,6 @@ class ApplicationManagementController extends Controller
             return $createdLetters;
         });
 
-        if ($validated['status'] === 'issued') {
-            $this->notifyOfficialLettersIssued($record, $letters, $request->user()?->getKey());
-        }
-
         return redirect()
             ->route('admin.applications.show', $record)
             ->with('status', __('app.official_letters.created'));
@@ -745,21 +886,16 @@ class ApplicationManagementController extends Controller
         $record = $this->findApplication($application);
         $officialLetter = $this->findOfficialLetter($letter, $record);
         $validated = $this->validateOfficialLetter($request);
-        $wasIssued = $officialLetter->status === 'issued';
-        $issuedAt = $officialLetter->issued_at;
 
-        if ($validated['status'] === 'issued' && ! $issuedAt) {
-            $issuedAt = now();
-        }
-
-        if ($validated['status'] !== 'issued') {
-            $issuedAt = null;
+        if ($officialLetter->status === 'issued') {
+            return redirect()
+                ->route('admin.applications.show', $record)
+                ->withErrors(['official_letters' => __('app.official_letters.sent_cannot_edit')]);
         }
 
         $officialLetter->forceFill([
             ...$validated,
             'updated_by_user_id' => $request->user()?->getKey(),
-            'issued_at' => $issuedAt,
         ])->save();
 
         $record->statusHistory()->create([
@@ -770,13 +906,70 @@ class ApplicationManagementController extends Controller
             'metadata' => ['type' => 'official_letter_updated', 'official_letter_id' => $officialLetter->getKey()],
         ]);
 
-        if (! $wasIssued && $officialLetter->status === 'issued') {
-            $this->notifyOfficialLettersIssued($record, collect([$officialLetter->fresh()]), $request->user()?->getKey());
-        }
-
         return redirect()
             ->route('admin.applications.show', $record)
             ->with('status', __('app.official_letters.updated'));
+    }
+
+    public function sendOfficialLetter(Request $request, string $application, string $letter): RedirectResponse
+    {
+        $record = $this->findApplication($application);
+        $officialLetter = $this->findOfficialLetter($letter, $record);
+
+        if ($officialLetter->status === 'issued') {
+            return redirect()
+                ->route('admin.applications.show', $record)
+                ->with('status', __('app.official_letters.already_sent'));
+        }
+
+        if (! $officialLetter->target_entity_id) {
+            return redirect()
+                ->route('admin.applications.show', $record)
+                ->withErrors(['official_letters' => __('app.official_letters.send_requires_target')]);
+        }
+
+        if (blank($officialLetter->recipient_name) || blank($officialLetter->subject) || blank($officialLetter->body)) {
+            return redirect()
+                ->route('admin.applications.show', $record)
+                ->withErrors(['official_letters' => __('app.official_letters.send_requires_complete')]);
+        }
+
+        $approval = DB::transaction(function () use ($record, $officialLetter, $request): ApplicationAuthorityApproval {
+            $approval = $this->authorityApprovalForOfficialLetter($record, $officialLetter);
+
+            $officialLetter->forceFill([
+                'application_authority_approval_id' => $approval->getKey(),
+                'updated_by_user_id' => $request->user()?->getKey(),
+                'status' => 'issued',
+                'issued_at' => $officialLetter->issued_at ?: now(),
+            ])->save();
+
+            $record->forceFill([
+                'status' => 'under_review',
+                'current_stage' => 'authority_review',
+            ])->save();
+
+            $record->statusHistory()->create([
+                'user_id' => $request->user()?->getKey(),
+                'status' => $record->status,
+                'note' => __('app.official_letters.history.sent', ['subject' => $officialLetter->subject]),
+                'happened_at' => now(),
+                'metadata' => [
+                    'type' => 'official_letter_sent',
+                    'official_letter_id' => $officialLetter->getKey(),
+                    'authority_approval_id' => $approval->getKey(),
+                ],
+            ]);
+
+            return $approval->fresh(['application.entity', 'entity', 'assignedTo']);
+        });
+
+        $this->authorityApprovalNotificationService->notifyRecipientsForApproval($approval, $request->user()?->getKey());
+        $this->notifyOfficialLettersIssued($record->fresh(['entity', 'submittedBy']), collect([$officialLetter->fresh(['authorityApproval.entity', 'targetEntity'])]), $request->user()?->getKey());
+
+        return redirect()
+            ->route('admin.applications.show', $record)
+            ->with('status', __('app.official_letters.sent'));
     }
 
     public function downloadCorrespondenceAttachment(string $application, string $correspondence): StreamedResponse|RedirectResponse
@@ -821,6 +1014,20 @@ class ApplicationManagementController extends Controller
         ]);
     }
 
+    public function printOfficialLetter(string $application, string $letter): View
+    {
+        $record = $this->findApplication($application);
+        $officialLetter = $this->findOfficialLetter($letter, $record);
+
+        $officialLetter->loadMissing(['targetEntity', 'authorityApproval.entity']);
+
+        return view('letters.official-letter', [
+            'application' => $record,
+            'letter' => $officialLetter,
+            'isAdminView' => true,
+        ]);
+    }
+
     private function findApplication(string $application): FilmApplication
     {
         return FilmApplication::query()
@@ -850,7 +1057,7 @@ class ApplicationManagementController extends Controller
     private function directoryQuery(array $filters): Builder
     {
         $query = FilmApplication::query()->with(['entity', 'submittedBy', 'reviewedBy', 'assignedTo']);
-        $query->with(['authorityApprovals.assignedTo', 'authorityApprovals.entity']);
+        $query->with(['authorityApprovals.entity']);
         $query->withMax([
             'statusHistory as last_clarification_at' => fn (Builder $builder): Builder => $builder->where('status', 'needs_clarification'),
         ], 'happened_at');
@@ -905,35 +1112,262 @@ class ApplicationManagementController extends Controller
     {
         $validated = $request->validate([
             'letter_date' => ['nullable', 'date'],
-            'serial_number' => ['nullable', 'string', 'max:100'],
             'recipient_prefix' => ['nullable', 'string', 'max:100'],
             'recipient_name' => ['required', 'string', 'max:255'],
             'subject' => ['required', 'string', 'max:255'],
             'body' => ['required', 'string', 'max:10000'],
             'attachments' => ['nullable', 'array'],
             'attachments.*' => ['string', 'max:255'],
-            'status' => ['required', Rule::in(['draft', 'issued'])],
         ]);
 
         $validated['letter_date'] = $validated['letter_date'] ?? null;
-        $validated['serial_number'] = ($validated['serial_number'] ?? null) ?: null;
         $validated['recipient_prefix'] = ($validated['recipient_prefix'] ?? null) ?: null;
         $validated['attachments'] = array_values($validated['attachments'] ?? []);
 
         return $validated;
     }
 
-    private function officialLetterApprovalTargets(FilmApplication $application): Collection
+    /**
+     * @return Collection<int, array{approval_code:string,approval_label:string,target_entity_id:int|null,target_entity_name:string|null}>
+     */
+    private function officialLetterRouteTargets(FilmApplication $application): Collection
     {
-        return $application
-            ->authorityApprovals()
-            ->with('entity')
-            ->orderBy('id')
+        $routes = $this->approvalRoutingService->explainRoutesForApplication($application);
+        $targetEntities = Entity::query()
+            ->whereIn('id', $routes->pluck('target_entity_id')->filter()->unique()->all())
             ->get()
-            ->unique(fn (ApplicationAuthorityApproval $approval): string => $approval->entity_id
-                ? 'entity:'.$approval->entity_id
-                : 'approval:'.$approval->getKey())
+            ->keyBy(fn (Entity $entity): int => $entity->getKey());
+
+        return $routes
+            ->map(function (array $route) use ($targetEntities): array {
+                $approvalCode = (string) $route['approval_code'];
+                $targetEntityId = filled($route['target_entity_id']) ? (int) $route['target_entity_id'] : null;
+                $targetEntity = $targetEntityId ? $targetEntities->get($targetEntityId) : null;
+                $approvalLabel = __('app.applications.required_approval_options.'.$approvalCode);
+
+                return [
+                    'approval_code' => $approvalCode,
+                    'approval_label' => $approvalLabel,
+                    'target_entity_id' => $targetEntityId,
+                    'target_entity_name' => $targetEntity?->displayName() ?? ($route['target_entity_name'] ?: $approvalLabel),
+                ];
+            })
+            ->unique(fn (array $target): string => $this->officialLetterTargetKey($target))
             ->values();
+    }
+
+    /**
+     * @param  Collection<int, array{approval_code:string,approval_label:string,target_entity_id:int|null,target_entity_name:string|null}>  $targets
+     * @return Collection<int, ApplicationOfficialLetter>
+     */
+    private function prepareOfficialLettersForTargets(FilmApplication $application, Collection $targets, ?int $actorId): Collection
+    {
+        $existingLetters = $application
+            ->officialLetters()
+            ->with('targetEntity')
+            ->get()
+            ->keyBy(fn (ApplicationOfficialLetter $letter): string => $letter->target_entity_id
+                ? 'entity:'.$letter->target_entity_id
+                : 'target:none');
+
+        return $targets
+            ->map(function (array $target, int $index) use ($application, $actorId, $existingLetters): ApplicationOfficialLetter {
+                $key = $this->officialLetterTargetKey($target);
+                $existingLetter = $existingLetters->get($key);
+                $serialNumber = $this->officialLetterSerialNumber($application, $index + 1);
+
+                if ($existingLetter instanceof ApplicationOfficialLetter) {
+                    if (blank($existingLetter->serial_number)) {
+                        $existingLetter->forceFill([
+                            'serial_number' => $serialNumber,
+                            'updated_by_user_id' => $actorId,
+                        ])->save();
+                    }
+
+                    return $existingLetter;
+                }
+
+                return $application->officialLetters()->create([
+                    'application_authority_approval_id' => null,
+                    'target_entity_id' => $target['target_entity_id'],
+                    'created_by_user_id' => $actorId,
+                    'updated_by_user_id' => $actorId,
+                    'letter_date' => now()->toDateString(),
+                    'serial_number' => $serialNumber,
+                    'recipient_prefix' => app()->getLocale() === 'ar' ? 'عطوفة' : 'H.E.',
+                    'recipient_name' => $target['target_entity_name'] ?: $target['approval_label'],
+                    'subject' => __('app.official_letters.default_subject', ['code' => $application->code]),
+                    'body' => __('app.official_letters.default_body', [
+                        'entity' => $target['target_entity_name'] ?: $target['approval_label'],
+                        'project' => $application->project_name,
+                        'code' => $application->code,
+                    ]),
+                    'attachments' => array_values(__('app.official_letters.attachment_options')),
+                    'status' => 'draft',
+                    'issued_at' => null,
+                ]);
+            })
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, array{approval_code:string,approval_label:string,target_entity_id:int|null,target_entity_name:string|null}>|null  $targets
+     * @return Collection<int, ApplicationOfficialLetter>
+     */
+    private function ensureOfficialLetterSerialNumbers(FilmApplication $application, ?Collection $targets = null): Collection
+    {
+        $targets ??= $this->officialLetterRouteTargets($application);
+        $targetSequences = $targets
+            ->mapWithKeys(fn (array $target, int $index): array => [$this->officialLetterTargetKey($target) => $index + 1]);
+
+        $letters = $application->officialLetters()
+            ->with(['createdBy', 'updatedBy', 'targetEntity', 'authorityApproval.entity'])
+            ->reorder()
+            ->oldest('id')
+            ->get();
+
+        $reservedSerials = $letters
+            ->pluck('serial_number')
+            ->filter()
+            ->map(fn (string $serial): string => $serial)
+            ->values();
+
+        $letters->each(function (ApplicationOfficialLetter $letter, int $index) use ($application, $targetSequences, $reservedSerials): void {
+            if (filled($letter->serial_number)) {
+                return;
+            }
+
+            $targetKey = $letter->target_entity_id ? 'entity:'.$letter->target_entity_id : 'target:none';
+            $sequence = (int) ($targetSequences->get($targetKey) ?? ($index + 1));
+            $serialNumber = $this->officialLetterSerialNumber($application, $sequence);
+
+            while ($reservedSerials->contains($serialNumber)) {
+                $sequence++;
+                $serialNumber = $this->officialLetterSerialNumber($application, $sequence);
+            }
+
+            $reservedSerials->push($serialNumber);
+
+            $letter->forceFill(['serial_number' => $serialNumber])->save();
+        });
+
+        return $application->officialLetters()
+            ->with(['createdBy', 'updatedBy', 'targetEntity', 'authorityApproval.entity'])
+            ->get();
+    }
+
+    private function officialLetterSerialNumber(FilmApplication $application, int $sequence): string
+    {
+        $applicationCode = $application->code ?: 'REQ-'.str_pad((string) $application->getKey(), 5, '0', STR_PAD_LEFT);
+
+        return sprintf('%s-BOOK-%02d', $applicationCode, $sequence);
+    }
+
+    /**
+     * @param  array{approval_code:string,target_entity_id:int|null}  $target
+     */
+    private function officialLetterTargetKey(array $target): string
+    {
+        return filled($target['target_entity_id'] ?? null)
+            ? 'entity:'.$target['target_entity_id']
+            : 'target:none';
+    }
+
+    private function authorityApprovalForOfficialLetter(FilmApplication $application, ApplicationOfficialLetter $letter): ApplicationAuthorityApproval
+    {
+        $letter->loadMissing('targetEntity');
+        $route = $this->officialLetterRouteForLetter($application, $letter);
+        $approvalCode = (string) ($route['approval_code'] ?? '');
+        $targetEntity = $letter->targetEntity;
+
+        if (blank($approvalCode) && $targetEntity instanceof Entity) {
+            $approvalCode = $targetEntity->authorityApprovalCodes()[0] ?? '';
+        }
+
+        abort_if(blank($approvalCode), 422, __('app.official_letters.send_requires_target'));
+
+        $approval = $letter->authorityApproval instanceof ApplicationAuthorityApproval
+            ? $letter->authorityApproval
+            : $application->authorityApprovals()
+                ->where('authority_code', $approvalCode)
+                ->where('entity_id', $letter->target_entity_id)
+                ->first();
+
+        if (! $approval instanceof ApplicationAuthorityApproval) {
+            $approval = new ApplicationAuthorityApproval([
+                'application_id' => $application->getKey(),
+                'authority_code' => $approvalCode,
+                'entity_id' => $letter->target_entity_id,
+            ]);
+        }
+
+        $assignedUserId = $this->resolveAuthorityApprovalAssigneeId($targetEntity, $approvalCode);
+        $shouldRefreshAssignment = ! $approval->exists
+            || ! $this->entityHasActiveMember($targetEntity, (int) ($approval->assigned_user_id ?? 0));
+
+        $approval->forceFill([
+            'application_id' => $application->getKey(),
+            'authority_code' => $approvalCode,
+            'entity_id' => $letter->target_entity_id,
+            'approval_routing_rule_id' => $route['approval_routing_rule_id'] ?? $approval->approval_routing_rule_id,
+            'status' => $approval->status ?: 'pending',
+            'assigned_user_id' => $shouldRefreshAssignment ? $assignedUserId : $approval->assigned_user_id,
+            'assigned_at' => $shouldRefreshAssignment && $assignedUserId
+                ? now()
+                : ($shouldRefreshAssignment ? null : $approval->assigned_at),
+        ])->save();
+
+        return $approval;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function officialLetterRouteForLetter(FilmApplication $application, ApplicationOfficialLetter $letter): ?array
+    {
+        if ($letter->authorityApproval instanceof ApplicationAuthorityApproval) {
+            return [
+                'approval_code' => $letter->authorityApproval->authority_code,
+                'target_entity_id' => $letter->authorityApproval->entity_id,
+                'approval_routing_rule_id' => $letter->authorityApproval->approval_routing_rule_id,
+            ];
+        }
+
+        $targetKey = $letter->target_entity_id ? 'entity:'.$letter->target_entity_id : 'target:none';
+
+        return $this->approvalRoutingService
+            ->explainRoutesForApplication($application)
+            ->first(function (array $route) use ($targetKey): bool {
+                $routeKey = filled($route['target_entity_id'] ?? null)
+                    ? 'entity:'.$route['target_entity_id']
+                    : 'target:none';
+
+                return $routeKey === $targetKey;
+            });
+    }
+
+    private function resolveAuthorityApprovalAssigneeId(?Entity $entity, string $approvalCode): ?int
+    {
+        if (! $entity || $entity->group?->code !== 'authorities') {
+            return null;
+        }
+
+        $candidateUserId = $entity->authorityDelegatedUserIdFor($approvalCode);
+
+        return $this->entityHasActiveMember($entity, $candidateUserId) ? $candidateUserId : null;
+    }
+
+    private function entityHasActiveMember(?Entity $entity, ?int $userId): bool
+    {
+        if (! $entity || ! $userId) {
+            return false;
+        }
+
+        return $entity->users()
+            ->where('users.id', $userId)
+            ->where('users.status', 'active')
+            ->wherePivot('status', 'active')
+            ->exists();
     }
 
     /**
@@ -1034,13 +1468,45 @@ class ApplicationManagementController extends Controller
     }
 
     /**
+     * @return array<string, array<int, string>>
+     */
+    private function wrapReportOptions(): array
+    {
+        return [
+            'production_types' => [
+                'animation',
+                'commercials',
+                'corporate_industrial_documentary',
+                'documentary_series',
+                'feature_documentary',
+                'feature_film',
+                'interactive_game',
+                'music_video',
+                'photography',
+                'reality_show',
+                'series',
+                'short_documentary',
+                'short_film',
+                'student_film',
+                'tv_program',
+                'other',
+            ],
+            'accommodation_types' => [
+                'hotel',
+                'camp',
+                'private_accommodation',
+            ],
+        ];
+    }
+
+    /**
      * @return Collection<int, User>
      */
     private function workflowAssignableUsers(): Collection
     {
         return User::query()
             ->where('status', 'active')
-            ->whereHas('entities.group', fn (Builder $query): Builder => $query->whereIn('code', ['rfc', 'admins']))
+            ->whereHas('entities.group', fn (Builder $query): Builder => $query->where('code', 'rfc'))
             ->with('entities.group')
             ->orderBy('name')
             ->get()
@@ -1079,7 +1545,7 @@ class ApplicationManagementController extends Controller
     private function isWorkflowAssignableUser(User $user): bool
     {
         return $user->availableEntities()->contains(function ($entity) use ($user): bool {
-            if (! in_array($entity->group?->code, ['rfc', 'admins'], true)) {
+            if ($entity->group?->code !== 'rfc') {
                 return false;
             }
 

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
@@ -21,6 +22,11 @@ class ApplicationAuthorityApproval extends Model
         'escalated_at',
         'status',
         'note',
+        'response_attachment_path',
+        'response_attachment_name',
+        'response_attachment_mime_type',
+        'response_attachment_size',
+        'response_attachment_uploaded_at',
         'reviewed_by_user_id',
         'decided_at',
     ];
@@ -31,7 +37,15 @@ class ApplicationAuthorityApproval extends Model
             'assigned_at' => 'datetime',
             'escalated_at' => 'datetime',
             'decided_at' => 'datetime',
+            'response_attachment_uploaded_at' => 'datetime',
         ];
+    }
+
+    public function scopeNewestFirst(Builder $query): Builder
+    {
+        return $query
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
     }
 
     public function application(): BelongsTo

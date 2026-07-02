@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Entity;
 use App\Models\Group;
 use App\Models\User;
+use App\Services\CompanyRegistrationLookupService;
 use App\Services\RoleAssignmentService;
 use App\Services\StudentRegistrationLookupService;
 use App\Support\PhoneNumber;
@@ -34,6 +35,7 @@ class RegisterController extends Controller
         Request $request,
         RoleAssignmentService $roleAssignmentService,
         StudentRegistrationLookupService $studentLookupService,
+        CompanyRegistrationLookupService $companyLookupService,
     ): RedirectResponse {
         $request->validate([
             'registration_type' => ['required', Rule::in(array_keys($this->registrationTypes()))],
@@ -43,6 +45,10 @@ class RegisterController extends Controller
 
         if ($registrationType === 'student') {
             return $this->storeStudent($request, $roleAssignmentService, $studentLookupService);
+        }
+
+        if ($registrationType === 'company') {
+            return $this->storeCompany($request, $roleAssignmentService, $companyLookupService);
         }
 
         return $this->storeOrganizationLike($request, $roleAssignmentService, $registrationType);
@@ -86,7 +92,7 @@ class RegisterController extends Controller
                 'email' => $data['email'],
                 'national_id' => $data['national_id'],
                 'phone' => $data['phone'],
-                'status' => 'active',
+                'status' => 'pending_review',
                 'registration_type' => 'student',
                 'password' => Hash::make($data['password']),
             ]);
@@ -99,7 +105,7 @@ class RegisterController extends Controller
                 'email' => $data['email'],
                 'phone' => $data['phone'],
                 'registration_type' => 'student',
-                'status' => 'active',
+                'status' => 'pending_review',
                 'metadata' => [
                     'birth_date' => $data['birth_date'],
                     'gender' => $data['gender'],
@@ -123,6 +129,92 @@ class RegisterController extends Controller
         return redirect()
             ->route('login')
             ->with('status', __('app.auth.account_created'));
+    }
+
+    private function storeCompany(
+        Request $request,
+        RoleAssignmentService $roleAssignmentService,
+        CompanyRegistrationLookupService $companyLookupService,
+    ): RedirectResponse {
+        $data = $request->validate([
+            'registration_type' => ['required', 'in:company'],
+            'registration_number' => ['required', 'string', 'max:50', Rule::unique('entities', 'registration_no')],
+            'entity_name' => ['nullable', 'string', 'max:255'],
+            'company_registration_date' => ['nullable', 'date'],
+            'company_capital' => ['nullable', 'numeric', 'min:0'],
+            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
+            'phone' => ['required', 'regex:/^\d{10}$/', Rule::unique('users', 'phone')],
+            'address' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:5000'],
+            'registration_document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+            'company_lookup_verified' => ['accepted'],
+            'password' => array_merge(['required', 'confirmed'], $this->passwordRules()),
+        ], [
+            'phone.regex' => __('app.auth.phone_digits'),
+        ]);
+
+        $lookupState = $request->session()->get(CompanyRegistrationLookupService::SESSION_KEY);
+
+        if (! $companyLookupService->lookupStateMatches(is_array($lookupState) ? $lookupState : null, $data['registration_number'])) {
+            throw ValidationException::withMessages([
+                'registration_number' => __('app.auth.company_lookup_required'),
+            ]);
+        }
+
+        $data = array_merge($data, (array) data_get($lookupState, 'data', []));
+        $data['phone'] = PhoneNumber::normalize($data['phone']);
+        $username = $this->makeUsername('company', $data['registration_number']);
+        $document = $data['registration_document'];
+        $documentPath = $this->storeRegistrationDocument($document, 'company');
+
+        DB::transaction(function () use ($data, $roleAssignmentService, $username, $documentPath, $document): void {
+            $group = Group::query()->where('code', 'organizations')->firstOrFail();
+
+            $user = User::query()->create([
+                'name' => $data['entity_name'],
+                'username' => $username,
+                'email' => $data['email'],
+                'national_id' => null,
+                'phone' => $data['phone'],
+                'status' => 'pending_review',
+                'registration_type' => 'company',
+                'password' => Hash::make($data['password']),
+            ]);
+
+            $entity = Entity::query()->create([
+                'group_id' => $group->getKey(),
+                'name_en' => $data['entity_name'],
+                'name_ar' => $data['entity_name'],
+                'registration_no' => $data['registration_number'],
+                'email' => $data['email'],
+                'phone' => $data['phone'],
+                'registration_type' => 'company',
+                'status' => 'pending_review',
+                'metadata' => array_filter([
+                    'address' => $data['address'],
+                    'description' => $data['description'] ?: null,
+                    'company_registration_date' => $data['company_registration_date'],
+                    'company_capital' => $data['company_capital'],
+                    'registration_document_path' => $documentPath,
+                    'registration_document_name' => $document->getClientOriginalName(),
+                    'registration_document_mime' => $document->getClientMimeType(),
+                ], static fn ($value) => $value !== null && $value !== ''),
+            ]);
+
+            $entity->users()->attach($user->getKey(), [
+                'is_primary' => true,
+                'status' => 'active',
+                'joined_at' => now(),
+            ]);
+
+            $roleAssignmentService->assignToEntity($user, $entity, 'applicant_owner');
+        });
+
+        $request->session()->forget(CompanyRegistrationLookupService::SESSION_KEY);
+
+        return redirect()
+            ->route('login')
+            ->with('status', __('app.auth.organization_account_created'));
     }
 
     private function storeOrganizationLike(

@@ -37,6 +37,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    @include('layouts.partials.dashboard-overflow-guard')
     <style>
         .authority-notification-item .notification-meta {
             margin-top: 0.5rem;

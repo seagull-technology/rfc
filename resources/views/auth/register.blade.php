@@ -6,6 +6,7 @@
 
 @php
     $studentLookupCompleted = old('registration_type') === 'student' && old('student_lookup_verified') === '1';
+    $companyLookupCompleted = old('registration_type') === 'company' && old('company_lookup_verified') === '1';
 @endphp
 
 @section('content')
@@ -171,7 +172,12 @@
                                                             <div class="col-md-6">
                                                                 <div class="mb-3">
                                                                     <label class="form-label">{{ __('app.auth.password_label') }}</label>
-                                                                    <input type="password" name="password" class="form-control @error('password') is-invalid @enderror" placeholder="{{ __('app.auth.password_placeholder') }}" data-password-strength data-student-account-input @if($studentLookupCompleted) required @endif>
+                                                                    <div class="registration-password-control">
+                                                                        <input type="password" name="password" class="form-control @error('password') is-invalid @enderror" placeholder="{{ __('app.auth.password_placeholder') }}" data-password-strength data-student-account-input @if($studentLookupCompleted) required @endif>
+                                                                        <button type="button" class="registration-password-toggle" data-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
+                                                                            <i class="ph ph-eye-slash"></i>
+                                                                        </button>
+                                                                    </div>
                                                                     @include('auth.partials.password-rules')
                                                                     @error('password')
                                                                         <div class="invalid-feedback d-block">{{ $message }}</div>
@@ -182,7 +188,12 @@
                                                             <div class="col-md-6">
                                                                 <div class="mb-3">
                                                                     <label class="form-label">{{ __('app.auth.confirm_password') }}</label>
-                                                                    <input type="password" name="password_confirmation" class="form-control" placeholder="{{ __('app.auth.password_placeholder') }}" data-student-account-input @if($studentLookupCompleted) required @endif>
+                                                                    <div class="registration-password-control">
+                                                                        <input type="password" name="password_confirmation" class="form-control" placeholder="{{ __('app.auth.password_placeholder') }}" data-student-account-input @if($studentLookupCompleted) required @endif>
+                                                                        <button type="button" class="registration-password-toggle" data-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
+                                                                            <i class="ph ph-eye-slash"></i>
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -197,102 +208,253 @@
 
                                         @foreach (['company', 'ngo', 'school'] as $type)
                                             <div class="tab-pane fade {{ $activeRegistrationType === $type ? 'show active' : '' }}" id="{{ $registrationTypes[$type]['tab_id'] }}" role="tabpanel" aria-labelledby="{{ $registrationTypes[$type]['tab_link_id'] }}">
-                                                <form method="POST" action="{{ route('register.store') }}" enctype="multipart/form-data" id="register-form-{{ $type }}" data-register-form="{{ $type }}">
+                                                <form method="POST" action="{{ route('register.store') }}" enctype="multipart/form-data" id="register-form-{{ $type }}" data-register-form="{{ $type }}" @if($type === 'company') data-company-lookup-url="{{ route('register.company.lookup') }}" @endif>
                                                     @csrf
                                                     <input type="hidden" name="registration_type" value="{{ $type }}">
+                                                    @if ($type === 'company')
+                                                        <input type="hidden" name="company_lookup_verified" value="{{ $companyLookupCompleted ? '1' : '0' }}" data-company-lookup-verified>
+                                                    @endif
 
                                                     <div class="row">
-                                                        <div class="col-md-12">
-                                                            <div class="mb-3">
-                                                                <label class="form-label">{{ __('app.auth.entity_name_labels.'.$type) }}</label>
-                                                                <input type="text" name="entity_name" class="form-control @error('entity_name') is-invalid @enderror" placeholder="{{ __('app.auth.entity_name_placeholders.'.$type) }}" value="{{ old('registration_type') === $type ? old('entity_name') : '' }}" required>
-                                                                @error('entity_name')
+                                                        @if ($type === 'company')
+                                                            <div class="col-md-12">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.registration_number_labels.company') }}</label>
+                                                                    <div class="registration-lookup-control">
+                                                                        <input type="text" name="registration_number" class="form-control @error('registration_number') is-invalid @enderror" placeholder="{{ __('app.auth.registration_number_placeholders.company') }}" value="{{ old('registration_type') === 'company' ? old('registration_number') : '' }}" autocomplete="off" data-company-registration-number required>
+                                                                        <button type="button" class="btn btn-danger registration-lookup-button" data-company-lookup-check>
+                                                                            <i class="ph ph-magnifying-glass"></i>
+                                                                            <span>{{ __('app.auth.check_registration_number') }}</span>
+                                                                        </button>
+                                                                    </div>
+                                                                    <div class="registration-inline-feedback" data-company-lookup-message>{{ $errors->first('registration_number') }}</div>
+                                                                    @error('registration_number')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-12 company-lookup-fields" data-company-lookup-fields @unless($companyLookupCompleted) hidden @endunless>
+                                                                <div class="row">
+                                                                    <div class="col-md-6">
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">{{ __('app.auth.entity_name_labels.company') }}</label>
+                                                                            <input type="hidden" name="entity_name" value="{{ old('registration_type') === 'company' ? old('entity_name') : '' }}" data-company-lookup-hidden="entity_name">
+                                                                            <input type="text" class="form-control @error('entity_name') is-invalid @enderror" placeholder="{{ __('app.auth.entity_name_placeholders.company') }}" value="{{ old('registration_type') === 'company' ? old('entity_name') : '' }}" data-company-lookup-field="entity_name" disabled>
+                                                                            @error('entity_name')
+                                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                            @enderror
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div class="col-md-6">
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">{{ __('app.auth.company_registration_date') }}</label>
+                                                                            <input type="hidden" name="company_registration_date" value="{{ old('registration_type') === 'company' ? old('company_registration_date') : '' }}" data-company-lookup-hidden="company_registration_date">
+                                                                            <input type="date" class="form-control @error('company_registration_date') is-invalid @enderror" value="{{ old('registration_type') === 'company' ? old('company_registration_date') : '' }}" data-company-lookup-field="company_registration_date" disabled>
+                                                                            @error('company_registration_date')
+                                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                            @enderror
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div class="col-md-6">
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">{{ __('app.auth.company_capital') }}</label>
+                                                                            <input type="hidden" name="company_capital" value="{{ old('registration_type') === 'company' ? old('company_capital') : '' }}" data-company-lookup-hidden="company_capital">
+                                                                            <input type="number" min="0" step="0.01" class="form-control @error('company_capital') is-invalid @enderror" placeholder="{{ __('app.auth.company_capital_placeholder') }}" value="{{ old('registration_type') === 'company' ? old('company_capital') : '' }}" data-company-lookup-field="company_capital" disabled>
+                                                                            @error('company_capital')
+                                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                            @enderror
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-12 company-account-fields" data-company-account-fields @unless($companyLookupCompleted) hidden @endunless>
+                                                                <div class="row">
+                                                                    <div class="col-md-6">
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">{{ __('app.auth.email') }}</label>
+                                                                            <input type="email" name="email" class="form-control @error('email') is-invalid @enderror" placeholder="{{ __('app.auth.entity_email_placeholders.company') }}" value="{{ old('registration_type') === 'company' ? old('email') : '' }}" data-company-account-input @if($companyLookupCompleted) required @endif>
+                                                                            @error('email')
+                                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                            @enderror
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div class="col-md-6">
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">{{ __('app.auth.mobile_number') }}</label>
+                                                                            <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror" placeholder="{{ __('app.auth.phone_placeholder') }}" value="{{ old('registration_type') === 'company' ? old('phone') : '' }}" inputmode="numeric" pattern="\d{10}" maxlength="10" data-company-account-input @if($companyLookupCompleted) required @endif>
+                                                                            @error('phone')
+                                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                            @enderror
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div class="col-md-6">
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">{{ __('app.auth.address_labels.company') }}</label>
+                                                                            <input type="text" name="address" class="form-control @error('address') is-invalid @enderror" placeholder="{{ __('app.auth.address_placeholder') }}" value="{{ old('registration_type') === 'company' ? old('address') : '' }}" data-company-account-input @if($companyLookupCompleted) required @endif>
+                                                                            @error('address')
+                                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                            @enderror
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div class="col-md-6">
+                                                                        <label for="registration-document-company" class="form-label custom-file-input">
+                                                                            {{ __('app.auth.document_labels.company') }}
+                                                                        </label>
+                                                                        <input class="form-control @error('registration_document') is-invalid @enderror" type="file" id="registration-document-company" name="registration_document" data-company-account-input @if($companyLookupCompleted) required @endif>
+                                                                        @error('registration_document')
+                                                                            <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                        @enderror
+                                                                    </div>
+
+                                                                    <div class="col-md-12">
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">{{ __('app.auth.description_labels.company') }}</label>
+                                                                            <textarea name="description" class="form-control @error('description') is-invalid @enderror" rows="5" placeholder="{{ __('app.auth.description_placeholders.company') }}">{{ old('registration_type') === 'company' ? old('description') : '' }}</textarea>
+                                                                            @error('description')
+                                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                            @enderror
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div class="col-md-6">
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">{{ __('app.auth.password_label') }}</label>
+                                                                            <div class="registration-password-control">
+                                                                                <input type="password" name="password" class="form-control @error('password') is-invalid @enderror" placeholder="{{ __('app.auth.password_placeholder') }}" data-password-strength data-company-account-input @if($companyLookupCompleted) required @endif>
+                                                                                <button type="button" class="registration-password-toggle" data-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
+                                                                                    <i class="ph ph-eye-slash"></i>
+                                                                                </button>
+                                                                            </div>
+                                                                            @include('auth.partials.password-rules')
+                                                                            @error('password')
+                                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                            @enderror
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div class="col-md-6">
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">{{ __('app.auth.confirm_password') }}</label>
+                                                                            <div class="registration-password-control">
+                                                                                <input type="password" name="password_confirmation" class="form-control" placeholder="{{ __('app.auth.password_placeholder') }}" data-company-account-input @if($companyLookupCompleted) required @endif>
+                                                                                <button type="button" class="registration-password-toggle" data-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
+                                                                                    <i class="ph ph-eye-slash"></i>
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        @else
+                                                            <div class="col-md-12">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.entity_name_labels.'.$type) }}</label>
+                                                                    <input type="text" name="entity_name" class="form-control @error('entity_name') is-invalid @enderror" placeholder="{{ __('app.auth.entity_name_placeholders.'.$type) }}" value="{{ old('registration_type') === $type ? old('entity_name') : '' }}" required>
+                                                                    @error('entity_name')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.registration_number_labels.'.$type) }}</label>
+                                                                    <input type="text" name="registration_number" class="form-control @error('registration_number') is-invalid @enderror" placeholder="{{ __('app.auth.registration_number_placeholders.'.$type) }}" value="{{ old('registration_type') === $type ? old('registration_number') : '' }}" required>
+                                                                    @error('registration_number')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.email') }}</label>
+                                                                    <input type="email" name="email" class="form-control @error('email') is-invalid @enderror" placeholder="{{ __('app.auth.entity_email_placeholders.'.$type) }}" value="{{ old('registration_type') === $type ? old('email') : '' }}" required>
+                                                                    @error('email')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.mobile_number') }}</label>
+                                                                    <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror" placeholder="{{ __('app.auth.phone_placeholder') }}" value="{{ old('registration_type') === $type ? old('phone') : '' }}" inputmode="numeric" pattern="\d{10}" maxlength="10" required>
+                                                                    @error('phone')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.address_labels.'.$type) }}</label>
+                                                                    <input type="text" name="address" class="form-control @error('address') is-invalid @enderror" placeholder="{{ __('app.auth.address_placeholder') }}" value="{{ old('registration_type') === $type ? old('address') : '' }}" required>
+                                                                    @error('address')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-md-12">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.description_labels.'.$type) }}</label>
+                                                                    <textarea name="description" class="form-control @error('description') is-invalid @enderror" rows="6" placeholder="{{ __('app.auth.description_placeholders.'.$type) }}">{{ old('registration_type') === $type ? old('description') : '' }}</textarea>
+                                                                    @error('description')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-md-12">
+                                                                <label for="registration-document-{{ $type }}" class="form-label custom-file-input">
+                                                                    {{ __('app.auth.document_labels.'.$type) }}
+                                                                </label>
+                                                                <input class="form-control @error('registration_document') is-invalid @enderror" type="file" id="registration-document-{{ $type }}" name="registration_document" required>
+                                                                @error('registration_document')
                                                                     <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                 @enderror
                                                             </div>
-                                                        </div>
 
-                                                        <div class="col-md-6">
-                                                            <div class="mb-3">
-                                                                <label class="form-label">{{ __('app.auth.registration_number_labels.'.$type) }}</label>
-                                                                <input type="text" name="registration_number" class="form-control @error('registration_number') is-invalid @enderror" placeholder="{{ __('app.auth.registration_number_placeholders.'.$type) }}" value="{{ old('registration_type') === $type ? old('registration_number') : '' }}" required>
-                                                                @error('registration_number')
-                                                                    <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                                @enderror
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.password_label') }}</label>
+                                                                    <div class="registration-password-control">
+                                                                        <input type="password" name="password" class="form-control @error('password') is-invalid @enderror" placeholder="{{ __('app.auth.password_placeholder') }}" data-password-strength required>
+                                                                        <button type="button" class="registration-password-toggle" data-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
+                                                                            <i class="ph ph-eye-slash"></i>
+                                                                        </button>
+                                                                    </div>
+                                                                    @include('auth.partials.password-rules')
+                                                                    @error('password')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
                                                             </div>
-                                                        </div>
 
-                                                        <div class="col-md-6">
-                                                            <div class="mb-3">
-                                                                <label class="form-label">{{ __('app.auth.email') }}</label>
-                                                                <input type="email" name="email" class="form-control @error('email') is-invalid @enderror" placeholder="{{ __('app.auth.entity_email_placeholders.'.$type) }}" value="{{ old('registration_type') === $type ? old('email') : '' }}" required>
-                                                                @error('email')
-                                                                    <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                                @enderror
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">{{ __('app.auth.confirm_password') }}</label>
+                                                                    <div class="registration-password-control">
+                                                                        <input type="password" name="password_confirmation" class="form-control" placeholder="{{ __('app.auth.password_placeholder') }}" required>
+                                                                        <button type="button" class="registration-password-toggle" data-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
+                                                                            <i class="ph ph-eye-slash"></i>
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
                                                             </div>
-                                                        </div>
-
-                                                        <div class="col-md-6">
-                                                            <div class="mb-3">
-                                                                <label class="form-label">{{ __('app.auth.mobile_number') }}</label>
-                                                                <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror" placeholder="{{ __('app.auth.phone_placeholder') }}" value="{{ old('registration_type') === $type ? old('phone') : '' }}" inputmode="numeric" pattern="\d{10}" maxlength="10" required>
-                                                                @error('phone')
-                                                                    <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                                @enderror
-                                                            </div>
-                                                        </div>
-
-                                                        <div class="col-md-6">
-                                                            <div class="mb-3">
-                                                                <label class="form-label">{{ __('app.auth.address_labels.'.$type) }}</label>
-                                                                <input type="text" name="address" class="form-control @error('address') is-invalid @enderror" placeholder="{{ __('app.auth.address_placeholder') }}" value="{{ old('registration_type') === $type ? old('address') : '' }}" required>
-                                                                @error('address')
-                                                                    <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                                @enderror
-                                                            </div>
-                                                        </div>
-
-                                                        <div class="col-md-12">
-                                                            <div class="mb-3">
-                                                                <label class="form-label">{{ __('app.auth.description_labels.'.$type) }}</label>
-                                                                <textarea name="description" class="form-control @error('description') is-invalid @enderror" rows="6" placeholder="{{ __('app.auth.description_placeholders.'.$type) }}">{{ old('registration_type') === $type ? old('description') : '' }}</textarea>
-                                                                @error('description')
-                                                                    <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                                @enderror
-                                                            </div>
-                                                        </div>
-
-                                                        <div class="col-md-12">
-                                                            <label for="registration-document-{{ $type }}" class="form-label custom-file-input">
-                                                                {{ __('app.auth.document_labels.'.$type) }}
-                                                            </label>
-                                                            <input class="form-control @error('registration_document') is-invalid @enderror" type="file" id="registration-document-{{ $type }}" name="registration_document" required>
-                                                            @error('registration_document')
-                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                            @enderror
-                                                        </div>
-
-                                                        <div class="col-md-6">
-                                                            <div class="mb-3">
-                                                                <label class="form-label">{{ __('app.auth.password_label') }}</label>
-                                                                <input type="password" name="password" class="form-control @error('password') is-invalid @enderror" placeholder="{{ __('app.auth.password_placeholder') }}" data-password-strength required>
-                                                                @include('auth.partials.password-rules')
-                                                                @error('password')
-                                                                    <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                                @enderror
-                                                            </div>
-                                                        </div>
-
-                                                        <div class="col-md-6">
-                                                            <div class="mb-3">
-                                                                <label class="form-label">{{ __('app.auth.confirm_password') }}</label>
-                                                                <input type="password" name="password_confirmation" class="form-control" placeholder="{{ __('app.auth.password_placeholder') }}" required>
-                                                            </div>
-                                                        </div>
+                                                        @endif
                                                     </div>
 
                                                     <div class="registration-actions">
-                                                        <button type="submit" id="register-submit-{{ $type }}" data-register-submit="{{ $type }}" class="btn btn-danger w-100">{{ $registrationTypes[$type]['submit_label'] }}</button>
+                                                        <button type="submit" id="register-submit-{{ $type }}" data-register-submit="{{ $type }}" class="btn btn-danger w-100" @if($type === 'company') @disabled(! $companyLookupCompleted) @endif>{{ $registrationTypes[$type]['submit_label'] }}</button>
                                                     </div>
                                                 </form>
                                             </div>
@@ -321,6 +483,13 @@
                 studentLookupSuccess: @json(__('app.auth.student_lookup_success')),
                 studentLookupFailed: @json(__('app.auth.student_lookup_failed')),
                 studentLookupRequired: @json(__('app.auth.student_lookup_required')),
+                checkingRegistrationNumber: @json(__('app.auth.checking_registration_number')),
+                registrationNumberRequired: @json(__('app.auth.registration_number_required')),
+                companyLookupSuccess: @json(__('app.auth.company_lookup_success')),
+                companyLookupFailed: @json(__('app.auth.company_lookup_failed')),
+                companyLookupRequired: @json(__('app.auth.company_lookup_required')),
+                showPassword: @json(__('app.auth.show_password')),
+                hidePassword: @json(__('app.auth.hide_password')),
                 passwordInvalid: @json(__('app.auth.password_strength_invalid')),
             };
             const forms = document.querySelectorAll('[data-register-form]');
@@ -332,7 +501,7 @@
 
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
-            const firstError = function (payload) {
+            const firstError = function (payload, fallback) {
                 if (payload && payload.errors) {
                     const errorGroups = Object.values(payload.errors);
 
@@ -343,7 +512,7 @@
                     }
                 }
 
-                return payload?.message || registerMessages.studentLookupFailed;
+                return payload?.message || fallback || registerMessages.studentLookupFailed;
             };
 
             const digitsOnly = function (input) {
@@ -398,6 +567,26 @@
             };
 
             document.querySelectorAll('[data-password-strength]').forEach(bindPasswordStrength);
+
+            document.querySelectorAll('[data-password-toggle]').forEach(function (toggle) {
+                const passwordInput = toggle.closest('.registration-password-control')?.querySelector('input');
+                const icon = toggle.querySelector('i');
+
+                if (!passwordInput || !icon) {
+                    return;
+                }
+
+                toggle.addEventListener('click', function () {
+                    const isPassword = passwordInput.getAttribute('type') === 'password';
+                    const label = isPassword ? registerMessages.hidePassword : registerMessages.showPassword;
+
+                    passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
+                    icon.classList.toggle('ph-eye', isPassword);
+                    icon.classList.toggle('ph-eye-slash', !isPassword);
+                    toggle.setAttribute('aria-label', label);
+                    toggle.setAttribute('title', label);
+                });
+            });
 
             const setupStudentLookup = function () {
                 const form = document.getElementById('register-form-student');
@@ -520,7 +709,7 @@
 
                         if (!response.ok) {
                             resetLookup();
-                            setMessage(firstError(payload), 'error');
+                            setMessage(firstError(payload, registerMessages.studentLookupFailed), 'error');
                             return;
                         }
 
@@ -559,6 +748,175 @@
             };
 
             setupStudentLookup();
+
+            const setupCompanyLookup = function () {
+                const form = document.getElementById('register-form-company');
+
+                if (!form) {
+                    return;
+                }
+
+                const registrationNumber = form.querySelector('[data-company-registration-number]');
+                const checkButton = form.querySelector('[data-company-lookup-check]');
+                const message = form.querySelector('[data-company-lookup-message]');
+                const verifiedInput = form.querySelector('[data-company-lookup-verified]');
+                const profileSection = form.querySelector('[data-company-lookup-fields]');
+                const accountSection = form.querySelector('[data-company-account-fields]');
+                const submitButton = form.querySelector('[data-register-submit="company"]');
+                const accountInputs = form.querySelectorAll('[data-company-account-input]');
+                let verifiedRegistrationNumber = verifiedInput?.value === '1' ? registrationNumber?.value : '';
+
+                const normalizeRegistrationNumber = function (value) {
+                    return (value || '').replace(/\s+/g, '').toUpperCase();
+                };
+
+                const setMessage = function (text, state) {
+                    if (!message) {
+                        return;
+                    }
+
+                    message.textContent = text || '';
+                    message.classList.toggle('is-error', state === 'error');
+                    message.classList.toggle('is-success', state === 'success');
+                };
+
+                const setAccountRequired = function (isRequired) {
+                    accountInputs.forEach(function (input) {
+                        input.required = isRequired;
+                    });
+                };
+
+                const fillLookupFields = function (data) {
+                    Object.entries(data || {}).forEach(function ([key, value]) {
+                        const safeValue = value || '';
+                        const hidden = form.querySelector('[data-company-lookup-hidden="' + key + '"]');
+                        const field = form.querySelector('[data-company-lookup-field="' + key + '"]');
+
+                        if (hidden) {
+                            hidden.value = safeValue;
+                        }
+
+                        if (field) {
+                            field.value = safeValue;
+                            field.disabled = true;
+                        }
+                    });
+                };
+
+                const resetLookup = function () {
+                    verifiedRegistrationNumber = '';
+
+                    if (verifiedInput) {
+                        verifiedInput.value = '0';
+                    }
+
+                    if (profileSection) {
+                        profileSection.hidden = true;
+                    }
+
+                    if (accountSection) {
+                        accountSection.hidden = true;
+                    }
+
+                    fillLookupFields({
+                        entity_name: '',
+                        company_registration_date: '',
+                        company_capital: '',
+                    });
+
+                    setAccountRequired(false);
+
+                    if (submitButton) {
+                        submitButton.disabled = true;
+                    }
+                };
+
+                if (verifiedInput?.value === '1') {
+                    setAccountRequired(true);
+                } else {
+                    resetLookup();
+                }
+
+                registrationNumber?.addEventListener('input', function () {
+                    if (
+                        verifiedInput?.value === '1'
+                        && normalizeRegistrationNumber(registrationNumber.value) !== normalizeRegistrationNumber(verifiedRegistrationNumber)
+                    ) {
+                        resetLookup();
+                        setMessage('', null);
+                    }
+                });
+
+                checkButton?.addEventListener('click', async function () {
+                    const value = registrationNumber?.value || '';
+
+                    if (!normalizeRegistrationNumber(value)) {
+                        resetLookup();
+                        setMessage(registerMessages.registrationNumberRequired, 'error');
+                        registrationNumber?.focus();
+                        return;
+                    }
+
+                    checkButton.disabled = true;
+                    setMessage(registerMessages.checkingRegistrationNumber, null);
+
+                    try {
+                        const response = await fetch(form.dataset.companyLookupUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Accept': 'application/json',
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': csrfToken,
+                            },
+                            body: JSON.stringify({ registration_number: value }),
+                        });
+                        const payload = await response.json();
+
+                        if (!response.ok) {
+                            resetLookup();
+                            setMessage(firstError(payload, registerMessages.companyLookupFailed), 'error');
+                            return;
+                        }
+
+                        fillLookupFields(payload.data || {});
+
+                        if (payload.data?.registration_number && registrationNumber) {
+                            registrationNumber.value = payload.data.registration_number;
+                        }
+
+                        if (verifiedInput) {
+                            verifiedInput.value = '1';
+                        }
+
+                        verifiedRegistrationNumber = registrationNumber?.value || value;
+                        profileSection.hidden = false;
+                        accountSection.hidden = false;
+                        setAccountRequired(true);
+
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                        }
+
+                        setMessage(payload.message || registerMessages.companyLookupSuccess, 'success');
+                    } catch (error) {
+                        resetLookup();
+                        setMessage(registerMessages.companyLookupFailed, 'error');
+                    } finally {
+                        checkButton.disabled = false;
+                    }
+                });
+
+                form.addEventListener('submit', function (event) {
+                    if (verifiedInput?.value !== '1') {
+                        event.preventDefault();
+                        resetLookup();
+                        setMessage(registerMessages.companyLookupRequired, 'error');
+                        registrationNumber?.focus();
+                    }
+                });
+            };
+
+            setupCompanyLookup();
 
             forms.forEach(function (form) {
                 const type = form.dataset.registerForm;
