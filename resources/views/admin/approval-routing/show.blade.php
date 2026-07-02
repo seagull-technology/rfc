@@ -3,14 +3,7 @@
     $breadcrumb = __('app.admin.navigation.approval_routing');
     $conditions = collect((array) ($rule->conditions ?? []));
     $translateCondition = static function (string $type, string $value): string {
-        return match ($type) {
-            'project_nationalities' => __('app.applications.project_nationalities.'.$value),
-            'work_categories' => __('app.applications.work_categories.'.$value),
-            'release_methods' => __('app.applications.release_methods.'.$value),
-            'annex_flags' => __('app.admin.approval_routing.annex_flag_options.'.$value),
-            'governorates' => __('app.scouting.governorate_options.'.$value),
-            default => $value,
-        };
+        return \App\Support\ApprovalRoutingConditionLabels::label($type, $value);
     };
     $auditBadgeClass = static function (?string $action): string {
         return match ($action) {
@@ -54,6 +47,38 @@
 @endphp
 
 @extends('layouts.admin-dashboard', ['title' => $title])
+
+@section('page_layout_class', 'approval-routing-show-layout')
+
+@push('styles')
+    <style>
+        .approval-routing-show-layout {
+            padding-top: 0;
+        }
+
+        .approval-routing-show-layout .approval-routing-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .approval-routing-show-layout .approval-routing-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .approval-routing-show-layout .approval-routing-show-audit-table {
+            min-width: 940px;
+        }
+
+        .approval-routing-show-layout .approval-routing-table thead th,
+        .approval-routing-show-layout .approval-routing-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+    </style>
+@endpush
 
 @section('content')
     <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4">
@@ -202,8 +227,14 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <div class="table-responsive border rounded py-3">
-                        <table class="table mb-0">
+                    <div class="table-responsive border rounded py-3 approval-routing-table-scroll">
+                        <table class="table mb-0 approval-routing-table approval-routing-show-audit-table">
+                            <colgroup>
+                                <col style="width: 140px">
+                                <col style="width: 180px">
+                                <col style="width: 150px">
+                                <col style="width: 470px">
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>{{ __('app.admin.approval_routing.audit_action_label') }}</th>

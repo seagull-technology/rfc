@@ -2,14 +2,7 @@
     $title = __('app.admin.approval_routing.title');
     $breadcrumb = __('app.admin.navigation.approval_routing');
     $translateCondition = static function (string $type, string $value): string {
-        return match ($type) {
-            'project_nationalities' => __('app.applications.project_nationalities.'.$value),
-            'work_categories' => __('app.applications.work_categories.'.$value),
-            'release_methods' => __('app.applications.release_methods.'.$value),
-            'annex_flags' => __('app.admin.approval_routing.annex_flag_options.'.$value),
-            'governorates' => __('app.scouting.governorate_options.'.$value),
-            default => $value,
-        };
+        return \App\Support\ApprovalRoutingConditionLabels::label($type, $value);
     };
     $conflictBadgeClass = static function (string $type): string {
         return match ($type) {
@@ -68,6 +61,56 @@
 
 @extends('layouts.admin-dashboard', ['title' => $title])
 
+@section('page_layout_class', 'approval-routing-index-layout')
+
+@push('styles')
+    <style>
+        .approval-routing-index-layout {
+            padding-top: 0;
+        }
+
+        .approval-routing-index-layout .card {
+            margin-bottom: 1.5rem;
+        }
+
+        .approval-routing-index-layout .approval-routing-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .approval-routing-index-layout .approval-routing-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .approval-routing-index-layout .approval-routing-cleanup-table,
+        .approval-routing-index-layout .approval-routing-conflict-table {
+            min-width: 1180px;
+        }
+
+        .approval-routing-index-layout .approval-routing-usage-table,
+        .approval-routing-index-layout .approval-routing-audit-table {
+            min-width: 760px;
+        }
+
+        .approval-routing-index-layout .approval-routing-rules-table {
+            min-width: 1760px;
+        }
+
+        .approval-routing-index-layout .approval-routing-table thead th,
+        .approval-routing-index-layout .approval-routing-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+
+        .approval-routing-index-layout .approval-routing-actions-cell .d-flex {
+            justify-content: flex-start;
+        }
+    </style>
+@endpush
+
 @section('content')
     <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4">
         <div>
@@ -122,8 +165,18 @@
             @if ($cleanupCandidates->isEmpty())
                 <div class="text-muted">{{ __('app.admin.approval_routing.cleanup_empty') }}</div>
             @else
-                <div class="table-responsive border rounded py-3">
-                    <table class="table mb-0">
+                <div class="table-responsive border rounded py-3 approval-routing-table-scroll">
+                    <table class="table mb-0 approval-routing-table approval-routing-cleanup-table">
+                        <colgroup>
+                            <col style="width: 220px">
+                            <col style="width: 130px">
+                            <col style="width: 110px">
+                            <col style="width: 150px">
+                            <col style="width: 170px">
+                            <col style="width: 150px">
+                            <col style="width: 130px">
+                            <col style="width: 120px">
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th>{{ __('app.admin.approval_routing.name') }}</th>
@@ -161,7 +214,7 @@
                                             {{ __('app.dashboard.not_available') }}
                                         @endif
                                     </td>
-                                    <td>
+                                    <td class="approval-routing-actions-cell">
                                         <div class="d-flex gap-2 flex-wrap">
                                             <a class="btn btn-sm btn-outline-primary" href="{{ route('admin.approval-routing.edit', $candidate['rule']) }}">{{ __('app.admin.approval_routing.update_action') }}</a>
                                             <a class="btn btn-sm btn-outline-dark" href="{{ route('admin.approval-routing.create', ['duplicate_rule_id' => $candidate['rule']->getKey()]) }}">{{ __('app.admin.approval_routing.duplicate_action') }}</a>
@@ -219,8 +272,13 @@
             @if ($topUsedRules->isEmpty())
                 <div class="text-muted">{{ __('app.admin.approval_routing.analytics_empty') }}</div>
             @else
-                <div class="table-responsive border rounded py-3">
-                    <table class="table mb-0">
+                <div class="table-responsive border rounded py-3 approval-routing-table-scroll">
+                    <table class="table mb-0 approval-routing-table approval-routing-usage-table">
+                        <colgroup>
+                            <col style="width: 380px">
+                            <col style="width: 160px">
+                            <col style="width: 220px">
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th>{{ __('app.admin.approval_routing.name') }}</th>
@@ -363,8 +421,17 @@
             @if ($conflictReport->isEmpty())
                 <div class="text-center text-muted py-4">{{ __('app.admin.approval_routing.conflict_report_empty') }}</div>
             @else
-                <div class="table-responsive border rounded py-3">
-                    <table class="table mb-0">
+                <div class="table-responsive border rounded py-3 approval-routing-table-scroll">
+                    <table class="table mb-0 approval-routing-table approval-routing-conflict-table">
+                        <colgroup>
+                            <col style="width: 150px">
+                            <col style="width: 150px">
+                            <col style="width: 180px">
+                            <col style="width: 190px">
+                            <col style="width: 190px">
+                            <col style="width: 200px">
+                            <col style="width: 120px">
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th>{{ __('app.admin.approval_routing.conflict_risk') }}</th>
@@ -405,7 +472,7 @@
                                     <td class="text-muted">
                                         {{ __('app.admin.approval_routing.conflict_recommendations.'.$finding['type']) }}
                                     </td>
-                                    <td>
+                                    <td class="approval-routing-actions-cell">
                                         <div class="d-flex gap-2 flex-wrap">
                                             <a class="btn btn-sm btn-outline-primary" href="{{ route('admin.approval-routing.edit', $finding['primary_rule']) }}">{{ __('app.admin.approval_routing.conflict_actions.edit_primary') }}</a>
                                             <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.approval-routing.edit', $finding['secondary_rule']) }}">{{ __('app.admin.approval_routing.conflict_actions.edit_secondary') }}</a>
@@ -428,8 +495,14 @@
             </div>
         </div>
         <div class="card-body">
-            <div class="table-responsive border rounded py-3">
-                <table class="table mb-0">
+            <div class="table-responsive border rounded py-3 approval-routing-table-scroll">
+                <table class="table mb-0 approval-routing-table approval-routing-audit-table">
+                    <colgroup>
+                        <col style="width: 300px">
+                        <col style="width: 140px">
+                        <col style="width: 180px">
+                        <col style="width: 140px">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>{{ __('app.admin.approval_routing.name') }}</th>
@@ -467,8 +540,22 @@
 
     <div class="card">
         <div class="card-body">
-            <div class="table-responsive border rounded py-3">
-                <table class="table mb-0">
+            <div class="table-responsive border rounded py-3 approval-routing-table-scroll">
+                <table class="table mb-0 approval-routing-table approval-routing-rules-table">
+                    <colgroup>
+                        <col style="width: 210px">
+                        <col style="width: 150px">
+                        <col style="width: 190px">
+                        <col style="width: 240px">
+                        <col style="width: 90px">
+                        <col style="width: 120px">
+                        <col style="width: 140px">
+                        <col style="width: 160px">
+                        <col style="width: 140px">
+                        <col style="width: 130px">
+                        <col style="width: 100px">
+                        <col style="width: 190px">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>{{ __('app.admin.approval_routing.name') }}</th>
@@ -537,7 +624,7 @@
                                         {{ $rule->is_active ? __('app.statuses.active') : __('app.statuses.inactive') }}
                                     </span>
                                 </td>
-                                <td>
+                                <td class="approval-routing-actions-cell">
                                     <div class="d-flex gap-2 flex-wrap">
                                         <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.approval-routing.show', $rule) }}">{{ __('app.admin.dashboard.table_action') }}</a>
                                         <a class="btn btn-sm btn-outline-primary" href="{{ route('admin.approval-routing.edit', $rule) }}">{{ __('app.admin.approval_routing.update_action') }}</a>

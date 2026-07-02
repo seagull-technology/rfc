@@ -7,7 +7,6 @@ use App\Models\Application as FilmApplication;
 use App\Models\ApplicationAuthorityApproval;
 use App\Models\ApplicationCorrespondence;
 use App\Models\ApplicationDocument;
-use App\Models\ApplicationOfficialLetter;
 use App\Models\Entity;
 use App\Notifications\InboxMessageNotification;
 use App\Services\AuthorityEscalationService;
@@ -35,7 +34,7 @@ class ApplicationInboxController extends Controller
     {
         [$user, $entity, $approvalCodes] = $this->authorityContext($request);
         $filters = $this->directoryFilters($request);
-        $approvals = $this->directoryQuery($filters, $user->getKey(), $entity, $approvalCodes)->latest()->get();
+        $approvals = $this->directoryQuery($filters, $user->getKey(), $entity, $approvalCodes)->newestFirst()->get();
         $approvalSignals = $approvals
             ->mapWithKeys(fn (ApplicationAuthorityApproval $approval): array => [
                 $approval->getKey() => AuthorityApprovalSignal::forApproval($approval),
@@ -55,9 +54,10 @@ class ApplicationInboxController extends Controller
                     'is_escalated' => false,
                 ]);
 
-                return (((int) ($slaSignal['is_overdue'] ?? false) * 10) + ((int) ($slaSignal['is_escalated'] ?? false) * 5)) * 1_000_000_000_000_000
-                    + ((int) ($signal['priority'] ?? 0) * 1_000_000_000_000)
-                    + (int) (($signal['at'] ?? null)?->timestamp ?? $approval->updated_at?->timestamp ?? 0);
+                return (((int) ($slaSignal['is_overdue'] ?? false) * 10) + ((int) ($slaSignal['is_escalated'] ?? false) * 5)) * 100_000_000_000_000_000
+                    + ((int) ($signal['priority'] ?? 0) * 10_000_000_000_000_000)
+                    + ((int) (($signal['at'] ?? null)?->timestamp ?? $approval->updated_at?->timestamp ?? 0) * 1_000_000)
+                    + (int) $approval->getKey();
             })
             ->values();
 
@@ -91,7 +91,7 @@ class ApplicationInboxController extends Controller
     {
         [$user, $entity, $approvalCodes] = $this->authorityContext($request);
         $filters = $this->directoryFilters($request);
-        $approvals = $this->directoryQuery($filters, $user->getKey(), $entity, $approvalCodes)->latest()->get();
+        $approvals = $this->directoryQuery($filters, $user->getKey(), $entity, $approvalCodes)->newestFirst()->get();
 
         $rows = $approvals->map(fn (ApplicationAuthorityApproval $approval): array => [
             $approval->application?->code ?? '',
@@ -128,37 +128,39 @@ class ApplicationInboxController extends Controller
             'documents.reviewedBy',
             'correspondences.createdBy',
             'authorityApprovals.reviewedBy',
-            'officialLetters.targetEntity',
-            'officialLetters.createdBy',
-            'officialLetters.authorityApproval.entity',
+            'authorityApprovals.routingRule',
         ]);
         $currentApproval = $this->currentApprovalForEntity($record, $entity, $approvalCodes);
 
         abort_unless($currentApproval, 404);
+        $currentApproval->loadMissing('routingRule');
 
-        $officialLetters = $record->officialLetters
-            ->filter(fn (ApplicationOfficialLetter $letter): bool => $letter->status === 'issued')
-            ->filter(function (ApplicationOfficialLetter $letter) use ($currentApproval, $entity): bool {
-                if ((int) $letter->application_authority_approval_id === (int) $currentApproval->getKey()) {
-                    return true;
-                }
+        $approvalSignal = AuthorityApprovalSignal::forApproval($currentApproval);
 
-                return (int) $letter->target_entity_id === (int) $entity->getKey();
-            })
-            ->values();
+        if (($approvalSignal['key'] ?? null) === 'official_book_issued') {
+            $approvalSignal = [
+                'active' => false,
+                'key' => null,
+                'label' => null,
+                'summary' => null,
+                'class' => 'secondary',
+                'priority' => 0,
+                'at' => null,
+            ];
+        }
 
         return view('authority.applications.show', [
             'user' => $user,
             'entity' => $entity,
             'application' => $record,
             'currentApproval' => $currentApproval,
-            'approvalSignal' => AuthorityApprovalSignal::forApproval($currentApproval),
+            'approvalSignal' => $approvalSignal,
             'approvalSlaSignal' => $this->authorityEscalationService->signalForApproval($currentApproval, null, $entity),
             'statusHistory' => $record->statusHistory,
             'documents' => $record->documents,
             'correspondences' => $record->correspondences,
             'authorityApprovals' => $record->authorityApprovals,
-            'officialLetters' => $officialLetters,
+            'authorityAnnexSections' => $this->authorityAnnexSections($record, $currentApproval),
         ]);
     }
 
@@ -179,12 +181,40 @@ class ApplicationInboxController extends Controller
             abort_unless($user->can('applications.approve'), 403);
         }
 
-        $approval->forceFill([
+        $request->validate([
+            'response_attachment' => [
+                Rule::requiredIf(fn (): bool => $validated['status'] === 'approved' && blank($approval->response_attachment_path)),
+                'file',
+                'max:10240',
+                'mimes:pdf,doc,docx,jpg,jpeg,png',
+            ],
+        ], [
+            'response_attachment.required' => __('app.approvals.response_book_required'),
+        ]);
+
+        $approvalData = [
             'status' => $validated['status'],
             'note' => $validated['note'] ?: null,
             'reviewed_by_user_id' => $user->getKey(),
             'decided_at' => in_array($validated['status'], ['approved', 'rejected'], true) ? now() : null,
-        ])->save();
+        ];
+
+        if ($request->hasFile('response_attachment')) {
+            if ($approval->response_attachment_path) {
+                Storage::disk('local')->delete($approval->response_attachment_path);
+            }
+
+            $file = $request->file('response_attachment');
+            $approvalData += [
+                'response_attachment_path' => $file->store('authority-approval-books/'.$record->getKey(), 'local'),
+                'response_attachment_name' => $file->getClientOriginalName(),
+                'response_attachment_mime_type' => $file->getClientMimeType(),
+                'response_attachment_size' => $file->getSize(),
+                'response_attachment_uploaded_at' => now(),
+            ];
+        }
+
+        $approval->forceFill($approvalData)->save();
 
         $statuses = $record->authorityApprovals()->pluck('status');
         $record->forceFill([
@@ -243,6 +273,29 @@ class ApplicationInboxController extends Controller
         return redirect()
             ->route('authority.applications.show', $record)
             ->with('status', __('app.workflow.approval_updated'));
+    }
+
+    public function downloadApprovalAttachment(Request $request, string $application, ApplicationAuthorityApproval $approval): StreamedResponse|RedirectResponse
+    {
+        [$user, $entity, $approvalCodes] = $this->authorityContext($request);
+        $record = $this->findAuthorityApplication($application, $user->getKey(), $entity, $approvalCodes);
+
+        $authorizedApproval = ApplicationAuthorityApproval::query()
+            ->whereKey($approval->getKey())
+            ->where('application_id', $record->getKey())
+            ->where(fn (Builder $query): Builder => $this->restrictApprovalsToAuthority($query, $user->getKey(), $entity, $approvalCodes))
+            ->firstOrFail();
+
+        if (! $authorizedApproval->response_attachment_path || ! Storage::disk('local')->exists($authorizedApproval->response_attachment_path)) {
+            return redirect()
+                ->route('authority.applications.show', $record)
+                ->withErrors(['response_attachment' => __('app.approvals.response_book_missing')]);
+        }
+
+        return Storage::disk('local')->download(
+            $authorizedApproval->response_attachment_path,
+            $authorizedApproval->response_attachment_name ?: basename($authorizedApproval->response_attachment_path),
+        );
     }
 
     public function storeCorrespondence(Request $request, string $application): RedirectResponse
@@ -364,9 +417,105 @@ class ApplicationInboxController extends Controller
     private function findAuthorityApplication(string $application, int $userId, Entity $entity, array $approvalCodes): FilmApplication
     {
         return FilmApplication::query()
-            ->with(['entity.group', 'submittedBy', 'reviewedBy', 'assignedTo', 'authorityApprovals.reviewedBy', 'authorityApprovals.assignedTo', 'authorityApprovals.entity'])
+            ->with(['entity.group', 'submittedBy', 'reviewedBy', 'assignedTo', 'authorityApprovals.reviewedBy', 'authorityApprovals.assignedTo', 'authorityApprovals.entity', 'authorityApprovals.routingRule'])
             ->whereHas('authorityApprovals', fn (Builder $query): Builder => $this->restrictApprovalsToAuthority($query, $userId, $entity, $approvalCodes))
             ->findOrFail($application);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function authorityAnnexSections(FilmApplication $application, ApplicationAuthorityApproval $approval): array
+    {
+        $annexFlags = collect((array) data_get($approval->routingRule?->conditions ?? [], 'annex_flags', []))
+            ->filter(fn ($flag): bool => filled($flag))
+            ->map(fn ($flag): string => (string) $flag)
+            ->values();
+
+        if ($annexFlags->isNotEmpty()) {
+            return $annexFlags
+                ->flatMap(fn (string $flag): array => $this->annexSectionsForRoutingFlag($flag))
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        return $this->filledAnnexSections($application);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function annexSectionsForRoutingFlag(string $flag): array
+    {
+        return match ($flag) {
+            'work_content_confirmed' => ['work_content_summary'],
+            'cast_crew' => ['cast_crew'],
+            'filming_locations' => ['filming_locations'],
+            'special_location_requirements',
+            'special_requirement_road_closures',
+            'special_requirement_police_presence',
+            'special_requirement_armed_forces',
+            'special_requirement_regular_aerial_filming',
+            'special_requirement_drone_filming',
+            'special_requirement_special_effects',
+            'special_requirement_construction_work',
+            'special_requirement_animals',
+            'special_requirement_weapons',
+            'special_requirement_other' => ['filming_locations', 'special_location_requirements'],
+            'safety_guidelines' => ['safety_guidelines'],
+            'imported_equipment' => ['equipment_flights', 'equipment_travelers', 'imported_equipment'],
+            'military_border_equipment' => ['military_border_locations', 'military_border_equipment'],
+            'airport_filming' => ['airport_filming', 'airport_people'],
+            'governmental_scenes' => ['governmental_scenes'],
+            'location_type_religious_sites',
+            'location_type_museums',
+            'location_type_archaeological_sites',
+            'location_type_border_areas',
+            'location_type_petra',
+            'location_type_reserves' => ['filming_locations'],
+            default => [],
+        };
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function filledAnnexSections(FilmApplication $application): array
+    {
+        $annex = (array) data_get($application->metadata ?? [], 'annex', []);
+
+        return collect([
+            'work_content_summary' => $this->annexValuesHaveData(data_get($annex, 'work_content_summary', [])),
+            'cast_crew' => $this->annexRowsHaveData(data_get($annex, 'cast_crew', [])),
+            'filming_locations' => $this->annexRowsHaveData(data_get($annex, 'filming_locations', [])),
+            'special_location_requirements' => $this->annexRowsHaveData(data_get($annex, 'special_location_requirements', [])),
+            'safety_guidelines' => (bool) data_get($annex, 'safety_guidelines.acknowledged') || filled(data_get($annex, 'safety_guidelines.notes')),
+            'equipment_flights' => $this->annexRowsHaveData(data_get($annex, 'equipment_flights', [])),
+            'equipment_travelers' => $this->annexRowsHaveData(data_get($annex, 'equipment_travelers', [])),
+            'imported_equipment' => $this->annexRowsHaveData(data_get($annex, 'imported_equipment', [])),
+            'military_border_locations' => $this->annexRowsHaveData(data_get($annex, 'military_border_locations', [])),
+            'military_border_equipment' => $this->annexRowsHaveData(data_get($annex, 'military_border_equipment', [])),
+            'airport_filming' => $this->annexValuesHaveData(data_get($annex, 'airport_filming', [])),
+            'airport_people' => $this->annexRowsHaveData(data_get($annex, 'airport_people', [])),
+            'governmental_scenes' => $this->annexRowsHaveData(data_get($annex, 'governmental_scenes', [])),
+        ])
+            ->filter()
+            ->keys()
+            ->values()
+            ->all();
+    }
+
+    private function annexRowsHaveData(mixed $rows): bool
+    {
+        return collect((array) $rows)
+            ->contains(fn ($row): bool => is_array($row) && $this->annexValuesHaveData($row));
+    }
+
+    private function annexValuesHaveData(mixed $values): bool
+    {
+        return collect(\Illuminate\Support\Arr::dot((array) $values))
+            ->contains(fn ($value): bool => filled($value));
     }
 
     /**

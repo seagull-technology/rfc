@@ -39,6 +39,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;1,100;1,300&display=swap" rel="stylesheet">
+    @include('layouts.partials.dashboard-overflow-guard')
     <style>
         .admin-notification-item .notification-meta {
             margin-top: .35rem;
@@ -54,6 +55,56 @@
             margin-inline-start: auto;
             min-width: 1.5rem;
             text-align: center;
+        }
+
+        .sidebar[data-toggle="main-sidebar"] {
+            height: 100vh;
+        }
+
+        .sidebar[data-toggle="main-sidebar"] .sidebar-body.data-scrollbar {
+            height: calc(100vh - 7.25rem);
+            max-height: calc(100vh - 7.25rem);
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+
+        .sidebar[data-toggle="main-sidebar"] .sidebar-list {
+            padding-bottom: 5rem;
+        }
+
+        .sidebar[data-toggle="main-sidebar"] .iq-main-menu {
+            padding-bottom: 2rem;
+        }
+
+        @media (max-width: 1199.98px) {
+            .sidebar[data-sidebar="responsive"] {
+                transform: translateX(-250%);
+            }
+
+            .sidebar[data-sidebar="responsive"].sidebar-mobile-open {
+                left: 0;
+                right: auto;
+                transform: translateX(0);
+            }
+
+            .sidebar[data-sidebar="responsive"]:not(.sidebar-mobile-open) > .sidebar-header > .sidebar-toggle {
+                display: none !important;
+            }
+
+            [dir="rtl"] .sidebar[data-sidebar="responsive"] {
+                transform: translateX(100%);
+            }
+
+            [dir="rtl"] .sidebar[data-sidebar="responsive"].sidebar-mobile-open {
+                left: auto;
+                right: 0;
+                transform: translateX(0);
+            }
+
+            .sidebar[data-sidebar="responsive"] + .main-content {
+                margin-inline-start: 0;
+                margin-inline-end: 0;
+            }
         }
     </style>
     @stack('styles')
@@ -134,7 +185,7 @@
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {{ request()->routeIs('admin.scouting-requests.*') ? 'active' : '' }}" href="{{ route('admin.scouting-requests.index') }}">
-                                <i class="icon"><i class="ph ph-map-pin-area fs-4"></i></i>
+                                <i class="icon"><i class="ph ph-map-pin fs-4"></i></i>
                                 <span class="item-name">{{ __('app.admin.navigation.scouting_requests') }}</span>
                                 @if ($layoutSidebarCounters['scouting_requests'] > 0)
                                     <span class="badge bg-primary rounded-pill admin-sidebar-counter" data-sidebar-counter="scouting_requests">{{ $layoutSidebarCounters['scouting_requests'] }}</span>
@@ -159,6 +210,14 @@
                             </a>
                         </li>
                     @endcan
+                    @can('reports.view.all')
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.reports.*') ? 'active' : '' }}" href="{{ route('admin.reports.index') }}">
+                                <i class="icon"><i class="ph ph-chart-line-up fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.reports') }}</span>
+                            </a>
+                        </li>
+                    @endcan
                     @can('groups.view')
                         <li class="nav-item">
                             <a class="nav-link {{ request()->routeIs('admin.groups.*') ? 'active' : '' }}" href="{{ route('admin.groups.index') }}">
@@ -172,6 +231,30 @@
                             <a class="nav-link {{ request()->routeIs('admin.approval-routing.*') ? 'active' : '' }}" href="{{ route('admin.approval-routing.index') }}">
                                 <i class="icon"><i class="ph ph-flow-arrow fs-4"></i></i>
                                 <span class="item-name">{{ __('app.admin.navigation.approval_routing') }}</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.nationalities.*') ? 'active' : '' }}" href="{{ route('admin.nationalities.index') }}">
+                                <i class="icon"><i class="ph ph-globe-hemisphere-east fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.nationalities') }}</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.filming-location-lookups.*') ? 'active' : '' }}" href="{{ route('admin.filming-location-lookups.index') }}">
+                                <i class="icon"><i class="ph ph-map-pin-area fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.filming_location_lookups') }}</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.work-release-lookups.*') ? 'active' : '' }}" href="{{ route('admin.work-release-lookups.index') }}">
+                                <i class="icon"><i class="ph ph-film-slate fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.work_release_lookups') }}</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.form-lookups.*') ? 'active' : '' }}" href="{{ route('admin.form-lookups.index') }}">
+                                <i class="icon"><i class="ph ph-list-checks fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.form_lookups') }}</span>
                             </a>
                         </li>
                         <li class="nav-item">
@@ -405,12 +488,42 @@
     <script src="{{ asset('js/external.min.js') }}"></script>
     <script src="{{ asset('js/widgetcharts.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/dashboard.js') }}?v=5.4.0" defer></script>
-    <script src="{{ asset('js/streamit.js') }}?v=5.4.1" defer></script>
-    <script src="{{ asset('js/sidebar.js') }}?v=5.4.0" defer></script>
+    <script src="{{ asset('js/streamit.js') }}?v=5.4.2" defer></script>
+    <script src="{{ asset('js/sidebar.js') }}?v=5.4.5" defer></script>
     <script src="{{ asset('js/chart-custom.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/select2.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/flatpickr.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/countdown.js') }}?v=5.4.0" defer></script>
+    <script>
+        window.addEventListener('load', function () {
+            window.setTimeout(function () {
+                var sidebarBody = document.querySelector('.sidebar[data-toggle="main-sidebar"] .sidebar-body.data-scrollbar');
+                var activeItem = sidebarBody ? sidebarBody.querySelector('.nav-link.active') : null;
+
+                if (! sidebarBody || ! activeItem) {
+                    return;
+                }
+
+                if (window.Scrollbar && typeof window.Scrollbar.get === 'function') {
+                    var scrollbar = window.Scrollbar.get(sidebarBody);
+
+                    if (scrollbar && typeof scrollbar.scrollIntoView === 'function') {
+                        scrollbar.scrollIntoView(activeItem, {
+                            offsetTop: 24,
+                            offsetBottom: 96,
+                        });
+
+                        return;
+                    }
+                }
+
+                activeItem.scrollIntoView({
+                    block: 'nearest',
+                    inline: 'nearest',
+                });
+            }, 150);
+        });
+    </script>
     @stack('scripts')
 </body>
 </html>

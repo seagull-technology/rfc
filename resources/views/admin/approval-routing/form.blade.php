@@ -50,7 +50,7 @@
                         <label for="conditions-project-nationalities" class="form-label">{{ __('app.applications.project_nationality') }}</label>
                         <select id="conditions-project-nationalities" name="conditions[project_nationalities][]" class="form-select" multiple size="3">
                             @foreach ($conditionOptions['project_nationalities'] as $option)
-                                <option value="{{ $option }}" @selected(in_array($option, (array) data_get($ruleConditions, 'project_nationalities', []), true))>{{ __('app.applications.project_nationalities.'.$option) }}</option>
+                                <option value="{{ $option }}" @selected(in_array($option, (array) data_get($ruleConditions, 'project_nationalities', []), true))>{{ \App\Models\Nationality::labelFor($option) }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -58,7 +58,7 @@
                         <label for="conditions-work-categories" class="form-label">{{ __('app.applications.work_category') }}</label>
                         <select id="conditions-work-categories" name="conditions[work_categories][]" class="form-select" multiple size="6">
                             @foreach ($conditionOptions['work_categories'] as $option)
-                                <option value="{{ $option }}" @selected(in_array($option, (array) data_get($ruleConditions, 'work_categories', []), true))>{{ __('app.applications.work_categories.'.$option) }}</option>
+                                <option value="{{ $option }}" @selected(in_array($option, (array) data_get($ruleConditions, 'work_categories', []), true))>{{ \App\Models\WorkCategory::labelFor($option) }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -66,23 +66,24 @@
                         <label for="conditions-release-methods" class="form-label">{{ __('app.applications.release_method') }}</label>
                         <select id="conditions-release-methods" name="conditions[release_methods][]" class="form-select" multiple size="5">
                             @foreach ($conditionOptions['release_methods'] as $option)
-                                <option value="{{ $option }}" @selected(in_array($option, (array) data_get($ruleConditions, 'release_methods', []), true))>{{ __('app.applications.release_methods.'.$option) }}</option>
+                                <option value="{{ $option }}" @selected(in_array($option, (array) data_get($ruleConditions, 'release_methods', []), true))>{{ \App\Models\ReleaseMethod::labelFor($option) }}</option>
                             @endforeach
                         </select>
                     </div>
-                    <div class="col-xl-6">
+                    <div class="col-12">
                         <label for="conditions-annex-flags" class="form-label">{{ __('app.admin.approval_routing.annex_flags_condition') }}</label>
-                        <select id="conditions-annex-flags" name="conditions[annex_flags][]" class="form-select" multiple size="7">
-                            @foreach ($conditionOptions['annex_flags'] as $option)
-                                <option value="{{ $option }}" @selected(in_array($option, (array) data_get($ruleConditions, 'annex_flags', []), true))>{{ __('app.admin.approval_routing.annex_flag_options.'.$option) }}</option>
-                            @endforeach
-                        </select>
+                        @include('admin.approval-routing.partials.annex-trigger-fields', [
+                            'fieldName' => 'conditions[annex_flags][]',
+                            'fieldId' => 'conditions-annex-flags',
+                            'selectedAnnexFlags' => (array) data_get($ruleConditions, 'annex_flags', []),
+                            'annexTriggerGroups' => $annexTriggerGroups,
+                        ])
                     </div>
-                    <div class="col-xl-6">
+                    <div class="col-12">
                         <label for="conditions-governorates" class="form-label">{{ __('app.admin.approval_routing.governorates_condition') }}</label>
                         <select id="conditions-governorates" name="conditions[governorates][]" class="form-select" multiple size="7">
                             @foreach ($conditionOptions['governorates'] as $option)
-                                <option value="{{ $option }}" @selected(in_array($option, (array) data_get($ruleConditions, 'governorates', []), true))>{{ __('app.scouting.governorate_options.'.$option) }}</option>
+                                <option value="{{ $option }}" @selected(in_array($option, (array) data_get($ruleConditions, 'governorates', []), true))>{{ \App\Models\Governorate::labelFor($option) }}</option>
                             @endforeach
                         </select>
                     </div>

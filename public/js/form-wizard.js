@@ -129,6 +129,17 @@
                 return validateControls(Array.from(fieldsets[0].querySelectorAll("input, select, textarea")));
             };
 
+            const scrollToWizardTop = function () {
+                window.requestAnimationFrame(function () {
+                    const top = form.getBoundingClientRect().top + window.pageYOffset - 24;
+
+                    window.scrollTo({
+                        top: Math.max(0, top),
+                        behavior: "smooth",
+                    });
+                });
+            };
+
             const setActiveStep = function (index) {
                 steps.forEach(function (step, stepIndex) {
                     if (! step) {
@@ -176,6 +187,7 @@
                 }
 
                 showFieldset(currentFieldset + 1);
+                scrollToWizardTop();
             };
 
             const goPrevious = function () {
@@ -275,10 +287,23 @@
             return field ? String(field.value || "") : "";
         };
 
+        const conditionValuesFor = function (key, value) {
+            const values = value !== "" ? [value] : [];
+
+            if (key === "project_nationalities" && value !== "" && value !== "jordanian" && value !== "international") {
+                values.push("international");
+            }
+
+            return values;
+        };
+
         const conditionMatches = function (conditions, key, value) {
             const allowed = Array.isArray(conditions[key]) ? conditions[key].filter(Boolean).map(String) : [];
+            const actualValues = conditionValuesFor(key, value);
 
-            return allowed.length === 0 || (value !== "" && allowed.includes(value));
+            return allowed.length === 0 || actualValues.some(function (actualValue) {
+                return allowed.includes(actualValue);
+            });
         };
 
         const render = function () {

@@ -8,7 +8,9 @@ use App\Notifications\RegistrationCompletionRequestedNotification;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\PermissionRegistrar;
@@ -22,14 +24,21 @@ class AuthFlowTest extends TestCase
     {
         $this->seed(AccessControlSeeder::class);
 
+        $lookupResponse = $this->post(route('register.student.lookup'), [
+            'national_id' => '9876543210',
+        ]);
+
+        $lookupResponse->assertOk();
+        $studentData = $lookupResponse->json('data');
+
         $response = $this->post(route('register.store'), [
             'registration_type' => 'student',
-            'full_name' => 'Ali Ahmad',
             'email' => 'ali@example.com',
             'national_id' => '9876543210',
             'phone' => '0791234567',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
+            'student_lookup_verified' => '1',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
         ]);
 
         $response->assertRedirect(route('login'));
@@ -39,6 +48,15 @@ class AuthFlowTest extends TestCase
 
         $this->assertSame('student', $user->registration_type);
         $this->assertSame('student', $entity->registration_type);
+        $this->assertSame('pending_review', $user->status);
+        $this->assertSame('pending_review', $entity->status);
+        $this->assertSame($studentData['full_name'], $user->name);
+        $this->assertSame($studentData['full_name'], $entity->name_en);
+        $this->assertSame($studentData['birth_date'], data_get($entity->metadata, 'birth_date'));
+        $this->assertSame($studentData['gender'], data_get($entity->metadata, 'gender'));
+        $this->assertSame($studentData['nationality'], data_get($entity->metadata, 'nationality'));
+        $this->assertSame($studentData['university_name'], data_get($entity->metadata, 'university_name'));
+        $this->assertSame($studentData['major'], data_get($entity->metadata, 'major'));
 
         $this->assertDatabaseHas('entity_user', [
             'entity_id' => $entity->getKey(),
@@ -51,22 +69,127 @@ class AuthFlowTest extends TestCase
         app(PermissionRegistrar::class)->setPermissionsTeamId(null);
     }
 
+    public function test_student_registration_requires_verified_national_id_lookup(): void
+    {
+        $this->seed(AccessControlSeeder::class);
+
+        $response = $this->from(route('register'))->post(route('register.store'), [
+            'registration_type' => 'student',
+            'email' => 'unchecked@example.com',
+            'national_id' => '9876543211',
+            'phone' => '0791234568',
+            'student_lookup_verified' => '1',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ]);
+
+        $response
+            ->assertRedirect(route('register'))
+            ->assertSessionHasErrors('national_id');
+
+        $this->assertDatabaseMissing('users', [
+            'email' => 'unchecked@example.com',
+        ]);
+    }
+
+    public function test_student_lookup_uses_mohe_sanad_when_gsb_is_configured(): void
+    {
+        $this->seed(AccessControlSeeder::class);
+
+        Cache::forget('gsb:mohe_sanad:current:9876543213');
+
+        config()->set('services.gsb.enabled', true);
+        config()->set('services.gsb.client_id', 'client-id');
+        config()->set('services.gsb.client_secret', 'client-secret');
+        config()->set('services.gsb.services.mohe_sanad.enabled', true);
+        config()->set('services.gsb.services.mohe_sanad.base_url', 'https://api-gateway.g2b.gsb.gov.jo:9443');
+        config()->set('services.gsb.services.mohe_sanad.path', '/porg-gsb/g2b-catalog/api/mohe-sanad');
+
+        Http::fake([
+            'https://api-gateway.g2b.gsb.gov.jo:9443/porg-gsb/g2b-catalog/api/mohe-sanad' => Http::response([
+                'code' => null,
+                'data' => [[
+                    'STUDENT_NAME' => 'MOHE Student',
+                    'BIRTH_DATE' => '2002-01-02',
+                    'gender_desc' => 'Female',
+                    'NATIONALITY' => 'Jordanian',
+                    'INSTITUTE_NAME' => 'Yarmouk University',
+                    'S_MAJOR_NAME' => 'Cinema Production',
+                    'degree' => 'Bachelor',
+                    'student_status' => 'currently studying',
+                ]],
+            ], 200),
+        ]);
+
+        $response = $this->post(route('register.student.lookup'), [
+            'national_id' => '9876543213',
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.full_name', 'MOHE Student')
+            ->assertJsonPath('data.birth_date', '2002-01-02')
+            ->assertJsonPath('data.gender', 'female')
+            ->assertJsonPath('data.university_name', 'Yarmouk University')
+            ->assertJsonPath('data.major', 'Cinema Production');
+    }
+
+    public function test_pending_student_user_cannot_sign_in_before_admin_approval(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $this->post(route('register.student.lookup'), [
+            'national_id' => '9876543212',
+        ])->assertOk();
+
+        $this->post(route('register.store'), [
+            'registration_type' => 'student',
+            'email' => 'pending-student@example.com',
+            'national_id' => '9876543212',
+            'phone' => '0791234569',
+            'student_lookup_verified' => '1',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ])->assertRedirect(route('login'));
+
+        $response = $this->from(route('login'))->post(route('login.store'), [
+            'identifier' => 'pending-student@example.com',
+            'password' => 'Password123!',
+        ]);
+
+        $response
+            ->assertRedirect(route('login'))
+            ->assertSessionHasErrors([
+                'identifier' => 'Your registration is pending admin approval. You can sign in after your account has been approved.',
+            ]);
+
+        $this->assertGuest();
+    }
+
     public function test_company_registration_creates_entity_account_and_stores_uploaded_document(): void
     {
         Storage::fake('local');
         $this->seed(AccessControlSeeder::class);
 
+        $lookupResponse = $this->post(route('register.company.lookup'), [
+            'registration_number' => 'REG-1122',
+        ]);
+
+        $lookupResponse->assertOk();
+        $companyData = $lookupResponse->json('data');
+
         $response = $this->post(route('register.store'), [
             'registration_type' => 'company',
-            'entity_name' => 'Future Films',
             'registration_number' => 'REG-1122',
             'email' => 'info@futurefilms.test',
             'phone' => '0790000001',
             'address' => 'Amman, Jordan',
             'description' => 'Production house',
             'registration_document' => UploadedFile::fake()->create('license.pdf', 250, 'application/pdf'),
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
+            'company_lookup_verified' => '1',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
         ]);
 
         $response->assertRedirect(route('login'));
@@ -78,9 +201,39 @@ class AuthFlowTest extends TestCase
         $this->assertSame('company', $user->registration_type);
         $this->assertSame('pending_review', $entity->status);
         $this->assertSame('pending_review', $user->status);
+        $this->assertSame($companyData['entity_name'], $entity->name_en);
+        $this->assertSame($companyData['company_registration_date'], data_get($entity->metadata, 'company_registration_date'));
+        $this->assertSame($companyData['company_capital'], data_get($entity->metadata, 'company_capital'));
         $this->assertSame('Amman, Jordan', data_get($entity->metadata, 'address'));
         $this->assertSame('Production house', data_get($entity->metadata, 'description'));
         Storage::disk('local')->assertExists((string) data_get($entity->metadata, 'registration_document_path'));
+    }
+
+    public function test_company_registration_requires_verified_commercial_registration_lookup(): void
+    {
+        Storage::fake('local');
+        $this->seed(AccessControlSeeder::class);
+
+        $response = $this->from(route('register'))->post(route('register.store'), [
+            'registration_type' => 'company',
+            'registration_number' => 'REG-3344',
+            'email' => 'unchecked-company@example.com',
+            'phone' => '0790000002',
+            'address' => 'Amman, Jordan',
+            'description' => 'Production house',
+            'registration_document' => UploadedFile::fake()->create('license.pdf', 250, 'application/pdf'),
+            'company_lookup_verified' => '1',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ]);
+
+        $response
+            ->assertRedirect(route('register'))
+            ->assertSessionHasErrors('registration_number');
+
+        $this->assertDatabaseMissing('users', [
+            'email' => 'unchecked-company@example.com',
+        ]);
     }
 
     public function test_pending_organization_user_can_sign_in_and_is_sent_to_registration_status_page(): void
@@ -329,6 +482,22 @@ class AuthFlowTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
+    public function test_otp_page_marks_first_digit_for_autofocus(): void
+    {
+        $html = view('auth.verify-otp', [
+            'maskedPhone' => '******2233',
+            'debugCode' => '12345',
+            'errors' => new \Illuminate\Support\ViewErrorBag,
+        ])->render();
+
+        $this->assertStringContainsString('data-index="0"', $html);
+        $this->assertStringContainsString('autofocus', $html);
+        $this->assertStringContainsString('data-otp-autofocus="true"', $html);
+        $this->assertStringContainsString('inputmode="numeric"', $html);
+        $this->assertStringContainsString('autocomplete="one-time-code"', $html);
+        $this->assertStringContainsString('focus({ preventScroll: true })', $html);
+    }
+
     public function test_arabic_registration_validation_messages_are_localized(): void
     {
         $this->refreshApplicationWithLocale('ar');
@@ -341,8 +510,8 @@ class AuthFlowTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSeeText('حقل الاسم الكامل مطلوب.')
             ->assertSeeText('حقل البريد الإلكتروني مطلوب.')
-            ->assertSeeText('حقل الرقم الوطني مطلوب.');
+            ->assertSeeText('حقل الرقم الوطني مطلوب.')
+            ->assertSeeText('حقل رقم الهاتف مطلوب.');
     }
 }

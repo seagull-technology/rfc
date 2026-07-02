@@ -62,7 +62,7 @@ class DashboardController extends Controller
                     'entity',
                 ])
                 ->where(fn (Builder $query): Builder => $this->restrictApprovalsToAuthorityUser($query, $user->getKey(), $entity, $approvalCodes))
-                ->latest()
+                ->newestFirst()
                 ->get();
             $approvalSignals = $approvals
                 ->mapWithKeys(fn (ApplicationAuthorityApproval $approval): array => [
@@ -83,9 +83,10 @@ class DashboardController extends Controller
                         'is_escalated' => false,
                     ]);
 
-                    return (((int) ($slaSignal['is_overdue'] ?? false) * 10) + ((int) ($slaSignal['is_escalated'] ?? false) * 5)) * 1_000_000_000_000_000
-                        + ((int) ($signal['priority'] ?? 0) * 1_000_000_000_000)
-                        + (int) (($signal['at'] ?? null)?->timestamp ?? $approval->updated_at?->timestamp ?? 0);
+                    return (((int) ($slaSignal['is_overdue'] ?? false) * 10) + ((int) ($slaSignal['is_escalated'] ?? false) * 5)) * 100_000_000_000_000_000
+                        + ((int) ($signal['priority'] ?? 0) * 10_000_000_000_000_000)
+                        + ((int) (($signal['at'] ?? null)?->timestamp ?? $approval->updated_at?->timestamp ?? 0) * 1_000_000)
+                        + (int) $approval->getKey();
                 })
                 ->values();
 
@@ -115,12 +116,12 @@ class DashboardController extends Controller
         if ($group?->code === 'rfc') {
             $applications = FilmApplication::query()
                 ->with(['entity', 'submittedBy'])
-                ->latest()
+                ->newestFirst()
                 ->get();
 
             $scoutingRequests = ScoutingRequest::query()
                 ->with(['entity', 'submittedBy'])
-                ->latest()
+                ->newestFirst()
                 ->get();
 
             return view('dashboard.staff', [
@@ -152,13 +153,13 @@ class DashboardController extends Controller
         $applications = FilmApplication::query()
             ->with(['submittedBy', 'reviewedBy', 'authorityApprovals.reviewedBy'])
             ->where('entity_id', $entity->getKey())
-            ->latest()
+            ->newestFirst()
             ->get();
 
         $scoutingRequests = ScoutingRequest::query()
             ->with('submittedBy')
             ->where('entity_id', $entity->getKey())
-            ->latest()
+            ->newestFirst()
             ->get();
 
         $actionItems = $this->applicantActionItems($applications, $scoutingRequests);
@@ -237,7 +238,7 @@ class DashboardController extends Controller
                     ->map(fn (ScoutingRequest $request): array => $this->scoutingDashboardItem($request))
                     ->all()
             )
-            ->sortByDesc(fn (array $item): int => ((int) data_get($item, 'priority', 0) * 1_000_000_000_000) + (data_get($item, 'sort_at')?->timestamp ?? 0))
+            ->sortByDesc(fn (array $item): int => ((int) data_get($item, 'priority', 0) * 10_000_000_000_000_000) + ((data_get($item, 'sort_at')?->timestamp ?? 0) * 1_000_000) + (int) data_get($item, 'sort_id', 0))
             ->values();
     }
 
@@ -250,7 +251,7 @@ class DashboardController extends Controller
     {
         return collect($applications->map(fn (FilmApplication $application): array => $this->applicationDashboardItem($application))->all())
             ->merge($scoutingRequests->map(fn (ScoutingRequest $request): array => $this->scoutingDashboardItem($request))->all())
-            ->sortByDesc(fn (array $item): int => data_get($item, 'sort_at')?->timestamp ?? 0)
+            ->sortByDesc(fn (array $item): int => ((data_get($item, 'sort_at')?->timestamp ?? 0) * 1_000_000) + (int) data_get($item, 'sort_id', 0))
             ->take(5)
             ->values();
     }
@@ -274,6 +275,7 @@ class DashboardController extends Controller
             'status_class' => $this->dashboardStatusClass($application->status),
             'url' => route('applications.show', $application),
             'sort_at' => $sortAt,
+            'sort_id' => $application->getKey(),
         ];
     }
 
@@ -296,6 +298,7 @@ class DashboardController extends Controller
             'status_class' => $this->dashboardStatusClass($request->status),
             'url' => route('scouting-requests.show', $request),
             'sort_at' => $sortAt,
+            'sort_id' => $request->getKey(),
         ];
     }
 

@@ -134,8 +134,16 @@
                 </div>
                 <div class="card-body pt-0">
                     <div class="mt-4 table-responsive">
-                        <div class="table-responsive rounded py-4">
-                            <table class="table" data-toggle="data-table">
+                        <div class="table-responsive rounded py-4 admin-dashboard-table-scroll">
+                            <table class="table mb-0 admin-dashboard-table workflow-queue-table" data-toggle="data-table">
+                                <colgroup>
+                                    <col style="width: 64px">
+                                    <col style="width: 140px">
+                                    <col style="width: 270px">
+                                    <col style="width: 180px">
+                                    <col style="width: 160px">
+                                    <col style="width: 90px">
+                                </colgroup>
                                 <thead>
                                     <tr class="ligth">
                                         <th>#</th>
@@ -166,7 +174,7 @@
                                                 <span class="text-muted">{{ $queueItem['status_label'] }}</span>
                                             </td>
                                             <td>{{ $queueItem['updated_at']?->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</td>
-                                            <td>
+                                            <td class="workflow-queue-actions-cell">
                                                 <div class="flex align-items-center list-user-action">
                                                     <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ $queueItem['url'] }}">
                                                         <i class="ph ph-eye fs-6"></i>

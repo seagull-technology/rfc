@@ -23,9 +23,25 @@
                                             <label class="form-label mb-3">
                                                 {{ __('app.auth.verify_intro', ['phone' => $maskedPhone]) }}
                                             </label>
+                                            @php
+                                                $oldOtpCode = preg_replace('/\D/', '', (string) old('code', ''));
+                                                $oldOtpCode = substr($oldOtpCode, 0, 5);
+                                                $otpDigits = str_split(str_pad($oldOtpCode, 5));
+                                                $otpFocusIndex = strlen($oldOtpCode) >= 5 ? 0 : strlen($oldOtpCode);
+                                            @endphp
                                             <div class="d-flex justify-content-center gap-2">
-                                                @foreach (str_split(str_pad(old('code', ''), 5)) as $index => $digit)
-                                                    <input type="text" maxlength="1" class="form-control text-center otp-input" value="{{ trim($digit) }}" data-index="{{ $index }}" />
+                                                @foreach ($otpDigits as $index => $digit)
+                                                    <input
+                                                        type="text"
+                                                        maxlength="1"
+                                                        inputmode="numeric"
+                                                        pattern="[0-9]*"
+                                                        autocomplete="{{ $index === 0 ? 'one-time-code' : 'off' }}"
+                                                        class="form-control text-center otp-input"
+                                                        value="{{ trim($digit) }}"
+                                                        data-index="{{ $index }}"
+                                                        @if ($index === $otpFocusIndex) autofocus data-otp-autofocus="true" @endif
+                                                    />
                                                 @endforeach
                                             </div>
                                         </div>
@@ -97,6 +113,17 @@
 
             form.addEventListener('submit', syncCode);
             syncCode();
+
+            const focusTarget = inputs.find(function (input) {
+                return input.dataset.otpAutofocus === 'true';
+            }) || inputs[0];
+
+            if (focusTarget) {
+                window.setTimeout(function () {
+                    focusTarget.focus({ preventScroll: true });
+                    focusTarget.select();
+                }, 0);
+            }
         });
     </script>
 @endpush

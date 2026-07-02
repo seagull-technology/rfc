@@ -10,8 +10,15 @@
     };
 @endphp
 
-<div class="table-responsive">
-    <table class="table mb-0">
+<div class="table-responsive applicant-request-table-scroll">
+    <table class="table mb-0 applicant-request-table">
+        <colgroup>
+            <col style="width: 150px">
+            <col style="width: 300px">
+            <col style="width: 130px">
+            <col style="width: 150px">
+            <col style="width: 110px">
+        </colgroup>
         <thead>
             <tr>
                 <th>{{ __('app.applications.request_number') }}</th>
@@ -27,7 +34,7 @@
                     <td>{{ $application->code }}</td>
                     <td>
                         <div class="fw-semibold">{{ $application->project_name }}</div>
-                        <div class="text-muted">{{ __('app.applications.work_categories.'.$application->work_category) }}</div>
+                        <div class="text-muted">{{ \App\Models\WorkCategory::labelFor($application->work_category) }}</div>
                     </td>
                     <td>
                         {{ optional($application->submitted_at ?? $application->created_at)->format('Y-m-d') }}
@@ -38,7 +45,7 @@
                             <div class="text-muted mt-2 small">{{ $application->review_note }}</div>
                         @endif
                     </td>
-                    <td>
+                    <td class="applicant-request-actions-cell">
                         <div class="d-flex gap-2 flex-wrap">
                             <a href="{{ route('applications.show', $application) }}" class="btn btn-sm btn-icon btn-primary rounded-pill" data-bs-toggle="tooltip" title="{{ __('app.applications.view_action') }}">
                                 <span class="btn-inner">
@@ -53,7 +60,12 @@
                                 </a>
                             @endif
                             @if ($application->canBeSubmittedByApplicant())
-                                <form method="POST" action="{{ route('applications.submit', $application) }}">
+                                <form method="POST" action="{{ route('applications.submit', $application) }}"
+                                    data-application-submit-confirm
+                                    data-confirm-title="{{ __('app.applications.submit_confirm_title') }}"
+                                    data-confirm-text="{{ __('app.applications.submit_confirm_body') }}"
+                                    data-confirm-button="{{ __('app.applications.submit_confirm_confirm') }}"
+                                    data-cancel-button="{{ __('app.applications.submit_confirm_cancel') }}">
                                     @csrf
                                     <button class="btn btn-sm btn-icon btn-success rounded-pill" type="submit" data-bs-toggle="tooltip" title="{{ __('app.applications.submit_action') }}">
                                         <span class="btn-inner">
@@ -73,3 +85,5 @@
         </tbody>
     </table>
 </div>
+
+@include('applications.partials.submit-confirmation-script')

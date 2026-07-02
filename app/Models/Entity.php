@@ -180,6 +180,6 @@ class Entity extends Model
 
     public function isRegistrationReviewable(): bool
     {
-        return in_array($this->registration_type, ['company', 'ngo', 'school'], true);
+        return in_array($this->registration_type, ['student', 'company', 'ngo', 'school'], true);
     }
 }

@@ -1,13 +1,6 @@
 @php
     $translateCondition = static function (string $type, string $value): string {
-        return match ($type) {
-            'project_nationalities' => __('app.applications.project_nationalities.'.$value),
-            'work_categories' => __('app.applications.work_categories.'.$value),
-            'release_methods' => __('app.applications.release_methods.'.$value),
-            'annex_flags' => __('app.admin.approval_routing.annex_flag_options.'.$value),
-            'governorates' => __('app.scouting.governorate_options.'.$value),
-            default => $value,
-        };
+        return \App\Support\ApprovalRoutingConditionLabels::label($type, $value);
     };
     $conditionLabels = collect($conditions)
         ->flatMap(function (array $items, string $type) use ($translateCondition) {
@@ -107,8 +100,14 @@
             @if ($matchedApplications->isEmpty())
                 <div class="text-muted">{{ __('app.admin.approval_routing.preview_no_matches') }}</div>
             @else
-                <div class="table-responsive">
-                    <table class="table table-sm mb-0">
+                <div class="table-responsive approval-routing-preview-table-scroll">
+                    <table class="table table-sm mb-0 approval-routing-preview-table">
+                        <colgroup>
+                            <col style="width: 130px">
+                            <col style="width: 190px">
+                            <col style="width: 170px">
+                            <col style="width: 110px">
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th>{{ __('app.applications.request_number') }}</th>

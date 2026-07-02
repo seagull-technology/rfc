@@ -132,12 +132,35 @@
 
         .authority-dashboard-layout table.table thead th,
         .authority-dashboard-layout table.table tbody td {
-            vertical-align: middle;
+            vertical-align: top;
+            word-break: break-word;
         }
 
-        .authority-dashboard-layout table.table thead th:not(:nth-child(3)),
-        .authority-dashboard-layout table.table tbody td:not(:nth-child(3)) {
-            white-space: nowrap;
+        .authority-dashboard-layout .authority-requests-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .authority-dashboard-layout .authority-requests-table {
+            min-width: 1240px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .authority-dashboard-layout .authority-requests-table thead th,
+        .authority-dashboard-layout .authority-requests-table tbody td {
+            white-space: normal;
+        }
+
+        .authority-dashboard-layout .authority-requests-table thead th:first-child,
+        .authority-dashboard-layout .authority-requests-table tbody td:first-child,
+        .authority-dashboard-layout .authority-requests-actions-cell {
+            text-align: center;
+        }
+
+        .authority-dashboard-layout .authority-requests-actions-cell .list-user-action {
+            justify-content: center;
         }
 
         .authority-dashboard-layout .authority-sla-badges {
@@ -245,8 +268,19 @@
                 </div>
                 <div class="card-body pt-0">
                     <div class="mt-4 table-responsive">
-                        <div class="table-responsive rounded py-4">
-                            <table id="authority-requests-table" class="table" data-toggle="data-table">
+                        <div class="table-responsive rounded py-4 authority-requests-table-scroll">
+                            <table id="authority-requests-table" class="table authority-requests-table" data-toggle="data-table">
+                                <colgroup>
+                                    <col style="width: 64px">
+                                    <col style="width: 136px">
+                                    <col style="width: 278px">
+                                    <col style="width: 160px">
+                                    <col style="width: 170px">
+                                    <col style="width: 126px">
+                                    <col style="width: 126px">
+                                    <col style="width: 110px">
+                                    <col style="width: 70px">
+                                </colgroup>
                                 <thead>
                                     <tr class="ligth">
                                         <th>#</th>
@@ -304,7 +338,7 @@
                                             </td>
                                             <td>{{ $approval->application?->submitted_at?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
                                             <td><span class="badge bg-{{ $statusClass($approval->status) }}">{{ $approval->localizedStatus() }}</span></td>
-                                            <td>
+                                            <td class="authority-requests-actions-cell">
                                                 <div class="flex align-items-center list-user-action">
                                                     <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ route('authority.applications.show', $approval->application) }}">
                                                         <span class="btn-inner"><i class="ph ph-eye fs-6"></i></span>

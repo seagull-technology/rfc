@@ -37,10 +37,21 @@
             white-space: nowrap;
         }
 
+        .admin-producers-index-layout .admin-producers-table-scroll {
+            overflow-x: auto;
+        }
+
+        .admin-producers-index-layout .admin-producers-table {
+            min-width: 1080px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
         .admin-producers-index-layout table thead th,
         .admin-producers-index-layout table tbody td {
-            white-space: nowrap;
-            vertical-align: middle;
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
         }
 
         .admin-producers-index-layout .producer-review-note {
@@ -108,8 +119,17 @@
                         <div class="row">
                             <div class="col-sm-12">
                                 <div class="streamit-wraper-table">
-                                    <div class="table-view table-space">
-                                        <table class="data-tables table custom-table data-table-one custom-table-height" role="grid" data-toggle="data-table">
+                                    <div class="table-view table-space admin-producers-table-scroll">
+                                        <table class="data-tables table custom-table data-table-one custom-table-height admin-producers-table" role="grid" data-toggle="data-table">
+                                            <colgroup>
+                                                <col style="width: 64px">
+                                                <col style="width: 170px">
+                                                <col style="width: 230px">
+                                                <col style="width: 230px">
+                                                <col style="width: 150px">
+                                                <col style="width: 140px">
+                                                <col style="width: 96px">
+                                            </colgroup>
                                             <thead>
                                                 <tr class="ligth">
                                                     <th>#</th>
@@ -205,11 +225,48 @@
                                         </div>
 
                                         @if ($type === 'student')
+                                            @php($studentGender = data_get($entity->metadata, 'gender'))
                                             <div class="col-md-6 mb-3">
                                                 <label class="form-label">{{ __('app.admin.users.national_id') }}</label>
                                                 <div class="form-control bg-light">{{ $entity->national_id ?: $owner?->national_id ?: __('app.dashboard.not_available') }}</div>
                                             </div>
+
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">{{ __('app.auth.birth_date') }}</label>
+                                                <div class="form-control bg-light">{{ data_get($entity->metadata, 'birth_date', __('app.dashboard.not_available')) }}</div>
+                                            </div>
+
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">{{ __('app.auth.gender') }}</label>
+                                                <div class="form-control bg-light">{{ $studentGender ? __('app.auth.gender_options.'.$studentGender) : __('app.dashboard.not_available') }}</div>
+                                            </div>
+
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">{{ __('app.auth.nationality') }}</label>
+                                                <div class="form-control bg-light">{{ data_get($entity->metadata, 'nationality', __('app.dashboard.not_available')) }}</div>
+                                            </div>
+
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">{{ __('app.auth.university_name') }}</label>
+                                                <div class="form-control bg-light">{{ data_get($entity->metadata, 'university_name', __('app.dashboard.not_available')) }}</div>
+                                            </div>
+
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">{{ __('app.auth.major') }}</label>
+                                                <div class="form-control bg-light">{{ data_get($entity->metadata, 'major', __('app.dashboard.not_available')) }}</div>
+                                            </div>
                                         @else
+                                            @if ($type === 'company')
+                                                <div class="col-md-6 mb-3">
+                                                    <label class="form-label">{{ __('app.auth.company_registration_date') }}</label>
+                                                    <div class="form-control bg-light">{{ data_get($entity->metadata, 'company_registration_date', __('app.dashboard.not_available')) }}</div>
+                                                </div>
+
+                                                <div class="col-md-6 mb-3">
+                                                    <label class="form-label">{{ __('app.auth.company_capital') }}</label>
+                                                    <div class="form-control bg-light">{{ data_get($entity->metadata, 'company_capital', __('app.dashboard.not_available')) }}</div>
+                                                </div>
+                                            @endif
                                             <div class="col-md-12 mb-3">
                                                 <label class="form-label">{{ __('app.dashboard.address') }}</label>
                                                 <div class="form-control bg-light">{{ data_get($entity->metadata, 'address', __('app.dashboard.not_available')) }}</div>

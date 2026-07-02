@@ -3,9 +3,18 @@
     $attachmentOptions = __('app.official_letters.attachment_options');
     $selectedAttachments = collect(old('attachments', $letter?->attachments ?? []))->filter()->values()->all();
     $routedApprovals = collect($officialLetterApprovals ?? []);
+    $status = $letter?->status ?? 'draft';
+    $statusClass = $status === 'issued' ? 'success' : 'secondary';
     $displayApprovals = $letter
-        ? ($letter->authorityApproval ? collect([$letter->authorityApproval]) : collect())
+        ? ($letter->targetEntity ? collect([['target_entity_name' => $letter->targetEntity->displayName()]]) : ($letter->authorityApproval ? collect([$letter->authorityApproval]) : collect()))
         : $routedApprovals;
+    $targetLabel = static function ($target): string {
+        if (is_array($target)) {
+            return $target['target_entity_name'] ?? $target['approval_label'] ?? __('app.dashboard.not_available');
+        }
+
+        return $target->entity?->displayName() ?? $target->localizedAuthority();
+    };
 @endphp
 
 @csrf
@@ -24,16 +33,14 @@
             <input id="{{ $formId }}_letter_date" name="letter_date" type="date" class="form-control" value="{{ old('letter_date', $letter?->letter_date?->format('Y-m-d') ?? now()->toDateString()) }}">
         </div>
         <div class="col-lg-4">
-            <label class="form-label" for="{{ $formId }}_serial_number">{{ __('app.official_letters.serial_number') }}</label>
-            <input id="{{ $formId }}_serial_number" name="serial_number" type="text" class="form-control" value="{{ old('serial_number', $letter?->serial_number) }}">
+            <label class="form-label">{{ __('app.official_letters.serial_number') }}</label>
+            <div class="form-control bg-light">{{ $letter?->serial_number ?: __('app.official_letters.auto_generated_serial') }}</div>
         </div>
         <div class="col-lg-4">
-            <label class="form-label" for="{{ $formId }}_status">{{ __('app.official_letters.status') }}</label>
-            <select id="{{ $formId }}_status" name="status" class="form-control bg-white" required>
-                @foreach (['draft', 'issued'] as $status)
-                    <option value="{{ $status }}" @selected(old('status', $letter?->status ?? 'draft') === $status)>{{ __('app.official_letters.statuses.'.$status) }}</option>
-                @endforeach
-            </select>
+            <label class="form-label">{{ __('app.official_letters.status') }}</label>
+            <div class="form-control bg-light d-flex align-items-center">
+                <span class="badge bg-{{ $statusClass }}">{{ __('app.official_letters.statuses.'.$status) }}</span>
+            </div>
         </div>
         <div class="col-lg-4">
             <label class="form-label" for="{{ $formId }}_recipient_prefix">{{ __('app.official_letters.recipient_prefix') }}</label>
@@ -50,8 +57,8 @@
                     <span class="badge bg-primary-subtle text-primary">{{ $letter->targetEntity->displayName() }}</span>
                 @elseif ($displayApprovals->isNotEmpty())
                     <div class="d-flex gap-2 flex-wrap">
-                        @foreach ($displayApprovals as $approval)
-                            <span class="badge bg-primary-subtle text-primary">{{ $approval->entity?->displayName() ?? $approval->localizedAuthority() }}</span>
+                        @foreach ($displayApprovals as $target)
+                            <span class="badge bg-primary-subtle text-primary">{{ $targetLabel($target) }}</span>
                         @endforeach
                     </div>
                 @else

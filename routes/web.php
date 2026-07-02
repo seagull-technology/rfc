@@ -2,11 +2,13 @@
 
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
+use App\Http\Controllers\Auth\CompanyLookupController;
 use App\Http\Controllers\Auth\OrganizationLookupController;
 use App\Http\Controllers\Auth\OtpController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\ResetPasswordController;
+use App\Http\Controllers\Auth\StudentLookupController;
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\AuthorityEscalationController;
@@ -14,12 +16,17 @@ use App\Http\Controllers\Admin\ApprovalRoutingRuleController;
 use App\Http\Controllers\Admin\ApplicationManagementController;
 use App\Http\Controllers\Admin\ContactCenterController as AdminContactCenterController;
 use App\Http\Controllers\Admin\EntityManagementController;
+use App\Http\Controllers\Admin\FilmingLocationLookupController;
+use App\Http\Controllers\Admin\FormLookupOptionController;
 use App\Http\Controllers\Admin\GroupManagementController;
 use App\Http\Controllers\Admin\IntegrationDiagnosticsController;
+use App\Http\Controllers\Admin\NationalityLookupController;
 use App\Http\Controllers\Admin\PermitRegistryController;
 use App\Http\Controllers\Admin\ProducerDirectoryController;
+use App\Http\Controllers\Admin\ReportsController;
 use App\Http\Controllers\Admin\ScoutingRequestManagementController;
 use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\Admin\WorkAndReleaseLookupController;
 use App\Http\Controllers\Authority\ApplicationInboxController;
 use App\Http\Controllers\ContactCenterController;
 use App\Http\Controllers\CurrentEntityController;
@@ -56,6 +63,8 @@ Route::group([
 
         Route::get('/register', [RegisterController::class, 'index'])->name('register');
         Route::post('/register', [RegisterController::class, 'store'])->name('register.store');
+        Route::post('/register/company/lookup', CompanyLookupController::class)->name('register.company.lookup');
+        Route::post('/register/student/lookup', StudentLookupController::class)->name('register.student.lookup');
         Route::get('/register/individual', fn () => redirect()->route('register'))->name('register.individual.create');
         Route::get('/register/organization', fn () => redirect()->route('register'))->name('register.organization.create');
         Route::post('/register/organization/lookup', OrganizationLookupController::class)->name('register.organization.lookup');
@@ -92,6 +101,8 @@ Route::group([
         Route::get('/applications/{application}', [ApplicationController::class, 'show'])->name('applications.show');
         Route::get('/applications/{application}/edit', [ApplicationController::class, 'edit'])->name('applications.edit');
         Route::post('/applications/{application}/update', [ApplicationController::class, 'update'])->name('applications.update');
+        Route::post('/applications/{application}/annex', [ApplicationController::class, 'updateAnnex'])->name('applications.annex.update');
+        Route::post('/applications/{application}/wrap-report', [ApplicationController::class, 'updateWrapReport'])->name('applications.wrap-report.update');
         Route::post('/applications/{application}/submit', [ApplicationController::class, 'submit'])->name('applications.submit');
         Route::post('/applications/{application}/documents', [ApplicationController::class, 'storeDocument'])->name('applications.documents.store');
         Route::get('/applications/{application}/documents/{document}/download', [ApplicationController::class, 'downloadDocument'])->name('applications.documents.download');
@@ -126,6 +137,9 @@ Route::group([
                 Route::post('/applications/{application}/approval', [ApplicationInboxController::class, 'updateApproval'])
                     ->middleware('permission:applications.review')
                     ->name('applications.approval.update');
+                Route::get('/applications/{application}/approvals/{approval}/attachment/download', [ApplicationInboxController::class, 'downloadApprovalAttachment'])
+                    ->middleware('permission:applications.view.entity')
+                    ->name('applications.approvals.attachment.download');
                 Route::post('/applications/{application}/correspondence', [ApplicationInboxController::class, 'storeCorrespondence'])
                     ->middleware('permission:applications.review')
                     ->name('applications.correspondence.store');
@@ -145,6 +159,12 @@ Route::group([
                 Route::get('/reports/export', [AdminDashboardController::class, 'export'])
                     ->middleware('permission:reports.export')
                     ->name('reports.export');
+                Route::get('/reports', [ReportsController::class, 'index'])
+                    ->middleware('permission:reports.view.all')
+                    ->name('reports.index');
+                Route::get('/reports/analytics/export', [ReportsController::class, 'export'])
+                    ->middleware('permission:reports.export')
+                    ->name('reports.analytics-export');
 
                 Route::get('/producers', ProducerDirectoryController::class)
                     ->middleware('permission:applications.view.all')
@@ -162,6 +182,9 @@ Route::group([
                 Route::post('/applications/{application}/review', [ApplicationManagementController::class, 'review'])
                     ->middleware('permission:applications.review')
                     ->name('applications.review');
+                Route::post('/applications/{application}/issue-facilitation-letter', [ApplicationManagementController::class, 'issueFacilitationLetter'])
+                    ->middleware('permission:applications.review')
+                    ->name('applications.issue-facilitation-letter');
                 Route::post('/applications/{application}/finalize', [ApplicationManagementController::class, 'finalize'])
                     ->middleware('permission:applications.approve')
                     ->name('applications.finalize');
@@ -180,6 +203,9 @@ Route::group([
                 Route::get('/applications/{application}/documents/{document}/download', [ApplicationManagementController::class, 'downloadDocument'])
                     ->middleware('permission:applications.view.all')
                     ->name('applications.documents.download');
+                Route::get('/applications/{application}/approvals/{approval}/attachment/download', [ApplicationManagementController::class, 'downloadApprovalAttachment'])
+                    ->middleware('permission:applications.view.all')
+                    ->name('applications.approvals.attachment.download');
                 Route::post('/applications/{application}/correspondence', [ApplicationManagementController::class, 'storeCorrespondence'])
                     ->middleware('permission:applications.review')
                     ->name('applications.correspondence.store');
@@ -189,6 +215,12 @@ Route::group([
                 Route::put('/applications/{application}/official-letters/{letter}', [ApplicationManagementController::class, 'updateOfficialLetter'])
                     ->middleware('permission:applications.review')
                     ->name('applications.official-letters.update');
+                Route::post('/applications/{application}/official-letters/{letter}/send', [ApplicationManagementController::class, 'sendOfficialLetter'])
+                    ->middleware('permission:applications.review')
+                    ->name('applications.official-letters.send');
+                Route::get('/applications/{application}/official-letters/{letter}/print', [ApplicationManagementController::class, 'printOfficialLetter'])
+                    ->middleware('permission:applications.view.all')
+                    ->name('applications.official-letters.print');
                 Route::get('/applications/{application}/correspondence/{correspondence}/download', [ApplicationManagementController::class, 'downloadCorrespondenceAttachment'])
                     ->middleware('permission:applications.view.all')
                     ->name('applications.correspondence.download');
@@ -254,6 +286,79 @@ Route::group([
                 Route::post('/integrations/company-registry-test', [IntegrationDiagnosticsController::class, 'lookupCompanyRegistry'])
                     ->middleware('permission:settings.manage')
                     ->name('integrations.company-registry-test');
+                Route::post('/integrations/mohe-student-test', [IntegrationDiagnosticsController::class, 'lookupMoheStudent'])
+                    ->middleware('permission:settings.manage')
+                    ->name('integrations.mohe-student-test');
+
+                Route::get('/nationalities', [NationalityLookupController::class, 'index'])
+                    ->middleware('permission:settings.manage')
+                    ->name('nationalities.index');
+                Route::post('/nationalities', [NationalityLookupController::class, 'store'])
+                    ->middleware('permission:settings.manage')
+                    ->name('nationalities.store');
+                Route::post('/nationalities/{nationality}/update', [NationalityLookupController::class, 'update'])
+                    ->middleware('permission:settings.manage')
+                    ->name('nationalities.update');
+                Route::post('/nationalities/{nationality}/status', [NationalityLookupController::class, 'updateStatus'])
+                    ->middleware('permission:settings.manage')
+                    ->name('nationalities.status');
+
+                Route::get('/filming-location-lookups', [FilmingLocationLookupController::class, 'index'])
+                    ->middleware('permission:settings.manage')
+                    ->name('filming-location-lookups.index');
+                Route::post('/filming-location-lookups/governorates', [FilmingLocationLookupController::class, 'storeGovernorate'])
+                    ->middleware('permission:settings.manage')
+                    ->name('filming-location-lookups.governorates.store');
+                Route::post('/filming-location-lookups/governorates/{governorate}/update', [FilmingLocationLookupController::class, 'updateGovernorate'])
+                    ->middleware('permission:settings.manage')
+                    ->name('filming-location-lookups.governorates.update');
+                Route::post('/filming-location-lookups/governorates/{governorate}/status', [FilmingLocationLookupController::class, 'updateGovernorateStatus'])
+                    ->middleware('permission:settings.manage')
+                    ->name('filming-location-lookups.governorates.status');
+                Route::post('/filming-location-lookups/location-types', [FilmingLocationLookupController::class, 'storeLocationType'])
+                    ->middleware('permission:settings.manage')
+                    ->name('filming-location-lookups.location-types.store');
+                Route::post('/filming-location-lookups/location-types/{locationType}/update', [FilmingLocationLookupController::class, 'updateLocationType'])
+                    ->middleware('permission:settings.manage')
+                    ->name('filming-location-lookups.location-types.update');
+                Route::post('/filming-location-lookups/location-types/{locationType}/status', [FilmingLocationLookupController::class, 'updateLocationTypeStatus'])
+                    ->middleware('permission:settings.manage')
+                    ->name('filming-location-lookups.location-types.status');
+
+                Route::get('/work-release-lookups', [WorkAndReleaseLookupController::class, 'index'])
+                    ->middleware('permission:settings.manage')
+                    ->name('work-release-lookups.index');
+                Route::post('/work-release-lookups/work-categories', [WorkAndReleaseLookupController::class, 'storeWorkCategory'])
+                    ->middleware('permission:settings.manage')
+                    ->name('work-release-lookups.work-categories.store');
+                Route::post('/work-release-lookups/work-categories/{workCategory}/update', [WorkAndReleaseLookupController::class, 'updateWorkCategory'])
+                    ->middleware('permission:settings.manage')
+                    ->name('work-release-lookups.work-categories.update');
+                Route::post('/work-release-lookups/work-categories/{workCategory}/status', [WorkAndReleaseLookupController::class, 'updateWorkCategoryStatus'])
+                    ->middleware('permission:settings.manage')
+                    ->name('work-release-lookups.work-categories.status');
+                Route::post('/work-release-lookups/release-methods', [WorkAndReleaseLookupController::class, 'storeReleaseMethod'])
+                    ->middleware('permission:settings.manage')
+                    ->name('work-release-lookups.release-methods.store');
+                Route::post('/work-release-lookups/release-methods/{releaseMethod}/update', [WorkAndReleaseLookupController::class, 'updateReleaseMethod'])
+                    ->middleware('permission:settings.manage')
+                    ->name('work-release-lookups.release-methods.update');
+                Route::post('/work-release-lookups/release-methods/{releaseMethod}/status', [WorkAndReleaseLookupController::class, 'updateReleaseMethodStatus'])
+                    ->middleware('permission:settings.manage')
+                    ->name('work-release-lookups.release-methods.status');
+
+                Route::get('/form-lookups', [FormLookupOptionController::class, 'index'])
+                    ->middleware('permission:settings.manage')
+                    ->name('form-lookups.index');
+                Route::post('/form-lookups', [FormLookupOptionController::class, 'store'])
+                    ->middleware('permission:settings.manage')
+                    ->name('form-lookups.store');
+                Route::post('/form-lookups/{option}/update', [FormLookupOptionController::class, 'update'])
+                    ->middleware('permission:settings.manage')
+                    ->name('form-lookups.update');
+                Route::post('/form-lookups/{option}/status', [FormLookupOptionController::class, 'updateStatus'])
+                    ->middleware('permission:settings.manage')
+                    ->name('form-lookups.status');
 
                 Route::get('/approval-routing', [ApprovalRoutingRuleController::class, 'index'])
                     ->middleware('permission:settings.manage')

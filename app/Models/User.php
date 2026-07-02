@@ -184,7 +184,7 @@ class User extends Authenticatable
 
     public function requiresAdminApprovalBeforeLogin(): bool
     {
-        return in_array($this->registration_type, ['ngo', 'school'], true);
+        return in_array($this->registration_type, ['student', 'ngo', 'school'], true);
     }
 
     public function canSignIn(): bool

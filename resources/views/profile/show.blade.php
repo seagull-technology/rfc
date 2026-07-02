@@ -22,7 +22,7 @@
     };
     $formatFallback = static fn (?string $value): string => filled($value) ? str((string) $value)->replace('_', ' ')->title()->toString() : __('app.dashboard.not_available');
     $applicationsByTypeChart = collect($chartData['applications_by_type'])
-        ->map(fn (int $count, string $key): array => ['label' => $translateOrFallback('app.applications.work_categories.'.$key, $formatFallback($key)), 'value' => $count])
+        ->map(fn (int $count, string $key): array => ['label' => \App\Models\WorkCategory::labelFor($key), 'value' => $count])
         ->values();
     $budgetByProjectChart = collect($chartData['budget_by_project'])->values();
     $applicationsByMonthLabels = collect($chartData['applications_by_month'])->pluck('label')->values();
@@ -93,6 +93,25 @@
         .portal-profile-layout table tbody td {
             white-space: nowrap;
             vertical-align: middle;
+        }
+
+        .portal-profile-layout .portal-profile-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .portal-profile-layout .portal-profile-table {
+            min-width: 860px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .portal-profile-layout .portal-profile-table thead th,
+        .portal-profile-layout .portal-profile-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
         }
 
         .portal-profile-layout .portal-profile-stat-card h6 {
@@ -201,8 +220,15 @@
     <div class="card mt-4 portal-profile-projects">
         <div class="card-header">{{ __('app.admin.entities.profile_previous_projects') }}</div>
         <div class="card-body">
-            <div class="table-responsive">
-                <table class="table">
+            <div class="table-responsive portal-profile-table-scroll">
+                <table class="table portal-profile-table portal-profile-projects-table">
+                    <colgroup>
+                        <col style="width: 280px">
+                        <col style="width: 180px">
+                        <col style="width: 170px">
+                        <col style="width: 130px">
+                        <col style="width: 100px">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>{{ __('app.applications.project_name') }}</th>
@@ -216,7 +242,7 @@
                         @forelse ($previousProjects as $project)
                             <tr>
                                 <td><a href="{{ route('applications.show', $project) }}">{{ $project->project_name }}</a></td>
-                                <td>{{ $translateOrFallback('app.applications.work_categories.'.$project->work_category, $formatFallback($project->work_category)) }}</td>
+                                <td>{{ \App\Models\WorkCategory::labelFor($project->work_category) }}</td>
                                 <td>{{ $project->estimated_budget ? number_format((float) $project->estimated_budget, 2) : __('app.dashboard.not_available') }}</td>
                                 <td><span class="badge bg-{{ $requestStatusClass($project->status) }}">{{ $project->localizedStatus() }}</span></td>
                                 <td>{{ optional($project->created_at)->format('Y') ?: __('app.dashboard.not_available') }}</td>

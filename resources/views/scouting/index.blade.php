@@ -38,20 +38,61 @@
             white-space: nowrap;
         }
 
-        .scouting-index-layout table thead th,
-        .scouting-index-layout table tbody td {
-            white-space: nowrap;
-            vertical-align: middle;
+        .scouting-index-layout .nav-pills {
+            flex-wrap: nowrap;
+            overflow-x: auto;
         }
 
-        .scouting-index-layout .table-view table tbody td:first-child,
-        .scouting-index-layout .table-view table thead th:first-child {
-            width: 70px;
+        .scouting-index-layout .nav-pills .nav-item {
+            min-width: 220px;
         }
 
-        .scouting-index-layout .table-view table tbody td:last-child,
-        .scouting-index-layout .table-view table thead th:last-child {
-            width: 110px;
+        .scouting-index-layout .scouting-request-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .scouting-index-layout .scouting-request-table {
+            min-width: 980px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .scouting-index-layout .scouting-request-table thead th,
+        .scouting-index-layout .scouting-request-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+
+        .scouting-index-layout .scouting-request-table thead th:first-child,
+        .scouting-index-layout .scouting-request-table tbody td:first-child,
+        .scouting-index-layout .scouting-request-actions-cell {
+            text-align: center;
+        }
+
+        .scouting-index-layout .scouting-request-actions-cell .list-user-action {
+            justify-content: center;
+        }
+
+        @media (max-width: 575.98px) {
+            .scouting-index-layout .nav-pills {
+                flex-wrap: wrap;
+                gap: .5rem;
+                overflow-x: visible;
+            }
+
+            .scouting-index-layout .nav-pills .nav-item {
+                flex: 1 1 100%;
+                min-width: 0;
+            }
+
+            .scouting-index-layout .nav-pills .nav-link {
+                padding: 1rem !important;
+                white-space: normal;
+                word-break: normal;
+            }
         }
     </style>
 @endpush
@@ -102,8 +143,17 @@
                 <div class="row">
                     <div class="col-sm-12">
                         <div class="streamit-wraper-table">
-                            <div class="table-view table-space">
-                                <table class="data-tables table custom-table data-table-one custom-table-height">
+                            <div class="table-view table-space scouting-request-table-scroll">
+                                <table class="data-tables table custom-table data-table-one custom-table-height scouting-request-table">
+                                    <colgroup>
+                                        <col style="width: 64px">
+                                        <col style="width: 150px">
+                                        <col style="width: 270px">
+                                        <col style="width: 190px">
+                                        <col style="width: 135px">
+                                        <col style="width: 115px">
+                                        <col style="width: 80px">
+                                    </colgroup>
                                     <thead>
                                         <tr class="ligth">
                                             <th>#</th>
@@ -124,7 +174,7 @@
                                                 <td>{{ $requestRecord->entity?->displayName() ?? $user->displayName() }}</td>
                                                 <td>{{ optional($requestRecord->submitted_at ?? $requestRecord->created_at)->format('Y-m-d') }}</td>
                                                 <td><span class="badge bg-{{ $statusClass($requestRecord->status) }}">{{ $requestRecord->localizedStatus() }}</span></td>
-                                                <td>
+                                                <td class="scouting-request-actions-cell">
                                                     <div class="flex align-items-center list-user-action">
                                                         <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ route('scouting-requests.show', $requestRecord) }}">
                                                             <span class="btn-inner"><i class="ph ph-eye fs-6"></i></span>

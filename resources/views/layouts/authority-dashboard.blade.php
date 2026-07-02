@@ -37,6 +37,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    @include('layouts.partials.dashboard-overflow-guard')
     <style>
         .authority-notification-item .notification-meta {
             margin-top: 0.5rem;
@@ -228,7 +229,7 @@
     <script src="{{ asset('js/external.min.js') }}"></script>
     <script src="{{ asset('js/widgetcharts.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/dashboard.js') }}?v=5.4.0" defer></script>
-    <script src="{{ asset('js/streamit.js') }}?v=5.4.1" defer></script>
+    <script src="{{ asset('js/streamit.js') }}?v=5.4.2" defer></script>
     <script src="{{ asset('js/sidebar.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/chart-custom.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/select2.js') }}?v=5.4.0" defer></script>

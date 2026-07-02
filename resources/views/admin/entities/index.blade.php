@@ -58,6 +58,49 @@
             white-space: nowrap;
             vertical-align: middle;
         }
+
+        .admin-entities-index-layout .admin-entities-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .admin-entities-index-layout .admin-entities-directory-table-scroll,
+        .admin-entities-index-layout .admin-entities-internal-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .admin-entities-index-layout .admin-entities-table,
+        .admin-entities-index-layout .admin-entities-directory-table,
+        .admin-entities-index-layout .admin-entities-internal-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .admin-entities-index-layout .admin-entities-review-queue-table {
+            min-width: 960px;
+        }
+
+        .admin-entities-index-layout .admin-entities-directory-table {
+            min-width: 1040px;
+        }
+
+        .admin-entities-index-layout .admin-entities-internal-table {
+            min-width: 1160px;
+        }
+
+        .admin-entities-index-layout .admin-entities-table thead th,
+        .admin-entities-index-layout .admin-entities-table tbody td,
+        .admin-entities-index-layout .admin-entities-directory-table thead th,
+        .admin-entities-index-layout .admin-entities-directory-table tbody td,
+        .admin-entities-index-layout .admin-entities-internal-table thead th,
+        .admin-entities-index-layout .admin-entities-internal-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
     </style>
 @endpush
 
@@ -134,8 +177,14 @@
                         </div>
                     </div>
                     <div class="card-body">
-                        <div class="table-responsive border rounded py-3">
-                            <table class="table mb-0">
+                        <div class="table-responsive border rounded py-3 admin-entities-table-scroll">
+                            <table class="table mb-0 admin-entities-table admin-entities-review-queue-table">
+                                <colgroup>
+                                    <col style="width: 280px">
+                                    <col style="width: 260px">
+                                    <col style="width: 220px">
+                                    <col style="width: 200px">
+                                </colgroup>
                                 <thead>
                                     <tr>
                                         <th>{{ __('app.admin.entities.name') }}</th>
@@ -215,8 +264,16 @@
                         <div class="row">
                             <div class="col-sm-12">
                                 <div class="streamit-wraper-table">
-                                    <div class="table-view table-space">
-                                        <table id="entities-table-{{ $type }}" class="data-tables table custom-table data-table-one custom-table-height" role="grid" data-toggle="data-table">
+                                    <div class="table-view table-space admin-entities-directory-table-scroll">
+                                        <table id="entities-table-{{ $type }}" class="data-tables table custom-table data-table-one custom-table-height admin-entities-directory-table" role="grid" data-toggle="data-table">
+                                            <colgroup>
+                                                <col style="width: 72px">
+                                                <col style="width: 180px">
+                                                <col style="width: 260px">
+                                                <col style="width: 260px">
+                                                <col style="width: 150px">
+                                                <col style="width: 120px">
+                                            </colgroup>
                                             <thead>
                                                 <tr class="ligth">
                                                     <th>#</th>
@@ -294,8 +351,17 @@
                         <div class="row">
                             <div class="col-sm-12">
                                 <div class="streamit-wraper-table">
-                                    <div class="table-view table-space">
-                                        <table id="entities-table-group-{{ $group->code }}" class="data-tables table custom-table data-table-one custom-table-height" role="grid" data-toggle="data-table">
+                                    <div class="table-view table-space admin-entities-internal-table-scroll">
+                                        <table id="entities-table-group-{{ $group->code }}" class="data-tables table custom-table data-table-one custom-table-height admin-entities-internal-table" role="grid" data-toggle="data-table">
+                                            <colgroup>
+                                                <col style="width: 72px">
+                                                <col style="width: 180px">
+                                                <col style="width: 260px">
+                                                <col style="width: 250px">
+                                                <col style="width: 130px">
+                                                <col style="width: 150px">
+                                                <col style="width: 120px">
+                                            </colgroup>
                                             <thead>
                                                 <tr class="ligth">
                                                     <th>#</th>

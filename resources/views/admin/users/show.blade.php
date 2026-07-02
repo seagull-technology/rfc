@@ -10,6 +10,7 @@
     };
     $primaryEntityDocumentName = data_get($primaryEntity?->metadata, 'registration_document_name');
     $primaryEntityDocumentMime = data_get($primaryEntity?->metadata, 'registration_document_mime');
+    $primaryEntityStudentGender = data_get($primaryEntity?->metadata, 'gender');
     $reviewData = (array) data_get($primaryEntity?->metadata, 'review', []);
     $profileStats = $userAnalytics['stats'];
     $chartData = $userAnalytics['charts'];
@@ -20,7 +21,7 @@
     };
     $formatFallback = static fn (?string $value): string => filled($value) ? str((string) $value)->replace('_', ' ')->title()->toString() : __('app.dashboard.not_available');
     $applicationsByTypeChart = $chartData['applications_by_type']
-        ->map(fn (int $count, string $key): array => ['label' => $translateOrFallback('app.applications.work_categories.'.$key, $formatFallback($key)), 'value' => $count])
+        ->map(fn (int $count, string $key): array => ['label' => \App\Models\WorkCategory::labelFor($key), 'value' => $count])
         ->values();
     $budgetByProjectChart = collect($chartData['budget_by_project'])->values();
     $applicationsByMonthLabels = collect($chartData['applications_by_month'])->pluck('label')->values();
@@ -74,6 +75,36 @@
         .admin-user-show-layout table tbody td {
             white-space: nowrap;
             vertical-align: middle;
+        }
+
+        .admin-user-show-layout .admin-user-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .admin-user-show-layout .admin-user-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .admin-user-show-layout .admin-user-projects-table {
+            min-width: 860px;
+        }
+
+        .admin-user-show-layout .admin-user-memberships-table {
+            min-width: 960px;
+        }
+
+        .admin-user-show-layout .admin-user-role-history-table {
+            min-width: 1020px;
+        }
+
+        .admin-user-show-layout .admin-user-table thead th,
+        .admin-user-show-layout .admin-user-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
         }
 
         .admin-user-show-layout .badge.bg-primary-subtle.text-dark {
@@ -176,32 +207,41 @@
     <div class="card mt-4">
         <div class="card-header">{{ __('app.admin.users.profile_previous_projects') }}</div>
         <div class="card-body">
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>{{ __('app.applications.project_name') }}</th>
-                        <th>{{ __('app.applications.work_category') }}</th>
-                        <th>{{ __('app.applications.estimated_budget') }}</th>
-                        <th>{{ __('app.applications.status') }}</th>
-                        <th>{{ __('app.admin.users.profile_project_year') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse ($userApplications as $project)
+            <div class="table-responsive border rounded py-3 admin-user-table-scroll">
+                <table class="table mb-0 admin-user-table admin-user-projects-table">
+                    <colgroup>
+                        <col style="width: 280px">
+                        <col style="width: 180px">
+                        <col style="width: 170px">
+                        <col style="width: 130px">
+                        <col style="width: 100px">
+                    </colgroup>
+                    <thead>
                         <tr>
-                            <td><a href="{{ route('admin.applications.show', $project) }}">{{ $project->project_name }}</a></td>
-                            <td>{{ $translateOrFallback('app.applications.work_categories.'.$project->work_category, $formatFallback($project->work_category)) }}</td>
-                            <td>{{ $project->estimated_budget ? number_format((float) $project->estimated_budget, 2) : __('app.dashboard.not_available') }}</td>
-                            <td><span class="badge bg-{{ $statusClass($project->status) }}">{{ $project->localizedStatus() }}</span></td>
-                            <td>{{ optional($project->created_at)->format('Y') ?: __('app.dashboard.not_available') }}</td>
+                            <th>{{ __('app.applications.project_name') }}</th>
+                            <th>{{ __('app.applications.work_category') }}</th>
+                            <th>{{ __('app.applications.estimated_budget') }}</th>
+                            <th>{{ __('app.applications.status') }}</th>
+                            <th>{{ __('app.admin.users.profile_project_year') }}</th>
                         </tr>
-                    @empty
-                        <tr>
-                            <td colspan="5">{{ __('app.admin.applications.empty_state') }}</td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        @forelse ($userApplications as $project)
+                            <tr>
+                                <td><a href="{{ route('admin.applications.show', $project) }}">{{ $project->project_name }}</a></td>
+                                <td>{{ \App\Models\WorkCategory::labelFor($project->work_category) }}</td>
+                                <td>{{ $project->estimated_budget ? number_format((float) $project->estimated_budget, 2) : __('app.dashboard.not_available') }}</td>
+                                <td><span class="badge bg-{{ $statusClass($project->status) }}">{{ $project->localizedStatus() }}</span></td>
+                                <td>{{ optional($project->created_at)->format('Y') ?: __('app.dashboard.not_available') }}</td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="5">{{ __('app.admin.applications.empty_state') }}</td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -306,14 +346,21 @@
                             <small class="text-muted d-block">{{ __('app.admin.users.status') }}</small>
                             <div>{{ $user->localizedStatus() }}</div>
                         </div>
-                        <div class="col-md-6">
-                            <small class="text-muted d-block">{{ __('app.auth.registration_number') }}</small>
-                            <div>{{ $primaryEntity?->registration_no ?: __('app.dashboard.not_available') }}</div>
-                        </div>
-                        <div class="col-md-6">
-                            <small class="text-muted d-block">{{ __('app.auth.organization_national_id') }}</small>
-                            <div>{{ $primaryEntity?->national_id ?: __('app.dashboard.not_available') }}</div>
-                        </div>
+                        @if ($primaryEntity?->registration_type === 'student')
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.admin.users.national_id') }}</small>
+                                <div>{{ $primaryEntity?->national_id ?: $user->national_id ?: __('app.dashboard.not_available') }}</div>
+                            </div>
+                        @else
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.registration_number') }}</small>
+                                <div>{{ $primaryEntity?->registration_no ?: __('app.dashboard.not_available') }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.organization_national_id') }}</small>
+                                <div>{{ $primaryEntity?->national_id ?: __('app.dashboard.not_available') }}</div>
+                            </div>
+                        @endif
                         <div class="col-md-6">
                             <small class="text-muted d-block">{{ __('app.auth.email') }}</small>
                             <div>{{ $primaryEntity?->email ?: $user->email ?: __('app.dashboard.not_available') }}</div>
@@ -322,14 +369,47 @@
                             <small class="text-muted d-block">{{ __('app.auth.mobile_number') }}</small>
                             <div>{{ $primaryEntity?->phone ?: $user->phone ?: __('app.dashboard.not_available') }}</div>
                         </div>
-                        <div class="col-12">
-                            <small class="text-muted d-block">{{ __('app.dashboard.address') }}</small>
-                            <div>{{ data_get($primaryEntity?->metadata, 'address', __('app.dashboard.not_available')) }}</div>
-                        </div>
-                        <div class="col-12">
-                            <small class="text-muted d-block">{{ __('app.dashboard.organization_description') }}</small>
-                            <div>{{ data_get($primaryEntity?->metadata, 'description', __('app.dashboard.not_available')) }}</div>
-                        </div>
+                        @if ($primaryEntity?->registration_type === 'student')
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.birth_date') }}</small>
+                                <div>{{ data_get($primaryEntity?->metadata, 'birth_date', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.gender') }}</small>
+                                <div>{{ $primaryEntityStudentGender ? __('app.auth.gender_options.'.$primaryEntityStudentGender) : __('app.dashboard.not_available') }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.nationality') }}</small>
+                                <div>{{ data_get($primaryEntity?->metadata, 'nationality', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.university_name') }}</small>
+                                <div>{{ data_get($primaryEntity?->metadata, 'university_name', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.auth.major') }}</small>
+                                <div>{{ data_get($primaryEntity?->metadata, 'major', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                        @else
+                            @if ($primaryEntity?->registration_type === 'company')
+                                <div class="col-md-6">
+                                    <small class="text-muted d-block">{{ __('app.auth.company_registration_date') }}</small>
+                                    <div>{{ data_get($primaryEntity?->metadata, 'company_registration_date', __('app.dashboard.not_available')) }}</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <small class="text-muted d-block">{{ __('app.auth.company_capital') }}</small>
+                                    <div>{{ data_get($primaryEntity?->metadata, 'company_capital', __('app.dashboard.not_available')) }}</div>
+                                </div>
+                            @endif
+                            <div class="col-12">
+                                <small class="text-muted d-block">{{ __('app.dashboard.address') }}</small>
+                                <div>{{ data_get($primaryEntity?->metadata, 'address', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                            <div class="col-12">
+                                <small class="text-muted d-block">{{ __('app.dashboard.organization_description') }}</small>
+                                <div>{{ data_get($primaryEntity?->metadata, 'description', __('app.dashboard.not_available')) }}</div>
+                            </div>
+                        @endif
                         <div class="col-md-6">
                             <small class="text-muted d-block">{{ __('app.admin.entities.registration_document_name') }}</small>
                             <div>{{ $primaryEntityDocumentName ?: __('app.dashboard.not_available') }}</div>
@@ -481,8 +561,12 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <div class="table-responsive border rounded py-3">
-                        <table class="table mb-0">
+                    <div class="table-responsive border rounded py-3 admin-user-table-scroll">
+                        <table class="table mb-0 admin-user-table admin-user-memberships-table">
+                            <colgroup>
+                                <col style="width: 420px">
+                                <col style="width: 540px">
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>{{ __('app.admin.entities.name') }}</th>
@@ -527,8 +611,15 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <div class="table-responsive border rounded py-3">
-                        <table class="table mb-0">
+                    <div class="table-responsive border rounded py-3 admin-user-table-scroll">
+                        <table class="table mb-0 admin-user-table admin-user-role-history-table">
+                            <colgroup>
+                                <col style="width: 220px">
+                                <col style="width: 270px">
+                                <col style="width: 150px">
+                                <col style="width: 220px">
+                                <col style="width: 160px">
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>{{ __('app.admin.users.member_role') }}</th>

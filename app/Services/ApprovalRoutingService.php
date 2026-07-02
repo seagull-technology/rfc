@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Application;
 use App\Models\ApprovalRoutingRule;
 use App\Models\Entity;
+use App\Models\FormLookupOption;
 use App\Support\ApplicationWorkflowRegistry;
 use Illuminate\Support\Collection;
 
@@ -78,14 +79,6 @@ class ApprovalRoutingService
         }
 
         if ($requiredApprovals->isEmpty()) {
-            $requiredApprovals = collect((array) data_get($application->metadata, 'requirements.required_approvals', []))
-                ->filter(fn ($value): bool => filled($value))
-                ->map(fn ($value): string => (string) $value)
-                ->unique()
-                ->values();
-        }
-
-        if ($requiredApprovals->isEmpty()) {
             return collect();
         }
 
@@ -145,10 +138,14 @@ class ApprovalRoutingService
      */
     public function matchesConditions(array $conditions, Application $application): bool
     {
+        if (! $this->conditionsHaveValues($conditions)) {
+            return false;
+        }
+
         return $this->matchesConditionList(
             $conditions,
             'project_nationalities',
-            (string) $application->project_nationality,
+            $this->projectNationalityConditionValues((string) $application->project_nationality),
         ) && $this->matchesConditionList(
             $conditions,
             'work_categories',
@@ -171,13 +168,34 @@ class ApprovalRoutingService
     /**
      * @param  array<string, mixed>  $conditions
      */
-    private function matchesConditionList(array $conditions, string $key, ?string $value): bool
+    private function matchesConditionList(array $conditions, string $key, string|array|null $value): bool
     {
         return $this->matchesConditionValues(
             $conditions,
             $key,
-            filled($value) ? [(string) $value] : [],
+            collect((array) $value)
+                ->filter(fn ($item): bool => filled($item))
+                ->map(fn ($item): string => (string) $item)
+                ->all(),
         );
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function projectNationalityConditionValues(?string $value): array
+    {
+        if (! filled($value)) {
+            return [];
+        }
+
+        $values = [(string) $value];
+
+        if (! in_array((string) $value, ['jordanian', 'international'], true)) {
+            $values[] = 'international';
+        }
+
+        return array_values(array_unique($values));
     }
 
     /**
@@ -218,6 +236,29 @@ class ApprovalRoutingService
 
         if ($this->hasFilledRows(data_get($annex, 'filming_locations', []))) {
             $flags[] = 'filming_locations';
+
+            $flags = array_merge($flags, collect((array) data_get($annex, 'filming_locations', []))
+                ->pluck('location_type')
+                ->filter(fn ($value): bool => filled($value))
+                ->map(fn ($value): string => 'location_type_'.((string) $value))
+                ->all());
+        }
+
+        if ($this->hasFilledRows(data_get($annex, 'cast_crew', []))) {
+            $flags[] = 'cast_crew';
+        }
+
+        $specialLocationRequirements = (array) data_get($annex, 'special_location_requirements', []);
+
+        if ($this->hasFilledRows($specialLocationRequirements)) {
+            $flags[] = 'special_location_requirements';
+
+            $flags = array_merge($flags, collect($specialLocationRequirements)
+                ->filter(fn ($row): bool => is_array($row) && $this->hasFilledValues($row))
+                ->keys()
+                ->filter(fn ($value): bool => filled($value))
+                ->map(fn ($value): string => 'special_requirement_'.((string) $value))
+                ->all());
         }
 
         if (
@@ -229,14 +270,61 @@ class ApprovalRoutingService
 
         if ($this->hasFilledRows(data_get($annex, 'imported_equipment', []))) {
             $flags[] = 'imported_equipment';
+
+            $importedEquipmentRows = data_get($annex, 'imported_equipment', []);
+            $flags = array_merge($flags, $this->formLookupFlagsForRows(
+                $importedEquipmentRows,
+                'classification',
+                'imported_equipment_category_',
+                FormLookupOption::TYPE_EQUIPMENT_CATEGORY,
+            ));
+            $flags = array_merge($flags, $this->formLookupFlagsForRows(
+                $importedEquipmentRows,
+                'shipping_method',
+                'imported_equipment_shipping_method_',
+                FormLookupOption::TYPE_EQUIPMENT_SHIPPING_METHOD,
+            ));
+            $flags = array_merge($flags, $this->formLookupFlagsForRows(
+                $importedEquipmentRows,
+                'entry_point',
+                'imported_equipment_entry_point_',
+                FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT,
+            ));
         }
 
-        if ($this->hasFilledRows(data_get($annex, 'military_border_equipment', []))) {
+        if (
+            $this->hasFilledRows(data_get($annex, 'military_border_locations', []))
+            || $this->hasFilledRows(data_get($annex, 'military_border_equipment', []))
+        ) {
             $flags[] = 'military_border_equipment';
+
+            $flags = array_merge($flags, $this->formLookupFlagsForRows(
+                data_get($annex, 'military_border_locations', []),
+                'location_type',
+                'military_location_type_',
+                FormLookupOption::TYPE_MILITARY_BORDER_LOCATION_TYPE,
+            ));
+            $flags = array_merge($flags, $this->formLookupFlagsForRows(
+                data_get($annex, 'military_border_equipment', []),
+                'classification',
+                'military_equipment_category_',
+                FormLookupOption::TYPE_EQUIPMENT_CATEGORY,
+            ));
+            $flags = array_merge($flags, $this->formLookupFlagsForRows(
+                data_get($annex, 'military_border_equipment', []),
+                'entry_point',
+                'military_equipment_entry_point_',
+                FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT,
+            ));
         }
 
         if ($this->hasFilledValues((array) data_get($annex, 'airport_filming', []))) {
             $flags[] = 'airport_filming';
+            $flags = array_merge($flags, $this->formLookupFlagsForValue(
+                data_get($annex, 'airport_filming.airport_name'),
+                'airport_filming_airport_',
+                FormLookupOption::TYPE_AIRPORT,
+            ));
         }
 
         if ($this->hasFilledRows(data_get($annex, 'governmental_scenes', []))) {
@@ -264,6 +352,39 @@ class ApprovalRoutingService
     {
         return collect((array) $rows)
             ->contains(fn ($row): bool => is_array($row) && $this->hasFilledValues($row));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function formLookupFlagsForRows(mixed $rows, string $field, string $flagPrefix, string $lookupType): array
+    {
+        return collect((array) $rows)
+            ->filter(fn ($row): bool => is_array($row))
+            ->pluck($field)
+            ->flatMap(fn ($value): array => $this->formLookupFlagsForValue($value, $flagPrefix, $lookupType))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function formLookupFlagsForValue(mixed $value, string $flagPrefix, string $lookupType): array
+    {
+        return collect(FormLookupOption::codesForValue($lookupType, $value))
+            ->map(fn (string $code): string => $flagPrefix.$code)
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $conditions
+     */
+    private function conditionsHaveValues(array $conditions): bool
+    {
+        return collect(\Illuminate\Support\Arr::dot($conditions))
+            ->contains(fn ($value): bool => filled($value));
     }
 
     /**

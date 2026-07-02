@@ -3,8 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Entity;
+use App\Models\FilmingLocationType;
+use App\Models\Governorate;
+use App\Models\Nationality;
 use App\Models\ScoutingRequestCorrespondence;
 use App\Models\ScoutingRequest;
+use App\Models\WorkCategory;
 use App\Notifications\InboxMessageNotification;
 use App\Support\NotificationRecipients;
 use App\Support\ScoutingRequestOverview;
@@ -47,7 +51,7 @@ class ScoutingRequestController extends Controller
             $query->where('status', $filters['status']);
         }
 
-        $requests = $query->latest()->get();
+        $requests = $query->newestFirst()->get();
 
         return view('scouting.index', [
             'user' => $user,
@@ -71,46 +75,50 @@ class ScoutingRequestController extends Controller
 
         abort_unless($user->can('applications.create'), 403);
 
+        $requestRecord = new ScoutingRequest([
+            'project_name' => '',
+            'project_nationality' => 'jordanian',
+            'status' => 'draft',
+            'current_stage' => 'draft',
+            'metadata' => [
+                'producer' => [
+                    'producer_name' => $user->name,
+                    'production_company_name' => $entity->displayName(),
+                    'producer_email' => $entity->email ?: $user->email,
+                    'contact_address' => data_get($entity->metadata, 'address'),
+                    'producer_phone' => $entity->phone,
+                    'producer_mobile' => $user->phone,
+                    'producer_fax' => data_get($entity->metadata, 'fax'),
+                ],
+                'locations' => [
+                    [
+                        'governorate' => 'amman',
+                        'location_name' => '',
+                        'google_map_url' => '',
+                        'location_description' => '',
+                        'location_type' => 'public_locations',
+                        'start_date' => '',
+                        'end_date' => '',
+                    ],
+                ],
+                'crew' => [
+                    [
+                        'name' => '',
+                        'job_title' => '',
+                        'nationality' => 'jordanian',
+                        'national_id_passport' => '',
+                    ],
+                ],
+            ],
+        ]);
+
         return view('scouting.create', [
             'user' => $user,
             'entity' => $entity,
-            'requestRecord' => new ScoutingRequest([
-                'project_name' => '',
-                'project_nationality' => 'jordanian',
-                'status' => 'draft',
-                'current_stage' => 'draft',
-                'metadata' => [
-                    'producer' => [
-                        'producer_name' => $user->name,
-                        'production_company_name' => $entity->displayName(),
-                        'producer_email' => $entity->email ?: $user->email,
-                        'contact_address' => data_get($entity->metadata, 'address'),
-                        'producer_phone' => $entity->phone,
-                        'producer_mobile' => $user->phone,
-                        'producer_fax' => data_get($entity->metadata, 'fax'),
-                    ],
-                    'locations' => [
-                        [
-                            'governorate' => 'amman',
-                            'location_name' => '',
-                            'google_map_url' => '',
-                            'location_nature' => 'public_site',
-                            'start_date' => '',
-                            'end_date' => '',
-                        ],
-                    ],
-                    'crew' => [
-                        [
-                            'name' => '',
-                            'job_title' => '',
-                            'nationality' => 'jordanian',
-                            'national_id_passport' => '',
-                        ],
-                    ],
-                ],
-            ]),
+            'requestRecord' => $requestRecord,
             'formAction' => route('scouting-requests.store'),
             'submitLabel' => __('app.scouting.save_draft_action'),
+            'lookupOptions' => $this->lookupOptionsForRequest($requestRecord),
         ]);
     }
 
@@ -178,6 +186,7 @@ class ScoutingRequestController extends Controller
             'requestRecord' => $record,
             'formAction' => route('scouting-requests.update', $record),
             'submitLabel' => __('app.scouting.update_draft_action'),
+            'lookupOptions' => $this->lookupOptionsForRequest($record),
         ]);
     }
 
@@ -373,13 +382,157 @@ class ScoutingRequestController extends Controller
     /**
      * @return array<string, mixed>
      */
+    private function lookupOptionsForRequest(ScoutingRequest $record): array
+    {
+        $metadata = $record->metadata ?? [];
+
+        return [
+            'nationalities' => [
+                'project' => $this->nationalityOptionsForUsage(
+                    Nationality::USAGE_PROJECT,
+                    [$record->project_nationality],
+                ),
+                'person' => $this->nationalityOptionsForUsage(
+                    Nationality::USAGE_DIRECTOR,
+                    collect(data_get($metadata, 'crew', []))
+                        ->pluck('nationality')
+                        ->push(data_get($metadata, 'producer.producer_nationality'))
+                        ->filter()
+                        ->all(),
+                ),
+            ],
+            'work_categories' => $this->workCategoryOptionsForCurrent(
+                collect(data_get($metadata, 'production.types', []))->filter()->all(),
+            ),
+            'locations' => $this->locationLookupOptions(),
+        ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $currentCodes
+     * @return \Illuminate\Support\Collection<int, Nationality>
+     */
+    private function nationalityOptionsForUsage(string $usage, array $currentCodes)
+    {
+        $options = Nationality::query()
+            ->active()
+            ->forUsage($usage)
+            ->ordered()
+            ->get();
+
+        foreach (array_unique(array_filter(array_map('strval', $currentCodes))) as $currentCode) {
+            if ($options->contains('code', $currentCode)) {
+                continue;
+            }
+
+            $currentNationality = Nationality::query()
+                ->where('code', $currentCode)
+                ->first();
+
+            if ($currentNationality) {
+                $options->push($currentNationality);
+            }
+        }
+
+        return $options;
+    }
+
+    /**
+     * @param  array<int, mixed>  $currentCodes
+     * @return \Illuminate\Support\Collection<int, WorkCategory>
+     */
+    private function workCategoryOptionsForCurrent(array $currentCodes)
+    {
+        $options = WorkCategory::query()
+            ->active()
+            ->ordered()
+            ->get();
+
+        foreach (array_unique(array_filter(array_map('strval', $currentCodes))) as $currentCode) {
+            if ($options->contains('code', $currentCode)) {
+                continue;
+            }
+
+            $currentCategory = WorkCategory::query()
+                ->where('code', $currentCode)
+                ->first();
+
+            if ($currentCategory) {
+                $options->push($currentCategory);
+            }
+        }
+
+        return $options;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function locationLookupOptions(): array
+    {
+        $governorates = Governorate::query()
+            ->active()
+            ->ordered()
+            ->get();
+        $locationTypes = FilmingLocationType::query()
+            ->active()
+            ->with(['governorates' => fn ($query) => $query->active()->ordered()])
+            ->ordered()
+            ->get();
+
+        return [
+            'governorates' => $governorates,
+            'location_types' => $locationTypes,
+            'location_types_by_governorate' => $governorates
+                ->mapWithKeys(fn (Governorate $governorate): array => [
+                    $governorate->code => $locationTypes
+                        ->filter(fn (FilmingLocationType $locationType): bool => $locationType->governorates->contains('code', $governorate->code))
+                        ->pluck('code')
+                        ->values()
+                        ->all(),
+                ])
+                ->all(),
+            'location_type_labels' => $locationTypes
+                ->mapWithKeys(fn (FilmingLocationType $locationType): array => [$locationType->code => $locationType->displayName()])
+                ->all(),
+        ];
+    }
+
+    private function locationTypeBelongsToGovernorateRule(Request $request): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($request): void {
+            if (! filled($value) || ! preg_match('/^locations\.(\d+)\.location_type$/', $attribute, $matches)) {
+                return;
+            }
+
+            $governorate = data_get((array) $request->input('locations', []), $matches[1].'.governorate');
+
+            if (! filled($governorate)) {
+                return;
+            }
+
+            if (! in_array((string) $value, FilmingLocationType::activeCodesForGovernorate((string) $governorate), true)) {
+                $fail(__('validation.location_type_governorate'));
+            }
+        };
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     private function validatePayload(Request $request, bool $isUpdate = false): array
     {
+        $projectNationalityCodes = Nationality::activeCodesFor(Nationality::USAGE_PROJECT);
+        $personNationalityCodes = Nationality::activeCodesFor(Nationality::USAGE_DIRECTOR);
+        $workCategoryCodes = WorkCategory::activeCodes();
+        $governorateCodes = Governorate::activeCodes();
+        $locationTypeCodes = FilmingLocationType::activeCodes();
+
         return $request->validate([
             'project_name' => ['required', 'string', 'max:255'],
-            'project_nationality' => ['required', Rule::in(['jordanian', 'international'])],
+            'project_nationality' => ['required', Rule::in($projectNationalityCodes)],
             'producer_name' => ['required', 'string', 'max:255'],
-            'producer_nationality' => ['required', Rule::in(['jordanian', 'international'])],
+            'producer_nationality' => ['required', Rule::in($personNationalityCodes)],
             'production_company_name' => ['required', 'string', 'max:255'],
             'producer_phone' => ['required', 'string', 'max:50'],
             'producer_mobile' => ['required', 'string', 'max:50'],
@@ -392,29 +545,28 @@ class ScoutingRequestController extends Controller
             'liaison_job_title' => ['required', 'string', 'max:255'],
             'liaison_email' => ['required', 'email', 'max:255'],
             'liaison_mobile' => ['required', 'string', 'max:50'],
-            'responsible_person_name' => ['required', 'string', 'max:255'],
-            'responsible_person_nationality' => ['required', Rule::in(['jordanian', 'international'])],
             'production_types' => ['required', 'array', 'min:1'],
-            'production_types.*' => [Rule::in(['feature_film', 'short_film', 'animation', 'music_video', 'television', 'commercial', 'documentary', 'other'])],
-            'production_type_other' => ['nullable', 'string', 'max:255'],
+            'production_types.*' => [Rule::in($workCategoryCodes)],
+            'production_type_other' => ['nullable', 'string', 'max:255', Rule::requiredIf(in_array('other', (array) $request->input('production_types', []), true))],
             'scout_start_date' => ['required', 'date'],
             'scout_end_date' => ['required', 'date', 'after_or_equal:scout_start_date'],
             'production_start_date' => ['nullable', 'date'],
-            'production_end_date' => ['nullable', 'date'],
+            'production_end_date' => ['nullable', 'date', 'after_or_equal:production_start_date'],
             'project_summary' => ['required', 'string', 'max:5000'],
             'story_text' => ['nullable', 'string', 'max:5000'],
             'story_file' => [$isUpdate ? 'nullable' : 'nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx'],
             'locations' => ['required', 'array', 'min:1'],
-            'locations.*.governorate' => ['required', 'string', 'max:50'],
+            'locations.*.governorate' => ['required', 'string', Rule::in($governorateCodes)],
             'locations.*.location_name' => ['required', 'string', 'max:255'],
             'locations.*.google_map_url' => ['nullable', 'string', 'max:500'],
-            'locations.*.location_nature' => ['required', 'string', 'max:100'],
+            'locations.*.location_description' => ['nullable', 'string', 'max:1000'],
+            'locations.*.location_type' => ['required', 'string', Rule::in($locationTypeCodes), $this->locationTypeBelongsToGovernorateRule($request)],
             'locations.*.start_date' => ['required', 'date'],
-            'locations.*.end_date' => ['required', 'date'],
+            'locations.*.end_date' => ['required', 'date', 'after_or_equal:locations.*.start_date'],
             'crew' => ['required', 'array', 'min:1'],
             'crew.*.name' => ['required', 'string', 'max:255'],
             'crew.*.job_title' => ['required', 'string', 'max:255'],
-            'crew.*.nationality' => ['required', Rule::in(['jordanian', 'international'])],
+            'crew.*.nationality' => ['required', Rule::in($personNationalityCodes)],
             'crew.*.national_id_passport' => ['required', 'string', 'max:255'],
         ]);
     }
@@ -482,15 +634,22 @@ class ScoutingRequestController extends Controller
                     'liaison_email' => $validated['liaison_email'],
                     'liaison_mobile' => $validated['liaison_mobile'],
                 ],
-                'responsible_person' => [
-                    'name' => $validated['responsible_person_name'],
-                    'nationality' => $validated['responsible_person_nationality'],
-                ],
                 'production' => [
                     'types' => array_values($validated['production_types']),
                     'type_other' => $validated['production_type_other'] ?: null,
                 ],
-                'locations' => array_values($validated['locations']),
+                'locations' => collect((array) $validated['locations'])
+                    ->map(fn (array $location): array => [
+                        'governorate' => $location['governorate'],
+                        'location_type' => $location['location_type'],
+                        'location_name' => $location['location_name'],
+                        'google_map_url' => $location['google_map_url'] ?? null,
+                        'location_description' => $location['location_description'] ?? null,
+                        'start_date' => $location['start_date'],
+                        'end_date' => $location['end_date'],
+                    ])
+                    ->values()
+                    ->all(),
                 'crew' => array_values($validated['crew']),
             ],
         ];

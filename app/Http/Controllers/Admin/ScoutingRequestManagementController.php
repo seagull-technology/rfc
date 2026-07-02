@@ -26,7 +26,7 @@ class ScoutingRequestManagementController extends Controller
     {
         $filters = $this->directoryFilters($request);
         $requests = $this->directoryQuery($filters)
-            ->latest()
+            ->newestFirst()
             ->get();
         $checkpointStats = $requests
             ->map(fn (ScoutingRequest $requestRecord): string => AdminWorkflowState::scoutingCheckpoint($requestRecord)['key'])
@@ -57,7 +57,7 @@ class ScoutingRequestManagementController extends Controller
     {
         $filters = $this->directoryFilters($request);
         $requests = $this->directoryQuery($filters)
-            ->latest()
+            ->newestFirst()
             ->get();
 
         $rows = $requests->map(fn (ScoutingRequest $record): array => [

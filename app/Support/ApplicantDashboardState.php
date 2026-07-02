@@ -74,10 +74,21 @@ class ApplicantDashboardState
         $resolved = $approvals->whereIn('status', ['approved', 'rejected'])->count();
         $pending = $approvals->whereIn('status', ['pending', 'in_review'])->count();
 
+        if ($total === 0 && ! $application->authorityRoutingStarted()) {
+            return [
+                'summary' => match (true) {
+                    filled(data_get($application->metadata ?? [], 'rfc_decision.facilitation_issued_at')) => __('app.dashboard.request_summaries.application_waiting_official_books'),
+                    data_get($application->metadata ?? [], 'rfc_decision.status') === 'accepted' => __('app.dashboard.request_summaries.application_waiting_facilitation'),
+                    default => __('app.dashboard.request_summaries.application_review'),
+                },
+                'priority' => 3,
+            ];
+        }
+
         if ($total === 0) {
             return [
-                'summary' => __('app.dashboard.request_summaries.application_review'),
-                'priority' => 3,
+                'summary' => __('app.dashboard.request_summaries.application_ready_final_decision'),
+                'priority' => 2,
             ];
         }
 

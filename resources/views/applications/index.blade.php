@@ -22,6 +22,45 @@
             padding: 3rem;
             background: #fff;
         }
+
+        .applicant-applications-layout .request-tabs {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+        }
+
+        .applicant-applications-layout .request-tabs .nav-item {
+            min-width: 220px;
+        }
+
+        .applicant-applications-layout .applicant-request-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .applicant-applications-layout .applicant-request-table {
+            min-width: 840px;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .applicant-applications-layout .applicant-request-table thead th,
+        .applicant-applications-layout .applicant-request-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+
+        .applicant-applications-layout .applicant-request-actions-cell .d-flex {
+            justify-content: center;
+        }
+
+        @media (max-width: 767.98px) {
+            .applicant-applications-layout .request-toolbar,
+            .applicant-applications-layout .request-pane {
+                padding: 1.25rem;
+            }
+        }
     </style>
 @endpush
 

@@ -5,6 +5,29 @@
 
 @extends('layouts.admin-dashboard', ['title' => $title])
 
+@section('page_layout_class', 'admin-permit-show-layout')
+
+@push('styles')
+    <style>
+        .admin-permit-show-layout .permit-audit-table-scroll {
+            overflow-x: auto;
+        }
+
+        .admin-permit-show-layout .permit-audit-table {
+            table-layout: fixed;
+            min-width: 920px;
+            width: 100%;
+        }
+
+        .admin-permit-show-layout .permit-audit-table th,
+        .admin-permit-show-layout .permit-audit-table td {
+            vertical-align: top;
+            white-space: normal;
+            word-break: break-word;
+        }
+    </style>
+@endpush
+
 @section('content')
     <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4">
         <div>
@@ -37,8 +60,15 @@
             <div class="card">
                 <div class="card-header"><div class="iq-header-title"><h3 class="card-title">{{ __('app.permit_audits.title') }}</h3></div></div>
                 <div class="card-body">
-                    <div class="table-responsive border rounded py-3">
-                        <table class="table mb-0">
+                    <div class="table-responsive border rounded py-3 permit-audit-table-scroll">
+                        <table class="table mb-0 permit-audit-table">
+                            <colgroup>
+                                <col style="width: 18%">
+                                <col style="width: 16%">
+                                <col style="width: 16%">
+                                <col style="width: 32%">
+                                <col style="width: 18%">
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>{{ __('app.permit_audits.action') }}</th>

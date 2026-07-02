@@ -157,7 +157,7 @@ class EntityManagementController extends Controller
         $applications = FilmApplication::query()
             ->with(['authorityApprovals', 'submittedBy'])
             ->where('entity_id', $entity->getKey())
-            ->latest()
+            ->newestFirst()
             ->get();
         $monthlyApplications = collect(range(5, 0))
             ->map(fn (int $offset) => now()->copy()->startOfMonth()->subMonths($offset))

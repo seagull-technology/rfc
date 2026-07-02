@@ -4,11 +4,18 @@ namespace Tests\Feature;
 
 use App\Models\Application;
 use App\Models\ApplicationAuthorityApproval;
+use App\Models\ApplicationWrapReport;
 use App\Models\ApprovalRoutingRule;
 use App\Models\Entity;
+use App\Models\FilmingLocationType;
+use App\Models\FormLookupOption;
+use App\Models\Governorate;
 use App\Models\Group;
+use App\Models\Nationality;
+use App\Models\ReleaseMethod;
 use App\Models\ScoutingRequest;
 use App\Models\User;
+use App\Models\WorkCategory;
 use App\Notifications\InboxMessageNotification;
 use App\Notifications\RegistrationApprovedNotification;
 use App\Notifications\RegistrationCompletionRequestedNotification;
@@ -35,6 +42,36 @@ class AdminPanelTest extends TestCase
         $response->assertRedirect(route('admin.dashboard'));
     }
 
+    public function test_seeded_rfc_owner_is_redirected_to_admin_dashboard(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $rfcOwner = User::query()->where('email', 'ref@ref.test')->firstOrFail();
+        $rfcEntity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+
+        $this->assertSame('staff', $rfcOwner->registration_type);
+        $this->assertTrue($rfcOwner->entities()->whereKey($rfcEntity->getKey())->exists());
+        $this->assertTrue($rfcOwner->canAccessAdminPanel($rfcEntity));
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($rfcEntity->getKey());
+        $this->assertTrue($rfcOwner->hasRole('rfc_admin'));
+        $this->assertTrue($rfcOwner->hasRole('rfc_reviewer'));
+        $this->assertTrue($rfcOwner->hasRole('rfc_approver'));
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $response = $this->actingAs($rfcOwner)->get(route('dashboard'));
+
+        $response->assertRedirect(route('admin.dashboard'));
+
+        $dashboardResponse = $this->actingAs($rfcOwner)->get(route('admin.dashboard'));
+
+        $dashboardResponse
+            ->assertOk()
+            ->assertSeeText('Royal Film Commission - Jordan')
+            ->assertSee('dashboard-demo2-shell', false);
+    }
+
     public function test_seeded_super_admin_can_open_admin_dashboard(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -46,8 +83,302 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSeeText('Super Admin Dashboard')
-            ->assertSeeText('Platform Administration');
+            ->assertSeeText('Dashboard')
+            ->assertSeeText('Platform Administration')
+            ->assertSee('admin-dashboard-table-scroll', false)
+            ->assertSee('dashboard-demo2-shell', false)
+            ->assertDontSee('workflow-queue-table', false)
+            ->assertSee('admin-recent-requests-table', false)
+            ->assertSee('.sidebar[data-sidebar="responsive"].sidebar-mobile-open', false)
+            ->assertSee('js/sidebar.js?v=5.4.5', false)
+            ->assertSee('data-toggle="data-table"', false);
+    }
+
+    public function test_super_admin_can_manage_nationality_lookup_values(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+
+        $this
+            ->actingAs($admin)
+            ->get(route('admin.nationalities.index'))
+            ->assertOk()
+            ->assertSeeText('Nationality Lookups')
+            ->assertSee('value="Jordanian"', false)
+            ->assertSee('egyptian', false);
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.nationalities.store'), [
+                'code' => 'test nationality',
+                'name_en' => 'Test Nationality',
+                'name_ar' => 'جنسية اختبار',
+                'sort_order' => 44,
+                'is_active' => '1',
+                'available_for_project' => '1',
+                'available_for_director' => '1',
+                'available_for_international_producer' => '1',
+            ])
+            ->assertRedirect(route('admin.nationalities.index'));
+
+        $nationality = Nationality::query()->where('code', 'test_nationality')->firstOrFail();
+
+        $this->assertTrue($nationality->available_for_project);
+        $this->assertTrue($nationality->available_for_director);
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.nationalities.update', $nationality), [
+                'name_en' => 'Updated Test Nationality',
+                'name_ar' => 'جنسية اختبار محدثة',
+                'sort_order' => 45,
+                'is_active' => '0',
+                'available_for_project' => '1',
+                'available_for_director' => '0',
+                'available_for_international_producer' => '1',
+            ])
+            ->assertRedirect(route('admin.nationalities.index'));
+
+        $nationality->refresh();
+
+        $this->assertSame('Updated Test Nationality', $nationality->name_en);
+        $this->assertFalse($nationality->is_active);
+        $this->assertTrue($nationality->available_for_project);
+        $this->assertFalse($nationality->available_for_director);
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.nationalities.status', $nationality), [
+                'is_active' => '1',
+            ])
+            ->assertRedirect(route('admin.nationalities.index'));
+
+        $this->assertTrue($nationality->refresh()->is_active);
+    }
+
+    public function test_super_admin_can_manage_filming_location_lookup_values(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+
+        $this
+            ->actingAs($admin)
+            ->get(route('admin.filming-location-lookups.index'))
+            ->assertOk()
+            ->assertSeeText('Filming Location Lookups')
+            ->assertSee('value="Amman"', false)
+            ->assertSee('public_locations', false);
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.filming-location-lookups.governorates.store'), [
+                'code' => 'test governorate',
+                'name_en' => 'Test Governorate',
+                'name_ar' => 'محافظة اختبار',
+                'sort_order' => 130,
+                'is_active' => '1',
+            ])
+            ->assertRedirect(route('admin.filming-location-lookups.index'));
+
+        $governorate = Governorate::query()->where('code', 'test_governorate')->firstOrFail();
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.filming-location-lookups.location-types.store'), [
+                'code' => 'test location type',
+                'name_en' => 'Test Location Type',
+                'name_ar' => 'نوع موقع اختبار',
+                'sort_order' => 140,
+                'is_active' => '1',
+                'governorates' => ['amman', 'test_governorate'],
+            ])
+            ->assertRedirect(route('admin.filming-location-lookups.index'));
+
+        $locationType = FilmingLocationType::query()
+            ->where('code', 'test_location_type')
+            ->firstOrFail();
+
+        $this->assertTrue($locationType->governorates()->where('code', 'test_governorate')->exists());
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.filming-location-lookups.location-types.update', $locationType), [
+                'name_en' => 'Updated Test Location Type',
+                'name_ar' => 'نوع موقع اختبار محدث',
+                'sort_order' => 145,
+                'is_active' => '0',
+                'governorates' => ['amman'],
+            ])
+            ->assertRedirect(route('admin.filming-location-lookups.index'));
+
+        $locationType->refresh();
+
+        $this->assertSame('Updated Test Location Type', $locationType->name_en);
+        $this->assertFalse($locationType->is_active);
+        $this->assertFalse($locationType->governorates()->whereKey($governorate->getKey())->exists());
+        $this->assertTrue($locationType->governorates()->where('code', 'amman')->exists());
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.filming-location-lookups.location-types.status', $locationType), [
+                'is_active' => '1',
+            ])
+            ->assertRedirect(route('admin.filming-location-lookups.index'));
+
+        $this->assertTrue($locationType->refresh()->is_active);
+    }
+
+    public function test_super_admin_can_manage_work_and_release_lookup_values(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+
+        $this
+            ->actingAs($admin)
+            ->get(route('admin.work-release-lookups.index'))
+            ->assertOk()
+            ->assertSeeText('Work and Release Lookups')
+            ->assertSee('feature_film', false)
+            ->assertSee('cinema', false);
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.work-release-lookups.work-categories.store'), [
+                'code' => 'test work type',
+                'name_en' => 'Test Work Type',
+                'name_ar' => 'نوع عمل اختبار',
+                'sort_order' => 130,
+                'is_active' => '1',
+            ])
+            ->assertRedirect(route('admin.work-release-lookups.index'));
+
+        $workCategory = WorkCategory::query()->where('code', 'test_work_type')->firstOrFail();
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.work-release-lookups.work-categories.update', $workCategory), [
+                'name_en' => 'Updated Test Work Type',
+                'name_ar' => 'نوع عمل اختبار محدث',
+                'sort_order' => 135,
+                'is_active' => '0',
+            ])
+            ->assertRedirect(route('admin.work-release-lookups.index'));
+
+        $this->assertSame('Updated Test Work Type', $workCategory->refresh()->name_en);
+        $this->assertFalse($workCategory->is_active);
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.work-release-lookups.release-methods.store'), [
+                'code' => 'test release method',
+                'name_en' => 'Test Release Method',
+                'name_ar' => 'طريقة عرض اختبار',
+                'sort_order' => 140,
+                'is_active' => '1',
+            ])
+            ->assertRedirect(route('admin.work-release-lookups.index'));
+
+        $releaseMethod = ReleaseMethod::query()->where('code', 'test_release_method')->firstOrFail();
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.work-release-lookups.release-methods.status', $releaseMethod), [
+                'is_active' => '0',
+            ])
+            ->assertRedirect(route('admin.work-release-lookups.index'));
+
+        $this->assertFalse($releaseMethod->refresh()->is_active);
+    }
+
+    public function test_super_admin_can_manage_form_lookup_values(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+
+        $this
+            ->actingAs($admin)
+            ->get(route('admin.form-lookups.index'))
+            ->assertOk()
+            ->assertSeeText('Form Lookups')
+            ->assertSee('camera_equipment', false)
+            ->assertSee('queen_alia_international_airport', false);
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.form-lookups.store'), [
+                'type' => FormLookupOption::TYPE_EQUIPMENT_CATEGORY,
+                'code' => 'test category',
+                'name_en' => 'Test Category',
+                'name_ar' => 'تصنيف اختبار',
+                'sort_order' => 190,
+                'is_active' => '1',
+            ])
+            ->assertRedirect(route('admin.form-lookups.index', ['type' => FormLookupOption::TYPE_EQUIPMENT_CATEGORY]));
+
+        $option = FormLookupOption::query()
+            ->where('type', FormLookupOption::TYPE_EQUIPMENT_CATEGORY)
+            ->where('code', 'test_category')
+            ->firstOrFail();
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.form-lookups.update', $option), [
+                'type' => FormLookupOption::TYPE_EQUIPMENT_CATEGORY,
+                'code' => 'test_category',
+                'name_en' => 'Updated Test Category',
+                'name_ar' => 'تصنيف اختبار محدث',
+                'sort_order' => 195,
+                'is_active' => '0',
+            ])
+            ->assertRedirect(route('admin.form-lookups.index', ['type' => FormLookupOption::TYPE_EQUIPMENT_CATEGORY]));
+
+        $this->assertSame('Updated Test Category', $option->refresh()->name_en);
+        $this->assertFalse($option->is_active);
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.form-lookups.status', $option), [
+                'type' => FormLookupOption::TYPE_EQUIPMENT_CATEGORY,
+                'is_active' => '1',
+            ])
+            ->assertRedirect(route('admin.form-lookups.index', ['type' => FormLookupOption::TYPE_EQUIPMENT_CATEGORY]));
+
+        $this->assertTrue($option->refresh()->is_active);
+    }
+
+    public function test_admin_dashboard_handles_pending_registration_review_queue_with_notifications_dropdown(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $group = Group::query()->where('code', 'organizations')->firstOrFail();
+
+        Entity::query()->create([
+            'group_id' => $group->getKey(),
+            'code' => 'dashboard-review-queue',
+            'name_en' => 'Dashboard Review Queue Company',
+            'name_ar' => 'شركة مراجعة لوحة التحكم',
+            'registration_no' => 'DASH-REV-001',
+            'registration_type' => 'company',
+            'status' => 'pending_review',
+            'email' => 'dashboard-review@example.com',
+            'phone' => '065551313',
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('admin.dashboard'));
+
+        $response
+            ->assertOk()
+            ->assertSee('all-notification', false);
     }
 
     public function test_admin_dashboard_profile_dropdown_contains_shared_profile_route(): void
@@ -130,6 +461,127 @@ class AdminPanelTest extends TestCase
         $this->assertStringContainsString('Configured groups', $content);
     }
 
+    public function test_super_admin_dashboard_shows_operational_production_kpis(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $this->createReportableApplication();
+
+        $response = $this
+            ->actingAs($admin)
+            ->get(route('admin.dashboard'));
+
+        $response
+            ->assertOk()
+            ->assertSeeText('Operational Production KPIs')
+            ->assertSeeText('Received applications')
+            ->assertSeeText('Pending applications')
+            ->assertSeeText('Active production shoots')
+            ->assertSeeText('Approvals tracker')
+            ->assertSeeText('Governorate activity map')
+            ->assertSeeText('Open full reports')
+            ->assertSeeText('Desert Dreams Analytics')
+            ->assertSeeText('Amman')
+            ->assertSee('operational-governorate-row', false);
+    }
+
+    public function test_super_admin_can_open_reports_analytics_page(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $this->createReportableApplication();
+
+        $response = $this
+            ->actingAs($admin)
+            ->get(route('admin.reports.index', [
+                'governorate' => 'amman',
+                'production_scope' => 'local',
+            ]));
+
+        $response
+            ->assertOk()
+            ->assertSeeText('Reports & Analytics')
+            ->assertSeeText('Applications by production type')
+            ->assertSeeText('Spend by governorate')
+            ->assertSeeText('Application drill-down')
+            ->assertSeeText('Location drill-down')
+            ->assertSeeText('Desert Dreams Analytics')
+            ->assertSeeText('Public locations')
+            ->assertSeeText('80,000.00 JOD')
+            ->assertSee('report-chart-production-types', false)
+            ->assertDontSee('operational-governorate-row', false);
+
+        $analysisResponse = $this
+            ->actingAs($admin)
+            ->get(route('admin.reports.index', [
+                'report' => 'analysis',
+                'governorate' => 'amman',
+                'production_scope' => 'local',
+            ]));
+
+        $analysisResponse
+            ->assertOk()
+            ->assertSeeText('Cross-analysis')
+            ->assertSeeText('Production type by local / foreign')
+            ->assertSeeText('Locations by governorate and location type')
+            ->assertSeeText('Desert Dreams Analytics');
+    }
+
+    public function test_super_admin_can_export_filtered_report_dataset(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $this->createReportableApplication();
+
+        $response = $this
+            ->actingAs($admin)
+            ->get(route('admin.reports.analytics-export', [
+                'dataset' => 'locations',
+                'governorate' => 'amman',
+            ]));
+
+        $response->assertOk();
+
+        $content = $response->streamedContent();
+
+        $this->assertStringContainsString('Desert Dreams Analytics', $content);
+        $this->assertStringContainsString('Amman', $content);
+        $this->assertStringContainsString('Citadel', $content);
+        $this->assertStringNotContainsString('Irbid University', $content);
+
+        $allResponse = $this
+            ->actingAs($admin)
+            ->get(route('admin.reports.analytics-export', [
+                'dataset' => 'all',
+                'governorate' => 'amman',
+            ]));
+
+        $allContent = $allResponse->streamedContent();
+
+        $this->assertStringContainsString('Dataset', $allContent);
+        $this->assertStringContainsString('Desert Dreams Analytics', $allContent);
+        $this->assertStringContainsString('Cross-analysis CSV', $allContent);
+
+        $crossResponse = $this
+            ->actingAs($admin)
+            ->get(route('admin.reports.analytics-export', [
+                'dataset' => 'cross_analysis',
+                'governorate' => 'amman',
+            ]));
+
+        $crossContent = $crossResponse->streamedContent();
+
+        $this->assertStringContainsString('Matrix', $crossContent);
+        $this->assertStringContainsString('Production type by local / foreign', $crossContent);
+        $this->assertStringContainsString('Locations by governorate and location type', $crossContent);
+    }
+
     public function test_rfc_reviewer_is_redirected_to_internal_dashboard_and_sees_only_allowed_menu_items(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -176,11 +628,14 @@ class AdminPanelTest extends TestCase
             ->assertSeeText(__('app.admin.navigation.scouting_requests'))
             ->assertSeeText(__('app.admin.navigation.contact_center'))
             ->assertSeeText(__('app.admin.navigation.permits'))
-            ->assertSeeText(__('app.admin.applications.title'))
-            ->assertSeeText(__('app.admin.applications.intro'))
-            ->assertSeeText(__('app.admin.dashboard.workflow_context_title'))
-            ->assertSeeText(__('app.roles.rfc_reviewer'))
+            ->assertSeeText(__('app.admin.dashboard.title'))
+            ->assertSeeText(__('app.admin.dashboard.operational_kpis_title'))
+            ->assertSeeText(__('app.admin.dashboard.operational_kpis_intro'))
             ->assertSeeText($entity->displayName())
+            ->assertSee('admin-dashboard-table-scroll', false)
+            ->assertSee('dashboard-demo2-shell', false)
+            ->assertDontSee('workflow-queue-table', false)
+            ->assertDontSeeText(__('app.admin.dashboard.workflow_context_title'))
             ->assertDontSee('href="'.route('admin.users.index').'"', false)
             ->assertDontSee('href="'.route('admin.entities.index').'"', false)
             ->assertDontSee('href="'.route('admin.groups.index').'"', false)
@@ -411,7 +866,7 @@ class AdminPanelTest extends TestCase
         $this->withSession(['current_entity_id' => $rfcEntity->getKey()])
             ->actingAs($reviewer)
             ->post(route('admin.applications.review', $application), [
-                'decision' => 'under_review',
+                'decision' => 'accepted',
                 'note' => 'Reviewer accepted the assignment.',
             ])
             ->assertRedirect(route('admin.applications.show', $application));
@@ -493,8 +948,15 @@ class AdminPanelTest extends TestCase
             'planned_end_date' => '2026-07-05',
             'project_summary' => 'Ready for final decision.',
             'status' => 'under_review',
-            'current_stage' => 'rfc_review',
+            'current_stage' => 'final_decision',
             'submitted_at' => now()->subDay(),
+        ]);
+
+        $application->authorityApprovals()->create([
+            'authority_code' => 'public_security',
+            'status' => 'approved',
+            'reviewed_by_user_id' => $user->getKey(),
+            'decided_at' => now(),
         ]);
 
         $response = $this->withSession(['current_entity_id' => $rfcEntity->getKey()])
@@ -765,6 +1227,8 @@ class AdminPanelTest extends TestCase
         $response
             ->assertOk()
             ->assertSeeText('Producers')
+            ->assertSee('admin-producers-table-scroll', false)
+            ->assertSee('admin-producers-table', false)
             ->assertSeeText('Creative Production House')
             ->assertSeeText('Film Student')
             ->assertSeeText('Company Owner')
@@ -821,6 +1285,10 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('admin-entities-index-layout', false)
+            ->assertSee('admin-entities-directory-table-scroll', false)
+            ->assertSee('admin-entities-directory-table', false)
+            ->assertSee('<col style="width: 180px">', false)
             ->assertSeeText('Filter Match Entity')
             ->assertDontSeeText('Other Entity');
     }
@@ -836,6 +1304,9 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('admin-entities-internal-table-scroll', false)
+            ->assertSee('admin-entities-internal-table', false)
+            ->assertSee('<col style="width: 130px">', false)
             ->assertSeeText('Official and Internal Entities')
             ->assertSeeText('Authorities')
             ->assertSeeText('Public Security Directorate');
@@ -915,6 +1386,8 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('admin-entity-authority-routing-table', false)
+            ->assertSee('admin-entity-authority-workload-table', false)
             ->assertSeeText('Authority Operations')
             ->assertSeeText('Municipal Routing Rule')
             ->assertSeeText('Authority Request Workload')
@@ -1116,6 +1589,7 @@ class AdminPanelTest extends TestCase
 
         $showResponse
             ->assertOk()
+            ->assertSee('admin-entity-authority-delegation-table', false)
             ->assertSeeText('Authority Inbox Delegation')
             ->assertSeeText('Authority Delegate');
     }
@@ -1384,6 +1858,10 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('admin-users-index-layout', false)
+            ->assertSee('admin-users-directory-table-scroll', false)
+            ->assertSee('admin-users-directory-table', false)
+            ->assertSee('<col style="width: 270px">', false)
             ->assertSeeText('Pending NGO User')
             ->assertDontSeeText('Active Student User');
     }
@@ -1443,6 +1921,8 @@ class AdminPanelTest extends TestCase
 
         $showResponse
             ->assertOk()
+            ->assertSee('admin-user-memberships-table', false)
+            ->assertSee('admin-user-role-history-table', false)
             ->assertSeeText('Role Change History')
             ->assertSeeText(__('app.roles.rfc_reviewer'))
             ->assertSeeText('Removed');
@@ -1880,6 +2360,8 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('admin-entity-members-table', false)
+            ->assertSee('admin-entity-review-history-table', false)
             ->assertSeeText('Registration Details')
             ->assertSeeText('Community cinema workshops.')
             ->assertSeeText('certificate.pdf')
@@ -1942,6 +2424,8 @@ class AdminPanelTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('admin-user-show-layout', false)
+            ->assertSee('admin-user-memberships-table', false)
             ->assertSeeText('Registration and Entity Details')
             ->assertSeeText('Studio One')
             ->assertSeeText('CO-700')
@@ -2056,5 +2540,132 @@ class AdminPanelTest extends TestCase
             'id' => $entity->getKey(),
             'deleted_at' => null,
         ]);
+    }
+
+    private function createReportableApplication(): Application
+    {
+        $group = Group::query()->where('code', 'organizations')->firstOrFail();
+        $entity = Entity::query()->create([
+            'group_id' => $group->getKey(),
+            'name_en' => 'Analytics Studio',
+            'name_ar' => 'Analytics Studio',
+            'registration_no' => 'AN-100',
+            'email' => 'analytics@example.test',
+            'phone' => '0791000000',
+            'status' => 'active',
+            'registration_type' => 'company',
+        ]);
+        $user = User::query()->create([
+            'name' => 'Analytics Producer',
+            'username' => 'analytics-producer',
+            'email' => 'analytics-producer@example.test',
+            'phone' => '0791000001',
+            'status' => 'active',
+            'registration_type' => 'company',
+            'password' => Hash::make('Applicant@123'),
+        ]);
+        $authority = Entity::query()->where('code', 'public-security-directorate')->firstOrFail();
+
+        $application = Application::query()->create([
+            'code' => 'REQ-REPORT-001',
+            'entity_id' => $entity->getKey(),
+            'submitted_by_user_id' => $user->getKey(),
+            'project_name' => 'Desert Dreams Analytics',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'feature_film',
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-06-20',
+            'planned_end_date' => '2026-07-05',
+            'estimated_crew_count' => 24,
+            'estimated_budget' => 90000,
+            'project_summary' => 'Analytics production sample.',
+            'status' => 'under_review',
+            'current_stage' => 'authority_review',
+            'submitted_at' => '2026-06-15 10:00:00',
+            'metadata' => [
+                'project' => [
+                    'work_categories' => ['feature_film'],
+                    'release_methods' => ['cinema'],
+                ],
+                'schedule' => [
+                    'phases' => [
+                        'shooting' => ['start_date' => '2026-06-20', 'end_date' => '2026-07-05'],
+                        'wrap' => ['start_date' => '2026-07-06', 'end_date' => '2026-07-08'],
+                    ],
+                ],
+                'budget' => [
+                    'local_spend_estimate' => 45000,
+                ],
+                'annex' => [
+                    'filming_locations' => [
+                        [
+                            'governorate' => 'amman',
+                            'location_name' => 'Citadel',
+                            'nature' => 'Historic public location',
+                            'location_type' => 'public_locations',
+                            'start_date' => '2026-06-28',
+                            'end_date' => '2026-07-02',
+                        ],
+                        [
+                            'governorate' => 'irbid',
+                            'location_name' => 'Irbid University',
+                            'nature' => 'University campus',
+                            'location_type' => 'universities',
+                            'start_date' => '2026-07-10',
+                            'end_date' => '2026-07-12',
+                        ],
+                    ],
+                    'cast_crew' => [
+                        [
+                            'name' => 'Sara Haddad',
+                            'role' => 'Producer',
+                            'nationality' => 'jordanian',
+                            'gender' => 'female',
+                            'birth_date' => '1991-03-01',
+                            'identity_number' => '1234567890',
+                        ],
+                        [
+                            'name' => 'John Smith',
+                            'role' => 'DOP',
+                            'nationality' => 'american',
+                            'gender' => 'male',
+                            'birth_date' => '1989-03-01',
+                            'identity_number' => 'P-200',
+                        ],
+                    ],
+                    'imported_equipment' => [
+                        [
+                            'transport_group' => 'shipping',
+                            'item' => 'Camera Package',
+                            'classification' => 'camera',
+                            'quantity' => 2,
+                            'total_value' => 10000,
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        ApplicationAuthorityApproval::query()->create([
+            'application_id' => $application->getKey(),
+            'authority_code' => 'public_security',
+            'entity_id' => $authority->getKey(),
+            'status' => 'pending',
+        ]);
+
+        ApplicationWrapReport::query()->create([
+            'application_id' => $application->getKey(),
+            'submitted_by_user_id' => $user->getKey(),
+            'status' => 'submitted',
+            'payload' => [
+                'production_types' => ['feature_film'],
+                'local_crew_count' => 12,
+                'foreign_crew_count' => 4,
+                'total_local_spending_jod' => 80000,
+            ],
+            'submitted_at' => '2026-07-09 10:00:00',
+        ]);
+
+        return $application;
     }
 }

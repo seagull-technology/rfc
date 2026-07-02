@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Services\Gsb\GsbClient;
+use App\Services\Gsb\MoheSanadService;
 use App\Services\OrganizationRegistrationLookupService;
 use App\Services\SmsService;
 use Illuminate\Http\RedirectResponse;
@@ -14,6 +16,8 @@ class IntegrationDiagnosticsController extends Controller
     public function __construct(
         private readonly SmsService $smsService,
         private readonly OrganizationRegistrationLookupService $lookupService,
+        private readonly GsbClient $gsbClient,
+        private readonly MoheSanadService $moheSanadService,
     ) {
     }
 
@@ -36,9 +40,12 @@ class IntegrationDiagnosticsController extends Controller
                 'basic_auth_configured' => filled(config('services.gov_company_registry.basic_user'))
                     && filled(config('services.gov_company_registry.basic_pass')),
             ],
+            'gsbConfig' => $this->gsbClient->runtimeSummary(),
+            'gsbServices' => $this->gsbClient->serviceSummaries(),
             'results' => [
                 'sms' => $request->session()->get('diagnostics.sms'),
                 'company_registry' => $request->session()->get('diagnostics.company_registry'),
+                'mohe_sanad' => $request->session()->get('diagnostics.mohe_sanad'),
             ],
         ]);
     }
@@ -82,5 +89,20 @@ class IntegrationDiagnosticsController extends Controller
         return redirect()
             ->route('admin.integrations.index')
             ->with('diagnostics.company_registry', $result);
+    }
+
+    public function lookupMoheStudent(Request $request): RedirectResponse
+    {
+        $payload = $request->validate([
+            'national_id' => ['required', 'regex:/^\d{10}$/'],
+        ], [
+            'national_id.regex' => __('app.auth.national_id_digits'),
+        ]);
+
+        $result = $this->moheSanadService->lookupCurrentStudent((string) $payload['national_id']);
+
+        return redirect()
+            ->route('admin.integrations.index')
+            ->with('diagnostics.mohe_sanad', $result);
     }
 }

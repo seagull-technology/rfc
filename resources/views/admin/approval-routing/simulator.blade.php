@@ -15,6 +15,42 @@
 
 @extends('layouts.admin-dashboard', ['title' => $title])
 
+@section('page_layout_class', 'approval-routing-simulator-layout')
+
+@push('styles')
+    <style>
+        .approval-routing-simulator-layout {
+            padding-top: 0;
+        }
+
+        .approval-routing-simulator-layout .approval-routing-table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .approval-routing-simulator-layout .approval-routing-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .approval-routing-simulator-layout .approval-routing-simulator-route-table {
+            min-width: 820px;
+        }
+
+        .approval-routing-simulator-layout .approval-routing-simulator-change-table {
+            min-width: 960px;
+        }
+
+        .approval-routing-simulator-layout .approval-routing-table thead th,
+        .approval-routing-simulator-layout .approval-routing-table tbody td {
+            white-space: normal;
+            vertical-align: top;
+            word-break: break-word;
+        }
+    </style>
+@endpush
+
 @section('content')
     <div class="card-header d-flex justify-content-between gap-3 flex-wrap align-items-center mb-4">
         <div>
@@ -78,15 +114,15 @@
                         </div>
                         <div class="mb-3">
                             <small class="text-muted d-block">{{ __('app.applications.project_nationality') }}</small>
-                            <div>{{ __('app.applications.project_nationalities.'.$selectedApplication->project_nationality) }}</div>
+                            <div>{{ \App\Models\Nationality::labelFor($selectedApplication->project_nationality) }}</div>
                         </div>
                         <div class="mb-3">
                             <small class="text-muted d-block">{{ __('app.applications.work_category') }}</small>
-                            <div>{{ __('app.applications.work_categories.'.$selectedApplication->work_category) }}</div>
+                            <div>{{ \App\Models\WorkCategory::labelFor($selectedApplication->work_category) }}</div>
                         </div>
                         <div class="mb-3">
                             <small class="text-muted d-block">{{ __('app.applications.release_method') }}</small>
-                            <div>{{ __('app.applications.release_methods.'.$selectedApplication->release_method) }}</div>
+                            <div>{{ \App\Models\ReleaseMethod::labelFor($selectedApplication->release_method) }}</div>
                         </div>
                         <div class="mb-0">
                             <small class="text-muted d-block">{{ __('app.applications.required_approvals') }}</small>
@@ -139,7 +175,7 @@
                                 <label for="draft-project-nationalities" class="form-label">{{ __('app.applications.project_nationality') }}</label>
                                 <select id="draft-project-nationalities" name="draft[conditions][project_nationalities][]" class="form-select" multiple size="3">
                                     @foreach ($conditionOptions['project_nationalities'] as $option)
-                                        <option value="{{ $option }}" @selected(in_array($option, (array) data_get($draftConditions, 'project_nationalities', []), true))>{{ __('app.applications.project_nationalities.'.$option) }}</option>
+                                        <option value="{{ $option }}" @selected(in_array($option, (array) data_get($draftConditions, 'project_nationalities', []), true))>{{ \App\Models\Nationality::labelFor($option) }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -147,7 +183,7 @@
                                 <label for="draft-work-categories" class="form-label">{{ __('app.applications.work_category') }}</label>
                                 <select id="draft-work-categories" name="draft[conditions][work_categories][]" class="form-select" multiple size="6">
                                     @foreach ($conditionOptions['work_categories'] as $option)
-                                        <option value="{{ $option }}" @selected(in_array($option, (array) data_get($draftConditions, 'work_categories', []), true))>{{ __('app.applications.work_categories.'.$option) }}</option>
+                                        <option value="{{ $option }}" @selected(in_array($option, (array) data_get($draftConditions, 'work_categories', []), true))>{{ \App\Models\WorkCategory::labelFor($option) }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -155,23 +191,24 @@
                                 <label for="draft-release-methods" class="form-label">{{ __('app.applications.release_method') }}</label>
                                 <select id="draft-release-methods" name="draft[conditions][release_methods][]" class="form-select" multiple size="5">
                                     @foreach ($conditionOptions['release_methods'] as $option)
-                                        <option value="{{ $option }}" @selected(in_array($option, (array) data_get($draftConditions, 'release_methods', []), true))>{{ __('app.applications.release_methods.'.$option) }}</option>
+                                        <option value="{{ $option }}" @selected(in_array($option, (array) data_get($draftConditions, 'release_methods', []), true))>{{ \App\Models\ReleaseMethod::labelFor($option) }}</option>
                                     @endforeach
                                 </select>
                             </div>
-                            <div class="col-xl-6">
+                            <div class="col-12">
                                 <label for="draft-annex-flags" class="form-label">{{ __('app.admin.approval_routing.annex_flags_condition') }}</label>
-                                <select id="draft-annex-flags" name="draft[conditions][annex_flags][]" class="form-select" multiple size="7">
-                                    @foreach ($conditionOptions['annex_flags'] as $option)
-                                        <option value="{{ $option }}" @selected(in_array($option, (array) data_get($draftConditions, 'annex_flags', []), true))>{{ __('app.admin.approval_routing.annex_flag_options.'.$option) }}</option>
-                                    @endforeach
-                                </select>
+                                @include('admin.approval-routing.partials.annex-trigger-fields', [
+                                    'fieldName' => 'draft[conditions][annex_flags][]',
+                                    'fieldId' => 'draft-annex-flags',
+                                    'selectedAnnexFlags' => (array) data_get($draftConditions, 'annex_flags', []),
+                                    'annexTriggerGroups' => $annexTriggerGroups,
+                                ])
                             </div>
-                            <div class="col-xl-6">
+                            <div class="col-12">
                                 <label for="draft-governorates" class="form-label">{{ __('app.admin.approval_routing.governorates_condition') }}</label>
                                 <select id="draft-governorates" name="draft[conditions][governorates][]" class="form-select" multiple size="7">
                                     @foreach ($conditionOptions['governorates'] as $option)
-                                        <option value="{{ $option }}" @selected(in_array($option, (array) data_get($draftConditions, 'governorates', []), true))>{{ __('app.scouting.governorate_options.'.$option) }}</option>
+                                        <option value="{{ $option }}" @selected(in_array($option, (array) data_get($draftConditions, 'governorates', []), true))>{{ \App\Models\Governorate::labelFor($option) }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -198,8 +235,14 @@
                         @if ($simulationRoutes->isEmpty())
                             <div class="text-muted">{{ __('app.admin.approval_routing.simulator_empty_routes') }}</div>
                         @else
-                            <div class="table-responsive border rounded py-3">
-                                <table class="table mb-0">
+                            <div class="table-responsive border rounded py-3 approval-routing-table-scroll">
+                                <table class="table mb-0 approval-routing-table approval-routing-simulator-route-table">
+                                    <colgroup>
+                                        <col style="width: 190px">
+                                        <col style="width: 240px">
+                                        <col style="width: 260px">
+                                        <col style="width: 130px">
+                                    </colgroup>
                                     <thead>
                                         <tr>
                                             <th>{{ __('app.admin.approval_routing.approval_code') }}</th>
@@ -248,8 +291,14 @@
                         @elseif ($draftSimulationRoutes->isEmpty())
                             <div class="text-muted">{{ __('app.admin.approval_routing.simulator_empty_routes') }}</div>
                         @else
-                            <div class="table-responsive border rounded py-3">
-                                <table class="table mb-0">
+                            <div class="table-responsive border rounded py-3 approval-routing-table-scroll">
+                                <table class="table mb-0 approval-routing-table approval-routing-simulator-route-table">
+                                    <colgroup>
+                                        <col style="width: 190px">
+                                        <col style="width: 240px">
+                                        <col style="width: 260px">
+                                        <col style="width: 130px">
+                                    </colgroup>
                                     <thead>
                                         <tr>
                                             <th>{{ __('app.admin.approval_routing.approval_code') }}</th>
@@ -324,8 +373,14 @@
                     @if ($simulationChanges['added']->isEmpty() && $simulationChanges['removed']->isEmpty() && $simulationChanges['changed']->isEmpty())
                         <div class="text-muted">{{ __('app.admin.approval_routing.simulator_change_empty') }}</div>
                     @else
-                        <div class="table-responsive border rounded py-3">
-                            <table class="table mb-0">
+                        <div class="table-responsive border rounded py-3 approval-routing-table-scroll">
+                            <table class="table mb-0 approval-routing-table approval-routing-simulator-change-table">
+                                <colgroup>
+                                    <col style="width: 160px">
+                                    <col style="width: 220px">
+                                    <col style="width: 290px">
+                                    <col style="width: 290px">
+                                </colgroup>
                                 <thead>
                                     <tr>
                                         <th>{{ __('app.admin.approval_routing.simulator_change_type') }}</th>

@@ -27,11 +27,15 @@ class ApplicantRequestOverview
         $resolvedApprovals = $approvals->whereIn('status', ['approved', 'rejected'])->count();
         $pendingApprovals = $approvals->whereIn('status', ['pending', 'in_review'])->count();
 
+        $authorityRoutingStarted = $application->authorityRoutingStarted();
+
         return [
             'authority_progress' => [
                 'label' => __('app.request_state.authority_progress'),
                 'summary' => $totalApprovals === 0
-                    ? __('app.request_state.authority_progress_none')
+                    ? ($authorityRoutingStarted
+                        ? __('app.request_state.authority_progress_none')
+                        : __('app.request_state.authority_progress_waiting_rfc'))
                     : __('app.request_state.authority_progress_summary', [
                         'resolved' => $resolvedApprovals,
                         'total' => $totalApprovals,
@@ -79,6 +83,14 @@ class ApplicantRequestOverview
 
         if ($application->status === 'needs_clarification') {
             return __('app.request_state.final_decision_waiting_clarification');
+        }
+
+        if (! $application->authorityRoutingStarted()) {
+            return match (true) {
+                filled(data_get($application->metadata ?? [], 'rfc_decision.facilitation_issued_at')) => __('app.request_state.final_decision_waiting_official_books'),
+                data_get($application->metadata ?? [], 'rfc_decision.status') === 'accepted' => __('app.request_state.final_decision_waiting_facilitation'),
+                default => __('app.request_state.final_decision_waiting_rfc_review'),
+            };
         }
 
         if ($pendingApprovals > 0) {
