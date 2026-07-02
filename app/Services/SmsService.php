@@ -6,6 +6,7 @@ use App\Support\PhoneNumber;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class SmsService
 {
@@ -45,22 +46,39 @@ class SmsService
             ],
         ];
 
-        $response = Http::baseUrl(config('services.gov_sms.base'))
-            ->acceptJson()
-            ->asJson()
-            ->timeout(20)
-            ->retry(2, 200, throw: false)
-            ->withHeaders(['Authorization' => $token])
-            ->post('/sendSmsNotifications', $payload);
-
-        if ($response->status() === 401 || str_contains(strtolower($response->body()), 'unauthorized')) {
+        try {
             $response = Http::baseUrl(config('services.gov_sms.base'))
                 ->acceptJson()
                 ->asJson()
                 ->timeout(20)
                 ->retry(2, 200, throw: false)
-                ->withToken($token)
+                ->withHeaders(['Authorization' => $token])
                 ->post('/sendSmsNotifications', $payload);
+
+            if ($response->status() === 401 || str_contains(strtolower($response->body()), 'unauthorized')) {
+                $response = Http::baseUrl(config('services.gov_sms.base'))
+                    ->acceptJson()
+                    ->asJson()
+                    ->timeout(20)
+                    ->retry(2, 200, throw: false)
+                    ->withToken($token)
+                    ->post('/sendSmsNotifications', $payload);
+            }
+        } catch (Throwable $exception) {
+            Log::channel('sms')->warning('SMS send failed before response', [
+                'base' => config('services.gov_sms.base'),
+                'to' => $to,
+                'msisdn' => $msisdn,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return [
+                'ok' => false,
+                'stage' => 'send_exception',
+                'http' => null,
+                'raw' => $exception->getMessage(),
+                'msisdn' => $msisdn,
+            ];
         }
 
         Log::channel('sms')->info('SMS send', [
@@ -92,15 +110,24 @@ class SmsService
     private function getToken(): ?string
     {
         return Cache::remember('gov_sms_token', now()->addMinutes(10), function () {
-            $response = Http::baseUrl(config('services.gov_sms.base'))
-                ->acceptJson()
-                ->asJson()
-                ->timeout(20)
-                ->retry(2, 200, throw: false)
-                ->post('/authenticate', [
-                    'username' => config('services.gov_sms.username'),
-                    'password' => config('services.gov_sms.password'),
+            try {
+                $response = Http::baseUrl(config('services.gov_sms.base'))
+                    ->acceptJson()
+                    ->asJson()
+                    ->timeout(20)
+                    ->retry(2, 200, throw: false)
+                    ->post('/authenticate', [
+                        'username' => config('services.gov_sms.username'),
+                        'password' => config('services.gov_sms.password'),
+                    ]);
+            } catch (Throwable $exception) {
+                Log::channel('sms')->warning('SMS auth failed before response', [
+                    'base' => config('services.gov_sms.base'),
+                    'error' => $exception->getMessage(),
                 ]);
+
+                return null;
+            }
 
             if (! $response->ok()) {
                 return null;

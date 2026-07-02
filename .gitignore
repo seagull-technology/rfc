@@ -1,5 +1,6 @@
 *.log
 .DS_Store
+._*
 .env
 .env.backup
 .env.production
@@ -16,6 +17,7 @@
 /public/build
 /public/hot
 /public/storage
+/deployment/releases/
 /storage/*.key
 /storage/pail
 /vendor

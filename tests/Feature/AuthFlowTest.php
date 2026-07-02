@@ -482,6 +482,62 @@ class AuthFlowTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
+    public function test_login_debug_otp_fallback_survives_sms_gateway_timeout(): void
+    {
+        $this->seed(AccessControlSeeder::class);
+
+        config()->set('services.otp_debug_fallback', true);
+
+        app()->instance(\App\Services\SmsService::class, new class extends \App\Services\SmsService
+        {
+            public function send(string $text, string $to): array
+            {
+                return [
+                    'ok' => false,
+                    'stage' => 'auth_failed',
+                    'http' => null,
+                    'raw' => null,
+                    'msisdn' => '962791112244',
+                ];
+            }
+        });
+
+        $entity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+
+        $user = User::query()->create([
+            'name' => 'RFC Timeout Tester',
+            'username' => 'rfc_timeout_tester',
+            'email' => 'timeout@example.com',
+            'national_id' => '1122334455',
+            'phone' => '0791112244',
+            'status' => 'active',
+            'registration_type' => 'staff',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $entity->users()->attach($user->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($entity->getKey());
+        $user->assignRole('rfc_reviewer');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $loginResponse = $this->post(route('login.store'), [
+            'identifier' => 'timeout@example.com',
+            'password' => 'password123',
+        ]);
+
+        $loginResponse
+            ->assertRedirect(route('otp.create'))
+            ->assertSessionHas('status', __('app.auth.otp_debug_fallback_status'));
+
+        $this->assertSame(5, strlen((string) session('otp_debug_code')));
+        $this->assertGuest();
+    }
+
     public function test_otp_page_marks_first_digit_for_autofocus(): void
     {
         $html = view('auth.verify-otp', [
