@@ -15,7 +15,7 @@ class OtpController extends Controller
     private function shouldShowDebugCode(): bool
     {
         return app()->environment(['local', 'testing'])
-            || filter_var(env('OTP_DEBUG_FALLBACK', false), FILTER_VALIDATE_BOOL);
+            || (bool) config('services.otp_debug_fallback', false);
     }
 
     public function create(Request $request): View|RedirectResponse
@@ -93,7 +93,7 @@ class OtpController extends Controller
             $request->session()->put('otp_debug_code', $issuedOtp['code']);
         }
 
-        return back()->with('status', ! $issuedOtp['sms']['ok'] && filter_var(env('OTP_DEBUG_FALLBACK', false), FILTER_VALIDATE_BOOL)
+        return back()->with('status', ! $issuedOtp['sms']['ok'] && $this->shouldShowDebugCode()
             ? __('app.auth.otp_debug_fallback_status')
             : __('app.auth.otp_resent'));
     }

@@ -101,6 +101,8 @@ return [
         ],
     ],
 
+    'otp_debug_fallback' => filter_var(env('OTP_DEBUG_FALLBACK', false), FILTER_VALIDATE_BOOL),
+
     'gov_sms' => [
         'base' => env('GOV_SMS_BASE', 'https://bulk-sms.gov.jo'),
         'username' => env('GOV_SMS_USER'),

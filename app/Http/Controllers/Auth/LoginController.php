@@ -14,7 +14,7 @@ class LoginController extends Controller
 {
     private function shouldAllowDebugFallback(): bool
     {
-        return filter_var(env('OTP_DEBUG_FALLBACK', false), FILTER_VALIDATE_BOOL);
+        return (bool) config('services.otp_debug_fallback', false);
     }
 
     public function create(): View
