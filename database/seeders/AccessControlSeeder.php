@@ -362,6 +362,8 @@ class AccessControlSeeder extends Seeder
                 'applications.assign',
                 'documents.view.all',
                 'documents.manage',
+                'entities.view',
+                'entities.manage',
                 'workflow.view',
                 'workflow.manage',
                 'permits.view.all',

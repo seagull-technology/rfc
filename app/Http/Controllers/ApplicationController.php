@@ -784,6 +784,22 @@ class ApplicationController extends Controller
             ->ordered()
             ->get();
 
+        if ($options->isEmpty() && method_exists($modelClass, 'activeCodes') && method_exists($modelClass, 'labelFor')) {
+            $options = collect($modelClass::activeCodes())
+                ->map(function (string $code, int $index) use ($modelClass) {
+                    $option = new $modelClass();
+                    $option->forceFill([
+                        'code' => $code,
+                        'name_en' => $modelClass::labelFor($code),
+                        'name_ar' => $modelClass::labelFor($code),
+                        'is_active' => true,
+                        'sort_order' => ($index + 1) * 10,
+                    ]);
+
+                    return $option;
+                });
+        }
+
         foreach (array_unique(array_filter(array_map('strval', $currentCodes))) as $currentCode) {
             if ($options->contains('code', $currentCode)) {
                 continue;

@@ -40,8 +40,18 @@
     $internationalProducerNationalityOptions = collect(data_get($nationalityOptions ?? [], 'international_producer', []));
     $defaultWorkCategory = \App\Models\WorkCategory::defaultCode();
     $defaultReleaseMethod = \App\Models\ReleaseMethod::defaultCode();
-    $selectedWorkCategories = (array) old('work_categories', data_get($projectMeta, 'work_categories', [$application->work_category ?: $defaultWorkCategory]));
-    $selectedReleaseMethods = (array) old('release_methods', data_get($projectMeta, 'release_methods', [$application->release_method ?: $defaultReleaseMethod]));
+    $workCategoryOptionCodes = $workCategoryOptions->pluck('code')->map(fn ($code): string => (string) $code)->all();
+    $releaseMethodOptionCodes = $releaseMethodOptions->pluck('code')->map(fn ($code): string => (string) $code)->all();
+    $selectedWorkCategories = array_values(array_filter(
+        (array) old('work_categories', data_get($projectMeta, 'work_categories', [$application->work_category ?: $defaultWorkCategory])),
+        fn ($code): bool => filled($code) && in_array((string) $code, $workCategoryOptionCodes, true),
+    ));
+    $selectedReleaseMethods = array_values(array_filter(
+        (array) old('release_methods', data_get($projectMeta, 'release_methods', [$application->release_method ?: $defaultReleaseMethod])),
+        fn ($code): bool => filled($code) && in_array((string) $code, $releaseMethodOptionCodes, true),
+    ));
+    $selectedWorkCategories = $selectedWorkCategories ?: (in_array($defaultWorkCategory, $workCategoryOptionCodes, true) ? [$defaultWorkCategory] : []);
+    $selectedReleaseMethods = $selectedReleaseMethods ?: (in_array($defaultReleaseMethod, $releaseMethodOptionCodes, true) ? [$defaultReleaseMethod] : []);
     $schedulePhases = old('schedule_phases', data_get($scheduleMeta, 'phases', []));
     $budgetItems = old('budget_items', data_get($budgetMeta, 'items', []));
     $castCrewRows = old('cast_crew', data_get($annex, 'cast_crew', [['name' => '', 'role' => '', 'nationality' => '', 'gender' => '', 'birth_date' => '', 'identity_number' => '']]));
@@ -281,7 +291,12 @@
                                                                 <div class="col-lg-6">
                                                                     <div class="form-group" data-application-password-wrapper>
                                                                         <label class="form-label">{{ __('app.auth.password') }}</label>
-                                                                        <input class="form-control" type="password" name="international_account_password" autocomplete="new-password" data-application-password-strength aria-describedby="international-account-password-rules">
+                                                                        <div class="application-password-control">
+                                                                            <input class="form-control" type="password" name="international_account_password" autocomplete="new-password" data-application-password-strength aria-describedby="international-account-password-rules">
+                                                                            <button type="button" class="application-password-toggle" data-application-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
+                                                                                <i class="ph ph-eye-slash"></i>
+                                                                            </button>
+                                                                        </div>
                                                                         <ul class="application-password-rules" id="international-account-password-rules" data-application-password-rules hidden>
                                                                             <li data-application-password-rule="length">{{ __('app.auth.password_rule_length') }}</li>
                                                                             <li data-application-password-rule="mixed">{{ __('app.auth.password_rule_mixed') }}</li>
@@ -293,7 +308,12 @@
                                                                 <div class="col-lg-6">
                                                                     <div class="form-group">
                                                                         <label class="form-label">{{ __('app.auth.confirm_password') }}</label>
-                                                                        <input class="form-control" type="password" name="international_account_password_confirmation" autocomplete="new-password">
+                                                                        <div class="application-password-control">
+                                                                            <input class="form-control" type="password" name="international_account_password_confirmation" autocomplete="new-password">
+                                                                            <button type="button" class="application-password-toggle" data-application-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
+                                                                                <i class="ph ph-eye-slash"></i>
+                                                                            </button>
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -306,13 +326,8 @@
                                             <div class="form-group">
                                                 <label class="form-label">{{ __('app.applications.work_type') }}</label>
                                                 <span class="text-danger">*</span>
-                                                <input type="hidden" name="work_category" data-routing-field="work_category" value="{{ old('work_category', $application->work_category ?: data_get($selectedWorkCategories, '0', $defaultWorkCategory)) }}">
+                                                <input type="hidden" name="work_category" data-routing-field="work_category" value="{{ data_get($selectedWorkCategories, '0', $application->work_category ?: $defaultWorkCategory) }}">
                                                 <select name="work_categories[]" class="form-select select2-basic-multiple" multiple required data-routing-multiple="work_category">
-                                                    @foreach (array_diff($selectedWorkCategories, $workCategoryOptions->pluck('code')->all()) as $selectedWorkCategory)
-                                                        @if (filled($selectedWorkCategory))
-                                                            <option value="{{ $selectedWorkCategory }}" selected>{{ \App\Models\WorkCategory::labelFor($selectedWorkCategory) }}</option>
-                                                        @endif
-                                                    @endforeach
                                                     @foreach ($workCategoryOptions as $option)
                                                         <option value="{{ $option->code }}" @selected(in_array($option->code, $selectedWorkCategories, true))>{{ $option->displayName() }}</option>
                                                     @endforeach
@@ -328,13 +343,8 @@
                                             <div class="form-group">
                                                 <label class="form-label">{{ __('app.applications.release_method') }}</label>
                                                 <span class="text-danger">*</span>
-                                                <input type="hidden" name="release_method" data-routing-field="release_method" value="{{ old('release_method', $application->release_method ?: data_get($selectedReleaseMethods, '0', $defaultReleaseMethod)) }}">
+                                                <input type="hidden" name="release_method" data-routing-field="release_method" value="{{ data_get($selectedReleaseMethods, '0', $application->release_method ?: $defaultReleaseMethod) }}">
                                                 <select name="release_methods[]" class="form-select select2-basic-multiple" multiple required data-routing-multiple="release_method">
-                                                    @foreach (array_diff($selectedReleaseMethods, $releaseMethodOptions->pluck('code')->all()) as $selectedReleaseMethod)
-                                                        @if (filled($selectedReleaseMethod))
-                                                            <option value="{{ $selectedReleaseMethod }}" selected>{{ \App\Models\ReleaseMethod::labelFor($selectedReleaseMethod) }}</option>
-                                                        @endif
-                                                    @endforeach
                                                     @foreach ($releaseMethodOptions as $option)
                                                         <option value="{{ $option->code }}" @selected(in_array($option->code, $selectedReleaseMethods, true))>{{ $option->displayName() }}</option>
                                                     @endforeach
@@ -943,6 +953,36 @@
             .application-password-rules li.is-valid::before {
                 background: currentColor;
             }
+
+            .application-password-control {
+                position: relative;
+            }
+
+            .application-password-control .form-control {
+                padding-inline-end: 3rem;
+            }
+
+            .application-password-toggle {
+                align-items: center;
+                background: transparent;
+                border: 0;
+                color: var(--bs-secondary-color, #6c757d);
+                display: inline-flex;
+                font-size: 1.1rem;
+                inset-block: 0;
+                inset-inline-end: .25rem;
+                justify-content: center;
+                margin: auto 0;
+                padding: 0;
+                position: absolute;
+                width: 2.5rem;
+            }
+
+            .application-password-toggle:hover,
+            .application-password-toggle:focus {
+                color: var(--bs-danger, #721d18);
+                outline: none;
+            }
         </style>
     @endpush
 @endonce
@@ -975,6 +1015,10 @@
         const applicationEquipmentEntryPointOptions = @json($equipmentEntryPointOptions->map(fn ($option) => ['code' => $option->code, 'label' => $option->displayName()])->values());
         const applicationMilitaryLocationTypeOptions = @json(collect($militaryLocationTypeOptions)->map(fn ($code) => ['code' => $code, 'label' => $militaryLocationTypeLabels[$code] ?? __('app.applications.military_location_types.'.$code)])->values());
         const applicationPasswordStrengthInvalid = @js(__('app.auth.password_strength_invalid'));
+        const applicationPasswordToggleMessages = {
+            show: @js(__('app.auth.show_password')),
+            hide: @js(__('app.auth.hide_password')),
+        };
 
         function applicationLookupOptionsHtml(options, selectedValue) {
             const selected = String(selectedValue || '');
@@ -1520,6 +1564,27 @@
             update();
         }
 
+        function bindApplicationPasswordToggle(toggle) {
+            const passwordInput = toggle.closest('.application-password-control')?.querySelector('input');
+            const icon = toggle.querySelector('i');
+
+            if (!passwordInput || !icon || toggle.dataset.passwordToggleBound === 'true') {
+                return;
+            }
+
+            toggle.dataset.passwordToggleBound = 'true';
+            toggle.addEventListener('click', function () {
+                const isPassword = passwordInput.getAttribute('type') === 'password';
+                const label = isPassword ? applicationPasswordToggleMessages.hide : applicationPasswordToggleMessages.show;
+
+                passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
+                icon.classList.toggle('ph-eye', isPassword);
+                icon.classList.toggle('ph-eye-slash', !isPassword);
+                toggle.setAttribute('aria-label', label);
+                toggle.setAttribute('title', label);
+            });
+        }
+
         const requestForm = document.getElementById('form-wizard1');
 
         if (requestForm) {
@@ -1545,6 +1610,7 @@
 
             initializeScheduleDateValidation(requestForm);
             requestForm.querySelectorAll('[data-application-password-strength]').forEach(bindApplicationPasswordStrength);
+            requestForm.querySelectorAll('[data-application-password-toggle]').forEach(bindApplicationPasswordToggle);
 
             ['input', 'change'].forEach(function (eventName) {
                 requestForm.addEventListener(eventName, function (event) {

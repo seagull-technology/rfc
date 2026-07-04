@@ -2252,6 +2252,67 @@ class AdminPanelTest extends TestCase
         $this->assertCount(1, data_get($entity->metadata, 'review_history', []));
     }
 
+    public function test_rfc_admin_can_approve_pending_registration_entity(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'ref@ref.test')->firstOrFail();
+        $group = Group::query()->where('code', 'organizations')->firstOrFail();
+
+        $user = User::query()->create([
+            'name' => 'RFC Review Org',
+            'username' => 'rfc-review-org',
+            'email' => 'rfc-review-org@example.com',
+            'phone' => '0794444111',
+            'status' => 'pending_review',
+            'registration_type' => 'company',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $entity = Entity::query()->create([
+            'group_id' => $group->getKey(),
+            'name_en' => 'RFC Review Org',
+            'name_ar' => 'RFC Review Org',
+            'registration_no' => 'REV-RFC-001',
+            'email' => 'rfc-review-org@example.com',
+            'phone' => '0794444111',
+            'status' => 'pending_review',
+            'registration_type' => 'company',
+            'metadata' => [
+                'address' => 'Amman',
+                'registration_document_path' => 'registration-documents/company/license.pdf',
+            ],
+        ]);
+
+        $entity->users()->attach($user->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($entity->getKey());
+        $user->assignRole('applicant_owner');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $response = $this->actingAs($admin)->post(route('admin.entities.review', $entity), [
+            'decision' => 'approve',
+            'note' => 'Registration approved by RFC.',
+        ]);
+
+        $response->assertRedirect(route('admin.entities.show', $entity));
+
+        $this->assertDatabaseHas('entities', [
+            'id' => $entity->getKey(),
+            'status' => 'active',
+        ]);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $user->getKey(),
+            'status' => 'active',
+        ]);
+    }
+
     public function test_review_history_is_appended_on_multiple_review_actions(): void
     {
         $this->refreshApplicationWithLocale('en');
