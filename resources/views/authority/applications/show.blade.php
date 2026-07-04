@@ -748,7 +748,7 @@
                                     <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
                                         <div>
                                             @if ($approvalSlaSignal['label'] ?? null)
-                                                <span class="badge bg-{{ ($approvalSlaSignal['is_overdue'] ?? false) ? 'danger' : 'secondary' }}">{{ $approvalSlaSignal['label'] }}</span>
+                                                <span class="badge bg-{{ ($approvalSlaSignal['is_overdue'] ?? false) ? 'danger' : (($approvalSlaSignal['is_due_soon'] ?? false) ? 'warning text-dark' : 'secondary') }}">{{ $approvalSlaSignal['label'] }}</span>
                                             @else
                                                 <span class="badge bg-light text-dark">{{ __('app.admin.authority_escalations.unconfigured_badge') }}</span>
                                             @endif

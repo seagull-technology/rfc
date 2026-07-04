@@ -310,7 +310,7 @@
                                                 @endif
                                                 <div class="authority-sla-badges">
                                                     @if ($approvalSlaSignal['label'])
-                                                        <span class="badge bg-{{ $approvalSlaSignal['is_overdue'] ? 'danger' : 'secondary' }}">{{ $approvalSlaSignal['label'] }}</span>
+                                                        <span class="badge bg-{{ $approvalSlaSignal['is_overdue'] ? 'danger' : ($approvalSlaSignal['is_due_soon'] ? 'warning text-dark' : 'secondary') }}">{{ $approvalSlaSignal['label'] }}</span>
                                                     @endif
                                                     @if ($approvalSlaSignal['is_escalated'])
                                                         <span class="badge bg-dark">{{ __('app.admin.authority_escalations.escalated_badge') }}</span>

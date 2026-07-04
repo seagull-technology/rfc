@@ -1,5 +1,5 @@
 @php
-    $annex = data_get($application->metadata ?? [], 'annex', []);
+    $annex = $annexPayload ?? data_get($application->metadata ?? [], 'annex', []);
     $workContentSummary = data_get($annex, 'work_content_summary', []);
     $safetyGuidelines = data_get($annex, 'safety_guidelines', []);
     $airportFilming = data_get($annex, 'airport_filming', []);

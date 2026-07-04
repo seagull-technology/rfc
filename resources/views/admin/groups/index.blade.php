@@ -1,6 +1,7 @@
 @php
     $title = __('app.admin.groups.title');
     $breadcrumb = __('app.admin.navigation.groups');
+    $canManagePermissions = auth()->user()?->can('permissions.manage') ?? false;
 @endphp
 
 @extends('layouts.admin-dashboard', ['title' => $title])
@@ -80,7 +81,7 @@
                             <label for="filter-role" class="form-label">{{ __('app.admin.filters.role_label') }}</label>
                             <select id="filter-role" name="role" class="form-select">
                                 <option value="all">{{ __('app.admin.filters.all_option') }}</option>
-                                @foreach (['super_admin', 'platform_admin', 'moderator', 'reporter', 'rfc_admin', 'rfc_intake_officer', 'rfc_reviewer', 'rfc_approver', 'authority_reviewer', 'authority_approver', 'applicant_owner', 'applicant_member'] as $role)
+                                @foreach ($roles as $role)
                                     <option value="{{ $role }}" @selected($filters['role'] === $role)>{{ __('app.roles.'.$role) }}</option>
                                 @endforeach
                             </select>
@@ -115,18 +116,73 @@
                                 </div>
                             </div>
                             <div class="col-xl-8">
-                                <h6 class="mb-3">{{ __('app.admin.groups.role_permissions') }}</h6>
+                                <div class="d-flex justify-content-between gap-3 flex-wrap align-items-center mb-3">
+                                    <div>
+                                        <h6 class="mb-1">{{ __('app.admin.groups.role_permissions') }}</h6>
+                                        <div class="text-muted small">{{ __('app.admin.groups.role_permissions_hint') }}</div>
+                                    </div>
+                                    @if (! $canManagePermissions)
+                                        <span class="badge bg-secondary-subtle text-dark">{{ __('app.admin.groups.read_only') }}</span>
+                                    @endif
+                                </div>
                                 <div class="row g-3">
                                     @foreach ($group->roles as $role)
+                                        @php
+                                            $rolePermissionNames = $role->permissions->pluck('name')->all();
+                                            $roleIsLocked = $role->name === 'super_admin';
+                                            $roleDomId = 'group-'.$group->getKey().'-role-'.$role->getKey();
+                                        @endphp
                                         <div class="col-lg-6">
-                                            <div class="border rounded p-3 h-100">
-                                                <div class="fw-semibold mb-2">{{ __('app.roles.'.$role->name) }}</div>
-                                                <div class="d-flex gap-2 flex-wrap">
-                                                    @foreach ($role->permissions as $permission)
-                                                        <span class="badge bg-primary-subtle text-dark">{{ __('app.permissions.'.$permission->name) }}</span>
+                                            <form method="POST" action="{{ route('admin.groups.roles.permissions.update', $role->name) }}" class="border rounded p-3 h-100 bg-white">
+                                                @csrf
+                                                <input type="hidden" name="q" value="{{ $filters['q'] }}">
+                                                <input type="hidden" name="role" value="{{ $filters['role'] }}">
+
+                                                <div class="d-flex justify-content-between gap-3 align-items-start mb-3">
+                                                    <div>
+                                                        <div class="fw-semibold">{{ __('app.roles.'.$role->name) }}</div>
+                                                        <div class="text-muted small">{{ trans_choice('app.admin.groups.permissions_count', count($rolePermissionNames), ['count' => count($rolePermissionNames)]) }}</div>
+                                                    </div>
+                                                    @if ($roleIsLocked)
+                                                        <span class="badge bg-danger-subtle text-dark">{{ __('app.admin.groups.locked_role') }}</span>
+                                                    @endif
+                                                </div>
+
+                                                <div class="accordion" id="role-permissions-{{ $roleDomId }}">
+                                                    @foreach ($permissionGroups as $permissionGroup => $permissions)
+                                                        @php
+                                                            $panelId = $roleDomId.'-permission-group-'.$loop->index;
+                                                            $checkedInGroup = $permissions->filter(fn ($permission) => in_array($permission->name, $rolePermissionNames, true))->count();
+                                                        @endphp
+                                                        <div class="border-top py-2">
+                                                            <button class="btn btn-link w-100 px-0 text-start text-decoration-none d-flex justify-content-between gap-3 align-items-center" type="button" data-bs-toggle="collapse" data-bs-target="#{{ $panelId }}" aria-expanded="{{ $loop->first ? 'true' : 'false' }}" aria-controls="{{ $panelId }}">
+                                                                <span class="fw-semibold text-dark">{{ __('app.admin.groups.permission_groups.'.$permissionGroup) }}</span>
+                                                                <span class="badge bg-primary-subtle text-dark">{{ $checkedInGroup }}/{{ $permissions->count() }}</span>
+                                                            </button>
+                                                            <div id="{{ $panelId }}" class="collapse {{ $loop->first ? 'show' : '' }}" data-bs-parent="#role-permissions-{{ $roleDomId }}">
+                                                                <div class="row g-2 pb-2">
+                                                                    @foreach ($permissions as $permission)
+                                                                        <div class="col-12">
+                                                                            <div class="form-check">
+                                                                                <input id="{{ $roleDomId }}-permission-{{ $permission->getKey() }}" class="form-check-input" type="checkbox" name="permissions[]" value="{{ $permission->name }}" @checked(in_array($permission->name, $rolePermissionNames, true)) @disabled(! $canManagePermissions || $roleIsLocked)>
+                                                                                <label class="form-check-label" for="{{ $roleDomId }}-permission-{{ $permission->getKey() }}">
+                                                                                    {{ __('app.permissions.'.$permission->name) }}
+                                                                                </label>
+                                                                            </div>
+                                                                        </div>
+                                                                    @endforeach
+                                                                </div>
+                                                            </div>
+                                                        </div>
                                                     @endforeach
                                                 </div>
-                                            </div>
+
+                                                @if ($canManagePermissions && ! $roleIsLocked)
+                                                    <div class="mt-3">
+                                                        <button class="btn btn-primary w-100" type="submit">{{ __('app.admin.groups.save_permissions') }}</button>
+                                                    </div>
+                                                @endif
+                                            </form>
                                         </div>
                                     @endforeach
                                 </div>

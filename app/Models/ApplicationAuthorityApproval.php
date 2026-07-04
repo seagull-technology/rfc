@@ -20,6 +20,7 @@ class ApplicationAuthorityApproval extends Model
         'assigned_user_id',
         'assigned_at',
         'escalated_at',
+        'sla_warning_notified_at',
         'status',
         'note',
         'response_attachment_path',
@@ -36,6 +37,7 @@ class ApplicationAuthorityApproval extends Model
         return [
             'assigned_at' => 'datetime',
             'escalated_at' => 'datetime',
+            'sla_warning_notified_at' => 'datetime',
             'decided_at' => 'datetime',
             'response_attachment_uploaded_at' => 'datetime',
         ];

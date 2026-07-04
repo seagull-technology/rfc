@@ -10,6 +10,7 @@ class OtpService
 {
     public function __construct(
         private readonly SmsService $smsService,
+        private readonly NotificationLogService $notificationLogService,
     ) {
     }
 
@@ -43,6 +44,17 @@ class OtpService
             text: __('app.auth.sms_otp_message', ['code' => $code]),
             to: $phone,
         );
+
+        $this->notificationLogService->recordManual([
+            'notifiable' => $user,
+            'notification_type' => 'login_otp',
+            'type_key' => 'login_otp',
+            'channel' => 'sms',
+            'title' => __('app.admin.notification_center.login_otp_title'),
+            'body' => __('app.admin.notification_center.login_otp_body'),
+            'recipient_phone' => $sms['msisdn'] ?? $phone,
+            'response' => $sms,
+        ]);
 
         return [
             'otp' => $otp,

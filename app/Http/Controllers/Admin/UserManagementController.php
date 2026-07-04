@@ -311,7 +311,6 @@ class UserManagementController extends Controller
             'national_id' => ['nullable', 'string', 'max:255', Rule::unique('users', 'national_id')->ignore($record->getKey())],
             'phone' => ['nullable', 'string', 'max:255', Rule::unique('users', 'phone')->ignore($record->getKey())],
             'status' => ['required', Rule::in(['active', 'inactive', 'pending_review', 'needs_completion', 'rejected'])],
-            'password' => ['nullable', 'string', 'min:8', 'confirmed'],
         ]);
 
         $record->forceFill([
@@ -323,15 +322,28 @@ class UserManagementController extends Controller
             'status' => $validated['status'],
         ]);
 
-        if (filled($validated['password'] ?? null)) {
-            $record->password = Hash::make($validated['password']);
-        }
-
         $record->save();
 
         return redirect()
             ->route('admin.users.show', $record->getKey())
             ->with('status', __('app.admin.users.updated'));
+    }
+
+    public function updatePassword(Request $request, string $user): RedirectResponse
+    {
+        $record = $this->findUser($user);
+
+        $validated = $request->validate([
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $record->forceFill([
+            'password' => Hash::make($validated['password']),
+        ])->save();
+
+        return redirect()
+            ->route('admin.users.show', $record->getKey())
+            ->with('status', __('app.admin.users.password_updated'));
     }
 
     public function updateStatus(Request $request, string $user): RedirectResponse

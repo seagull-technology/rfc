@@ -9,8 +9,11 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Artisan::command('authority-approvals:check-escalations', function () {
-    $count = app(\App\Services\AuthorityEscalationService::class)->escalateOverdueApprovals();
+    $service = app(\App\Services\AuthorityEscalationService::class);
+    $warningCount = $service->notifyApproachingDeadlines();
+    $count = $service->escalateOverdueApprovals();
 
+    $this->info("Warned {$warningCount} authority approvals approaching their SLA deadline.");
     $this->info("Escalated {$count} overdue authority approvals.");
 })->purpose('Escalate overdue authority approvals based on configured authority response windows.');
 

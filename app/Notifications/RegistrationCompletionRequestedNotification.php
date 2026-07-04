@@ -3,9 +3,11 @@
 namespace App\Notifications;
 
 use App\Models\Entity;
+use App\Notifications\Channels\SmsNotificationChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\URL;
 
 class RegistrationCompletionRequestedNotification extends Notification
@@ -21,7 +23,7 @@ class RegistrationCompletionRequestedNotification extends Notification
 
     public function via(object $notifiable): array
     {
-        return ['database', 'mail'];
+        return ['database', 'mail', SmsNotificationChannel::class];
     }
 
     public function toArray(object $notifiable): array
@@ -31,7 +33,7 @@ class RegistrationCompletionRequestedNotification extends Notification
             : 'registration_completion_requested';
 
         return [
-            'type_key' => 'registration_completion_requested',
+            'type_key' => $translationPrefix,
             'title' => __('app.notifications.'.$translationPrefix.'_title'),
             'body' => __('app.notifications.'.$translationPrefix.'_body', [
                 'entity' => $this->entity->displayName(),
@@ -44,9 +46,7 @@ class RegistrationCompletionRequestedNotification extends Notification
 
     public function toMail(object $notifiable): MailMessage
     {
-        $translationPrefix = $this->decision === 'reject'
-            ? 'registration_rejected'
-            : 'registration_completion_requested';
+        $translationPrefix = $this->mailTranslationPrefix();
 
         $message = (new MailMessage)
             ->subject(__('app.notifications.'.$translationPrefix.'_mail_subject'))
@@ -68,10 +68,63 @@ class RegistrationCompletionRequestedNotification extends Notification
             ->line(__('app.notifications.'.$translationPrefix.'_mail_expiry'));
     }
 
+    public function toSms(object $notifiable): string
+    {
+        return Str::limit($this->auditTitle($notifiable).' - '.$this->auditBody($notifiable).' '.$this->signedUrl(), 480, '');
+    }
+
+    public function auditTypeKey(object $notifiable): string
+    {
+        return $this->translationPrefix();
+    }
+
+    public function auditTitle(object $notifiable): string
+    {
+        return __('app.notifications.'.$this->translationPrefix().'_title');
+    }
+
+    public function auditBody(object $notifiable): string
+    {
+        return __('app.notifications.'.$this->translationPrefix().'_body', [
+            'entity' => $this->entity->displayName(),
+            'status' => __('app.statuses.'.$this->entity->status),
+        ]);
+    }
+
+    public function auditUrl(object $notifiable): string
+    {
+        return $this->signedUrl();
+    }
+
+    /**
+     * @return array{type: string, id: int|null}
+     */
+    public function auditContext(object $notifiable): array
+    {
+        return [
+            'type' => 'entity',
+            'id' => $this->entity->getKey(),
+        ];
+    }
+
     private function signedUrl(): string
     {
         return URL::temporarySignedRoute('registration.completion.link.edit', now()->addDays(7), [
             'entity' => $this->entity->getKey(),
         ]);
+    }
+
+    private function translationPrefix(): string
+    {
+        return $this->decision === 'reject'
+            ? 'registration_rejected'
+            : 'registration_completion_requested';
+    }
+
+    private function mailTranslationPrefix(): string
+    {
+        return $this->decision === 'reject'
+            ? 'registration_rejected'
+            : 'registration_completion';
     }
 }

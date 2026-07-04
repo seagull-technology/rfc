@@ -112,6 +112,7 @@ class AuthorityApprovalSignal
                 ->first()
             : $application->officialLetters()
                 ->where('status', 'issued')
+                ->where('recipient_type', 'authority')
                 ->where(function ($query) use ($approval): void {
                     $query->where('application_authority_approval_id', $approval->getKey());
 
@@ -141,7 +142,7 @@ class AuthorityApprovalSignal
 
     private static function officialLetterBelongsToApproval(ApplicationOfficialLetter $letter, ApplicationAuthorityApproval $approval): bool
     {
-        if ($letter->status !== 'issued') {
+        if ($letter->status !== 'issued' || $letter->isApplicantLetter()) {
             return false;
         }
 

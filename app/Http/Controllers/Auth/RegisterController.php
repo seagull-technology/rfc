@@ -128,7 +128,7 @@ class RegisterController extends Controller
 
         return redirect()
             ->route('login')
-            ->with('status', __('app.auth.account_created'));
+            ->with('status', __('app.auth.account_under_review'));
     }
 
     private function storeCompany(
@@ -214,7 +214,7 @@ class RegisterController extends Controller
 
         return redirect()
             ->route('login')
-            ->with('status', __('app.auth.organization_account_created'));
+            ->with('status', __('app.auth.account_under_review'));
     }
 
     private function storeOrganizationLike(
@@ -284,7 +284,7 @@ class RegisterController extends Controller
 
         return redirect()
             ->route('login')
-            ->with('status', __('app.auth.organization_account_created'));
+            ->with('status', __('app.auth.account_under_review'));
     }
 
     /**

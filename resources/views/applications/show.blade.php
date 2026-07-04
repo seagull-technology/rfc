@@ -45,6 +45,10 @@
     $officialLetterForApproval = static function ($approval) use ($issuedOfficialLetters) {
         return $issuedOfficialLetters
             ->filter(function ($letter) use ($approval): bool {
+                if ($letter->isApplicantLetter()) {
+                    return false;
+                }
+
                 if ((int) $letter->application_authority_approval_id === (int) $approval->getKey()) {
                     return true;
                 }

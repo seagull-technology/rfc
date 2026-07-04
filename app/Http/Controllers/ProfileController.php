@@ -222,7 +222,7 @@ class ProfileController extends Controller
     private function latestRegistrationNotification(User $user): ?DatabaseNotification
     {
         return $user->notifications()
-            ->whereIn('data->type_key', ['registration_approved', 'registration_completion_requested'])
+            ->whereIn('data->type_key', ['registration_approved', 'registration_completion_requested', 'registration_rejected'])
             ->latest()
             ->first();
     }

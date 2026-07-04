@@ -56,7 +56,7 @@
             </div>
             <div>
                 <div class="label">{{ __('app.official_letters.target_entity') }}</div>
-                <div class="value">{{ $letter->targetEntity?->displayName() ?? __('app.dashboard.not_available') }}</div>
+                <div class="value">{{ $letter->recipientDisplayName() }}</div>
             </div>
             <div>
                 <div class="label">{{ $letter->recipient_prefix ?: __('app.official_letters.recipient_prefix') }}</div>

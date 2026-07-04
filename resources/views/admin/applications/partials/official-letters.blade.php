@@ -9,7 +9,7 @@
     $officialLetterEditId = static fn ($letter): string => 'officialLetterEdit'.$letterDomScope.$letter->getKey();
     $officialLetterSendId = static fn ($letter): string => 'officialLetterSend'.$letterDomScope.$letter->getKey();
     $letterCanSend = static fn ($letter): bool => $letter->status !== 'issued'
-        && filled($letter->target_entity_id)
+        && ($letter->isApplicantLetter() || filled($letter->target_entity_id))
         && filled($letter->recipient_name)
         && filled($letter->subject)
         && filled($letter->body);
@@ -23,12 +23,14 @@
         };
     };
     $groupedLetters = $letters
-        ->groupBy(fn ($letter): string => $letter->target_entity_id ? 'entity-'.$letter->target_entity_id : 'unassigned')
+        ->groupBy(fn ($letter): string => $letter->isApplicantLetter()
+            ? 'applicant'
+            : ($letter->target_entity_id ? 'entity-'.$letter->target_entity_id : 'unassigned'))
         ->map(function ($rows) use ($letterEntityAvatar): array {
             $first = $rows->first();
 
             return [
-                'entity_name' => $first?->targetEntity?->displayName() ?? __('app.dashboard.not_available'),
+                'entity_name' => $first?->recipientDisplayName() ?? __('app.dashboard.not_available'),
                 'avatar' => $first ? $letterEntityAvatar($first) : asset('images/logo.svg'),
                 'letters' => $rows->values(),
             ];
@@ -146,7 +148,7 @@
                                 $letterIsSent = $letter->status === 'issued';
                             @endphp
                             <tr>
-                                <td>{{ $letter->targetEntity?->displayName() ?? __('app.dashboard.not_available') }}</td>
+                                <td>{{ $letter->recipientDisplayName() }}</td>
                                 <td>{{ $letter->serial_number ?: __('app.dashboard.not_available') }}</td>
                                 <td>{{ $letter->subject }}</td>
                                 <td>{{ $letter->letter_date?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
@@ -236,7 +238,7 @@
                 <div class="meta pt-2">
                     <div><span class="form-label px-2">{{ __('app.official_letters.letter_date') }}:</span> <span>{{ $letter->letter_date?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</span></div>
                     <div><span class="form-label px-2">{{ __('app.official_letters.serial_number') }}:</span> <span>{{ $letter->serial_number ?: __('app.dashboard.not_available') }}</span></div>
-                    <div><span class="form-label px-2">{{ __('app.official_letters.target_entity') }}:</span> <span>{{ $letter->targetEntity?->displayName() ?? __('app.dashboard.not_available') }}</span></div>
+                    <div><span class="form-label px-2">{{ __('app.official_letters.target_entity') }}:</span> <span>{{ $letter->recipientDisplayName() }}</span></div>
                     <div><span class="form-label px-2">{{ $letter->recipient_prefix ?: __('app.official_letters.recipient_prefix') }}:</span> <span>{{ $letter->recipient_name }}</span></div>
                 </div>
                 <div class="subject mt-3">
@@ -272,7 +274,7 @@
             <form id="{{ $officialLetterSendId($letter) }}" method="POST" action="{{ route('admin.applications.official-letters.send', [$application, $letter]) }}"
                 data-application-submit-confirm
                 data-confirm-title="{{ __('app.official_letters.send_confirm_title') }}"
-                data-confirm-text="{{ __('app.official_letters.send_confirm_body', ['entity' => $letter->targetEntity?->displayName() ?? __('app.dashboard.not_available')]) }}"
+                data-confirm-text="{{ $letter->isApplicantLetter() ? __('app.official_letters.send_confirm_body_applicant', ['entity' => $letter->recipientDisplayName()]) : __('app.official_letters.send_confirm_body', ['entity' => $letter->recipientDisplayName()]) }}"
                 data-confirm-button="{{ __('app.official_letters.send_confirm_button') }}"
                 data-cancel-button="{{ __('app.official_letters.cancel_send_action') }}">
                 @csrf

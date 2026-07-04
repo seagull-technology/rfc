@@ -494,16 +494,40 @@
                                 @endforeach
                             </select>
                         </div>
+                        <div class="col-12">
+                            <button class="btn btn-danger" type="submit">{{ __('app.admin.users.update_action') }}</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="iq-header-title">
+                        <h3 class="card-title">{{ __('app.admin.users.password_title') }}</h3>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ route('admin.users.password', $user->getKey()) }}" class="row g-3">
+                        @csrf
                         <div class="col-md-6">
                             <label for="password" class="form-label">{{ __('app.auth.password') }}</label>
-                            <input id="password" name="password" type="password" class="form-control">
+                            <input id="password" name="password" type="password" class="form-control @error('password') is-invalid @enderror" autocomplete="new-password" required>
+                            @error('password')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @else
+                                <div class="form-text">{{ __('app.admin.users.password_help') }}</div>
+                            @enderror
                         </div>
                         <div class="col-md-6">
                             <label for="password_confirmation" class="form-label">{{ __('app.auth.confirm_password') }}</label>
-                            <input id="password_confirmation" name="password_confirmation" type="password" class="form-control">
+                            <input id="password_confirmation" name="password_confirmation" type="password" class="form-control @error('password_confirmation') is-invalid @enderror" autocomplete="new-password" required>
+                            @error('password_confirmation')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
                         </div>
                         <div class="col-12">
-                            <button class="btn btn-danger" type="submit">{{ __('app.admin.users.update_action') }}</button>
+                            <button class="btn btn-danger" type="submit">{{ __('app.admin.users.password_update_action') }}</button>
                         </div>
                     </form>
                 </div>
@@ -531,8 +555,11 @@
                         </div>
                         <div class="col-md-6">
                             <label for="roles" class="form-label">{{ __('app.admin.users.initial_roles') }}</label>
-                            <select id="roles" name="roles[]" class="form-select select2-basic-multiple" multiple required disabled data-placeholder="{{ __('app.admin.select_placeholder') }}">
-                            </select>
+                            <div class="admin-role-picker-field is-disabled" data-role-picker-field>
+                                <select id="roles" name="roles[]" class="form-select select2-basic-multiple admin-role-picker-select" multiple required disabled data-placeholder="{{ __('app.admin.users.choose_entity_first') }}" data-active-placeholder="{{ __('app.admin.select_placeholder') }}" data-disabled-placeholder="{{ __('app.admin.users.choose_entity_first') }}" data-empty-placeholder="{{ __('app.admin.users.no_roles_for_entity') }}">
+                                </select>
+                            </div>
+                            <div class="form-text">{{ __('app.admin.users.roles_depend_on_entity') }}</div>
                         </div>
                         <div class="col-md-6">
                             <label for="job_title" class="form-label">{{ __('app.admin.entities.member_job_title') }}</label>

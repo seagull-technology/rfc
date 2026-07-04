@@ -47,6 +47,10 @@
     $officialLetterForApproval = static function ($approval) use ($issuedOfficialLetters) {
         return $issuedOfficialLetters
             ->filter(function ($letter) use ($approval): bool {
+                if ($letter->isApplicantLetter()) {
+                    return false;
+                }
+
                 if ((int) $letter->application_authority_approval_id === (int) $approval->getKey()) {
                     return true;
                 }
@@ -168,8 +172,26 @@
     $rfcDecisionDate = filled(data_get($rfcDecision, 'decided_at')) ? \Illuminate\Support\Carbon::parse(data_get($rfcDecision, 'decided_at'))->format('Y-m-d H:i') : null;
     $rfcFacilitationIssuedDate = filled(data_get($rfcDecision, 'facilitation_issued_at')) ? \Illuminate\Support\Carbon::parse(data_get($rfcDecision, 'facilitation_issued_at'))->format('Y-m-d H:i') : null;
     $applicantAnnexSubmission = (array) data_get($metadata, 'applicant_annex_submission', []);
-    $applicantAnnexHistory = $statusHistory->first(fn ($event): bool => $event->note === __('app.applications.history.annex_updated'));
-    $hasApplicantAnnexSubmission = filled(data_get($applicantAnnexSubmission, 'submitted_at')) || $applicantAnnexHistory !== null;
+    $annexSubmissions = collect($annexSubmissions ?? $application->annexSubmissions ?? []);
+    $pendingAnnexSubmissions = $annexSubmissions
+        ->where('status', \App\Models\ApplicationAnnexSubmission::STATUS_SUBMITTED)
+        ->values();
+    $reviewedAnnexSubmissions = $annexSubmissions
+        ->reject(fn ($submission): bool => $submission->status === \App\Models\ApplicationAnnexSubmission::STATUS_SUBMITTED)
+        ->values();
+    $applicantAnnexHistory = $statusHistory->first(fn ($event): bool => in_array($event->note, [
+        __('app.applications.history.annex_updated'),
+        __('app.applications.history.annex_submitted'),
+    ], true));
+    $hasCanonicalAnnexData = collect(\Illuminate\Support\Arr::dot((array) data_get($metadata, 'annex', [])))
+        ->contains(fn ($value): bool => filled($value));
+    $hasApplicantAnnexSubmission = $annexSubmissions->isNotEmpty()
+        || filled(data_get($applicantAnnexSubmission, 'submitted_at'))
+        || $applicantAnnexHistory !== null;
+    $shouldShowCanonicalAnnexData = $hasCanonicalAnnexData
+        && ($reviewedAnnexSubmissions->contains(fn ($submission): bool => $submission->status === \App\Models\ApplicationAnnexSubmission::STATUS_APPROVED)
+            || filled(data_get($applicantAnnexSubmission, 'submitted_at'))
+            || $applicantAnnexHistory !== null);
 
     $documentGroups = $documents
         ->groupBy(fn ($document) => $document->document_type ?: 'other')
@@ -984,13 +1006,85 @@
 
                                             @if ($hasApplicantAnnexSubmission)
                                                 <div class="mt-4">
-                                                    <div class="fw-600 mb-2">{{ __('app.applications.required_approvals') }}</div>
-                                                    <div>{{ $requiredApprovals }}</div>
-                                                    <div class="fw-600 mt-4 mb-2">{{ __('app.applications.supporting_notes') }}</div>
-                                                    <div>{{ data_get($requirements, 'supporting_notes', __('app.applications.annex_empty_state')) }}</div>
-                                                    <div class="border-top mt-4 pt-4">
-                                                        @include('applications.partials.annex-summary', ['application' => $application, 'tableClass' => 'table table-striped mb-0'])
-                                                    </div>
+                                                    @foreach ($pendingAnnexSubmissions as $submission)
+                                                        <div class="border bg-white p-4 mb-4">
+                                                            <div class="d-flex flex-wrap justify-content-between gap-3 mb-3">
+                                                                <div>
+                                                                    <div class="fw-600">{{ __('app.annex_submissions.pending_title') }}</div>
+                                                                    <div class="text-muted small">
+                                                                        {{ __('app.annex_submissions.submitted_by_at', [
+                                                                            'user' => $submission->submittedBy?->displayName() ?? __('app.dashboard.not_available'),
+                                                                            'date' => $submission->submitted_at?->format('Y-m-d H:i') ?? __('app.dashboard.not_available'),
+                                                                        ]) }}
+                                                                    </div>
+                                                                </div>
+                                                                <span class="badge bg-warning text-dark align-self-start">{{ $submission->localizedStatus() }}</span>
+                                                            </div>
+
+                                                            @include('applications.partials.annex-summary', [
+                                                                'application' => $application,
+                                                                'annexPayload' => $submission->payload ?? [],
+                                                                'tableClass' => 'table table-striped mb-0',
+                                                            ])
+
+                                                            @if ($canReviewApplication)
+                                                                <form class="border-top mt-4 pt-4" method="POST" action="{{ route('admin.applications.annex-submissions.review', [$application, $submission]) }}">
+                                                                    @csrf
+                                                                    <label class="form-label" for="annex-review-note-{{ $submission->getKey() }}">{{ __('app.annex_submissions.review_note') }}</label>
+                                                                    <textarea id="annex-review-note-{{ $submission->getKey() }}" name="note" class="form-control mb-3" rows="3" placeholder="{{ __('app.annex_submissions.review_note_placeholder') }}"></textarea>
+                                                                    <div class="d-flex flex-wrap gap-2">
+                                                                        <button class="btn btn-success" type="submit" name="decision" value="{{ \App\Models\ApplicationAnnexSubmission::STATUS_APPROVED }}">
+                                                                            {{ __('app.annex_submissions.actions.approve') }}
+                                                                        </button>
+                                                                        <button class="btn btn-outline-danger" type="submit" name="decision" value="{{ \App\Models\ApplicationAnnexSubmission::STATUS_REJECTED }}">
+                                                                            {{ __('app.annex_submissions.actions.reject') }}
+                                                                        </button>
+                                                                        <button class="btn btn-outline-secondary" type="submit" name="decision" value="{{ \App\Models\ApplicationAnnexSubmission::STATUS_RETURNED }}">
+                                                                            {{ __('app.annex_submissions.actions.return') }}
+                                                                        </button>
+                                                                    </div>
+                                                                </form>
+                                                            @endif
+                                                        </div>
+                                                    @endforeach
+
+                                                    @if ($shouldShowCanonicalAnnexData)
+                                                        <div class="fw-600 mb-2">{{ __('app.applications.required_approvals') }}</div>
+                                                        <div>{{ $requiredApprovals }}</div>
+                                                        <div class="fw-600 mt-4 mb-2">{{ __('app.applications.supporting_notes') }}</div>
+                                                        <div>{{ data_get($requirements, 'supporting_notes', __('app.applications.annex_empty_state')) }}</div>
+                                                        <div class="border-top mt-4 pt-4">
+                                                            <div class="fw-600 mb-3">{{ __('app.annex_submissions.current_approved_title') }}</div>
+                                                            @include('applications.partials.annex-summary', ['application' => $application, 'tableClass' => 'table table-striped mb-0'])
+                                                        </div>
+                                                    @endif
+
+                                                    @if ($reviewedAnnexSubmissions->isNotEmpty())
+                                                        <div class="border-top mt-4 pt-4">
+                                                            <div class="fw-600 mb-3">{{ __('app.annex_submissions.history_title') }}</div>
+                                                            <div class="list-group">
+                                                                @foreach ($reviewedAnnexSubmissions as $submission)
+                                                                    <div class="list-group-item d-flex flex-wrap justify-content-between gap-3">
+                                                                        <div>
+                                                                            <div class="fw-600">{{ $submission->localizedStatus() }}</div>
+                                                                            <div class="text-muted small">
+                                                                                {{ __('app.annex_submissions.reviewed_by_at', [
+                                                                                    'user' => $submission->reviewedBy?->displayName() ?? __('app.dashboard.not_available'),
+                                                                                    'date' => $submission->reviewed_at?->format('Y-m-d H:i') ?? __('app.dashboard.not_available'),
+                                                                                ]) }}
+                                                                            </div>
+                                                                            @if (filled($submission->review_note))
+                                                                                <div class="small mt-2">{{ $submission->review_note }}</div>
+                                                                            @endif
+                                                                        </div>
+                                                                        <span class="badge bg-{{ $submission->status === \App\Models\ApplicationAnnexSubmission::STATUS_APPROVED ? 'success' : 'secondary' }} align-self-start">
+                                                                            {{ $submission->localizedStatus() }}
+                                                                        </span>
+                                                                    </div>
+                                                                @endforeach
+                                                            </div>
+                                                        </div>
+                                                    @endif
                                                 </div>
                                             @else
                                                 <div class="alert alert-light border mt-4 mb-0">{{ __('app.admin.applications.annex_empty_state') }}</div>
@@ -1162,7 +1256,7 @@
                                                 <tbody>
                                                     @forelse ($authorityApprovals as $approval)
                                                         @php
-                                                            $approvalSignal = $authorityApprovalSignals[$approval->getKey()] ?? ['enabled' => false, 'label' => null, 'is_overdue' => false, 'is_escalated' => false, 'due_at' => null];
+                                                            $approvalSignal = $authorityApprovalSignals[$approval->getKey()] ?? ['enabled' => false, 'label' => null, 'is_due_soon' => false, 'is_overdue' => false, 'is_escalated' => false, 'due_at' => null];
                                                             $approvalLetter = $officialLetterForApproval($approval);
                                                             $approvalModelTitle = $approvalLetter?->subject
                                                                 ?: ($approval->authority_code
@@ -1255,7 +1349,7 @@
                                                                                     <div class="approval-management-meta mb-2">{{ __('app.admin.applications.current_delegate') }}: {{ $approval->assignedTo?->displayName() ?? $sharedAuthorityInboxLabel }}</div>
                                                                                     <div class="authority-sla-badges mb-2">
                                                                                         @if ($approvalSignal['label'])
-                                                                                            <span class="badge bg-{{ $approvalSignal['is_overdue'] ? 'danger' : 'secondary' }}">{{ $approvalSignal['label'] }}</span>
+                                                                                            <span class="badge bg-{{ $approvalSignal['is_overdue'] ? 'danger' : ($approvalSignal['is_due_soon'] ? 'warning text-dark' : 'secondary') }}">{{ $approvalSignal['label'] }}</span>
                                                                                         @else
                                                                                             <span class="badge bg-light text-dark">{{ __('app.admin.authority_escalations.unconfigured_badge') }}</span>
                                                                                         @endif
@@ -1358,21 +1452,25 @@
                                                                 @endphp
                                                                 <tr>
                                                                     <td>{{ data_get($auditEvent->metadata, 'authority_label', __('app.dashboard.not_available')) }}</td>
-                                                                    <td>
-                                                                        @if ($auditType === 'authority_reassigned')
-                                                                            {{ __('app.admin.applications.audit_actions.reassigned') }}
-                                                                        @elseif ($auditType === 'authority_escalated')
-                                                                            {{ __('app.admin.applications.audit_actions.escalated') }}
-                                                                        @else
+	                                                                    <td>
+	                                                                        @if ($auditType === 'authority_reassigned')
+	                                                                            {{ __('app.admin.applications.audit_actions.reassigned') }}
+	                                                                        @elseif ($auditType === 'authority_sla_warning')
+	                                                                            {{ __('app.admin.applications.audit_actions.sla_warning') }}
+	                                                                        @elseif ($auditType === 'authority_escalated')
+	                                                                            {{ __('app.admin.applications.audit_actions.escalated') }}
+	                                                                        @else
                                                                             {{ __('app.admin.applications.audit_actions.status_updated') }}
                                                                         @endif
                                                                     </td>
                                                                     <td>{{ data_get($auditEvent->metadata, 'from_user_name', data_get($auditEvent->metadata, 'assigned_user_name', __('app.dashboard.not_available'))) }}</td>
-                                                                    <td>
-                                                                        @if ($auditType === 'authority_reassigned')
-                                                                            {{ data_get($auditEvent->metadata, 'to_user_name', $sharedAuthorityInboxLabel) ?: $sharedAuthorityInboxLabel }}
-                                                                        @elseif ($auditType === 'authority_escalated')
-                                                                            {{ __('app.admin.authority_escalations.escalated_badge') }}
+	                                                                    <td>
+	                                                                        @if ($auditType === 'authority_reassigned')
+	                                                                            {{ data_get($auditEvent->metadata, 'to_user_name', $sharedAuthorityInboxLabel) ?: $sharedAuthorityInboxLabel }}
+	                                                                        @elseif ($auditType === 'authority_sla_warning')
+	                                                                            {{ __('app.admin.authority_escalations.due_at_label', ['date' => data_get($auditEvent->metadata, 'due_at', __('app.dashboard.not_available'))]) }}
+	                                                                        @elseif ($auditType === 'authority_escalated')
+	                                                                            {{ __('app.admin.authority_escalations.escalated_badge') }}
                                                                         @else
                                                                             {{ data_get($auditEvent->metadata, 'approval_status_label', __('app.dashboard.not_available')) }}
                                                                         @endif

@@ -300,6 +300,7 @@ class AccessControlSeeder extends Seeder
             'reports.view.entity',
             'reports.view.all',
             'reports.export',
+            'notifications.view',
             'audit.view',
             'settings.manage',
         ];
@@ -334,6 +335,7 @@ class AccessControlSeeder extends Seeder
                 'permits.view.all',
                 'reports.view.all',
                 'reports.export',
+                'notifications.view',
                 'audit.view',
                 'settings.manage',
             ],
@@ -365,6 +367,7 @@ class AccessControlSeeder extends Seeder
                 'permits.view.all',
                 'reports.view.all',
                 'reports.export',
+                'notifications.view',
                 'audit.view',
             ],
             'rfc_intake_officer' => [

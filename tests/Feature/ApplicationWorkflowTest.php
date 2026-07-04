@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\Application;
+use App\Models\ApplicationAnnexSubmission;
 use App\Models\ApplicationAuthorityApproval;
+use App\Models\ApplicationDocument;
 use App\Models\ApprovalRoutingRule;
 use App\Models\Entity;
 use App\Models\Group;
@@ -15,15 +17,16 @@ use App\Models\WorkCategory;
 use App\Notifications\RegistrationApprovedNotification;
 use App\Services\ApplicationAuthorityApprovalSyncService;
 use App\Services\AuthorityApprovalNotificationService;
+use App\Services\AuthorityEscalationService;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
-use Illuminate\Support\Carbon;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
@@ -104,7 +107,87 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSee('name="airport_people[airport-person][nationality]"', false)
             ->assertSee('data-application-password-strength', false)
             ->assertSeeText(__('app.auth.password_rule_mixed'))
+            ->assertSee('formnovalidate', false)
             ->assertSee('js/form-wizard.js', false);
+
+        $content = $response->getContent();
+
+        $this->assertMatchesRegularExpression('/name="producer_name"[^>]*value="Applicant Owner"[^>]*readonly/s', $content);
+        $this->assertMatchesRegularExpression('/name="production_company_name"[^>]*value="Applicant Studio"[^>]*readonly/s', $content);
+        $this->assertMatchesRegularExpression('/name="contact_address"[^>]*value="Amman, Jordan"[^>]*readonly/s', $content);
+        $this->assertMatchesRegularExpression('/name="contact_phone"[^>]*value="0793333111"[^>]*readonly/s', $content);
+        $this->assertMatchesRegularExpression('/name="contact_email"[^>]*value="studio@applicant\.test"[^>]*readonly/s', $content);
+    }
+
+    public function test_application_profile_contact_fields_are_locked_to_approved_account_data(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $tamperedPayload = $this->applicationPayload([
+            'producer_name' => 'Tampered Producer',
+            'production_company_name' => 'Tampered Studio',
+            'contact_address' => 'Tampered Address',
+            'contact_phone' => '0000000000',
+            'contact_email' => 'tampered@example.test',
+        ]);
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $tamperedPayload)
+            ->assertRedirect();
+
+        $application = Application::query()->firstOrFail();
+
+        $this->assertSame('Applicant Owner', data_get($application->metadata, 'producer.producer_name'));
+        $this->assertSame('Applicant Studio', data_get($application->metadata, 'producer.production_company_name'));
+        $this->assertSame('Amman, Jordan', data_get($application->metadata, 'producer.contact_address'));
+        $this->assertSame('0793333111', data_get($application->metadata, 'producer.contact_phone'));
+        $this->assertSame('studio@applicant.test', data_get($application->metadata, 'producer.contact_email'));
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.update', $application), $this->applicationPayload([
+                'project_name' => 'Updated Locked Fields Check',
+                'producer_name' => 'Updated Tampered Producer',
+                'production_company_name' => 'Updated Tampered Studio',
+                'contact_address' => 'Updated Tampered Address',
+                'contact_phone' => '1111111111',
+                'contact_email' => 'updated-tampered@example.test',
+            ]))
+            ->assertRedirect(route('applications.show', $application));
+
+        $application->refresh();
+
+        $this->assertSame('Updated Locked Fields Check', $application->project_name);
+        $this->assertSame('Applicant Owner', data_get($application->metadata, 'producer.producer_name'));
+        $this->assertSame('Applicant Studio', data_get($application->metadata, 'producer.production_company_name'));
+        $this->assertSame('Amman, Jordan', data_get($application->metadata, 'producer.contact_address'));
+        $this->assertSame('0793333111', data_get($application->metadata, 'producer.contact_phone'));
+        $this->assertSame('studio@applicant.test', data_get($application->metadata, 'producer.contact_email'));
+
+        $metadata = $application->metadata ?? [];
+        data_set($metadata, 'producer.producer_name', 'Legacy Edited Producer');
+        data_set($metadata, 'producer.production_company_name', 'Legacy Edited Studio');
+        data_set($metadata, 'producer.contact_address', 'Legacy Edited Address');
+        data_set($metadata, 'producer.contact_phone', '2222222222');
+        data_set($metadata, 'producer.contact_email', 'legacy-edited@example.test');
+        $application->forceFill(['metadata' => $metadata])->save();
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application));
+
+        $application->refresh();
+
+        $this->assertSame('Applicant Owner', data_get($application->metadata, 'producer.producer_name'));
+        $this->assertSame('Applicant Studio', data_get($application->metadata, 'producer.production_company_name'));
+        $this->assertSame('Amman, Jordan', data_get($application->metadata, 'producer.contact_address'));
+        $this->assertSame('0793333111', data_get($application->metadata, 'producer.contact_phone'));
+        $this->assertSame('studio@applicant.test', data_get($application->metadata, 'producer.contact_email'));
     }
 
     public function test_international_account_password_validation_uses_localized_label(): void
@@ -126,6 +209,67 @@ class ApplicationWorkflowTest extends TestCase
 
         $this->assertNotEmpty($errors);
         $this->assertStringContainsString('كلمة مرور حساب ضابط الارتباط الدولي', $errors[0]);
+    }
+
+    public function test_applicant_can_save_incomplete_draft_but_cannot_submit_until_complete(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user, $entity] = $this->createApplicantContext();
+
+        $storeResponse = $this
+            ->actingAs($user)
+            ->post(route('applications.store'), [
+                'project_name' => 'Partial Draft',
+            ]);
+
+        $application = Application::query()->firstOrFail();
+
+        $storeResponse->assertRedirect(route('applications.show', $application));
+
+        $this->assertDatabaseHas('applications', [
+            'id' => $application->getKey(),
+            'entity_id' => $entity->getKey(),
+            'project_name' => 'Partial Draft',
+            'status' => 'draft',
+        ]);
+
+        $submitResponse = $this
+            ->from(route('applications.show', $application))
+            ->actingAs($user)
+            ->post(route('applications.submit', $application));
+
+        $submitResponse
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasErrors([
+                'project_nationality',
+                'work_category',
+                'release_method',
+                'planned_start_date',
+                'estimated_crew_count',
+                'safety_guidelines_acknowledged',
+            ]);
+
+        $this->assertSame('draft', $application->fresh()->status);
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.update', $application), $this->applicationPayload([
+                'project_name' => 'Completed Draft',
+            ]))
+            ->assertRedirect(route('applications.show', $application));
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application));
+
+        $this->assertDatabaseHas('applications', [
+            'id' => $application->getKey(),
+            'project_name' => 'Completed Draft',
+            'status' => 'submitted',
+        ]);
     }
 
     public function test_application_form_accepts_lookup_backed_nationalities(): void
@@ -386,7 +530,7 @@ class ApplicationWorkflowTest extends TestCase
             'status' => 'draft',
         ]);
 
-        $this->assertSame('Local Producer', data_get($application->metadata, 'producer.producer_name'));
+        $this->assertSame('Applicant Owner', data_get($application->metadata, 'producer.producer_name'));
         $this->assertSame([], data_get($application->metadata, 'requirements.required_approvals'));
         $this->assertDatabaseHas('application_status_histories', [
             'application_id' => $application->getKey(),
@@ -474,10 +618,23 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertDatabaseHas('application_official_letters', [
             'application_id' => $application->getKey(),
             'application_authority_approval_id' => null,
+            'recipient_type' => 'authority',
             'serial_number' => $application->code.'-BOOK-01',
             'status' => 'draft',
         ]);
-        $this->assertSame(2, $application->fresh()->officialLetters()->count());
+        $this->assertDatabaseHas('application_official_letters', [
+            'application_id' => $application->getKey(),
+            'application_authority_approval_id' => null,
+            'target_entity_id' => $entity->getKey(),
+            'recipient_type' => 'applicant',
+            'serial_number' => $application->code.'-RFC-FAC-01',
+            'status' => 'issued',
+        ]);
+        $this->assertSame(3, $application->fresh()->officialLetters()->count());
+        $this->assertTrue($user->fresh()->unreadNotifications->contains(
+            fn ($notification) => data_get($notification->data, 'type_key') === 'official_letter_issued'
+                && data_get($notification->data, 'notification_highlight_summary') === 'Filming facilitation letter: Filming facilitation letter for request '.$application->code
+        ));
         $this->assertFalse($authorityUser->fresh()->unreadNotifications->contains(
             fn ($notification) => data_get($notification->data, 'type_key') === 'authority_approval_requested'
         ));
@@ -558,11 +715,11 @@ class ApplicationWorkflowTest extends TestCase
             'work_category_other' => 'Hybrid docudrama',
             'release_methods' => ['cinema', 'web', 'other'],
             'release_method_other' => 'Community screenings',
-	            'schedule_phases' => [
-	                'preparation' => ['start_date' => '2026-04-20', 'end_date' => '2026-04-30'],
-	                'wrap' => ['start_date' => '2026-05-10', 'end_date' => '2026-05-10'],
-	                'post_production' => ['start_date' => '2026-05-11', 'end_date' => '2026-05-30'],
-	            ],
+            'schedule_phases' => [
+                'preparation' => ['start_date' => '2026-04-20', 'end_date' => '2026-04-30'],
+                'wrap' => ['start_date' => '2026-05-10', 'end_date' => '2026-05-10'],
+                'post_production' => ['start_date' => '2026-05-11', 'end_date' => '2026-05-30'],
+            ],
             'local_spend_estimate' => 55000,
             'budget_items' => [
                 'jordanian_actors' => ['units' => 3, 'total' => 5000],
@@ -581,9 +738,9 @@ class ApplicationWorkflowTest extends TestCase
             'work_content_summary_synopsis' => 'A road sequence with controlled public access.',
             'work_content_summary_sensitive_notes' => 'Contains a simulated checkpoint scene.',
             'work_content_summary_confirmed' => '1',
-	            'cast_crew' => [
-	                ['name' => 'Jordanian Lead', 'role' => 'Actor', 'nationality' => 'Jordanian', 'gender' => 'male', 'birth_date' => '1990-03-15', 'identity_number' => 'J12345'],
-	            ],
+            'cast_crew' => [
+                ['name' => 'Jordanian Lead', 'role' => 'Actor', 'nationality' => 'Jordanian', 'gender' => 'male', 'birth_date' => '1990-03-15', 'identity_number' => 'J12345'],
+            ],
             'filming_locations' => [
                 ['governorate' => 'amman', 'location_name' => 'Downtown Amman', 'address' => 'GPS pin 31.9,35.9', 'nature' => 'Open public street', 'location_type' => 'public_locations', 'start_date' => '2026-05-02', 'end_date' => '2026-05-03', 'notes' => 'Traffic support needed'],
             ],
@@ -634,11 +791,11 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertSame('non_jordanian', data_get($application->metadata, 'international.international_producer_nationality'));
         $this->assertSame('liaison.global@example.com', data_get($application->metadata, 'international.account.email'));
         $this->assertTrue(data_get($application->metadata, 'international.account.read_only'));
-	        $this->assertTrue(data_get($application->metadata, 'annex.work_content_summary.confirmed'));
-	        $this->assertSame('Jordanian Lead', data_get($application->metadata, 'annex.cast_crew.0.name'));
-	        $this->assertSame('male', data_get($application->metadata, 'annex.cast_crew.0.gender'));
-	        $this->assertSame('1990-03-15', data_get($application->metadata, 'annex.cast_crew.0.birth_date'));
-	        $this->assertSame('Downtown Amman', data_get($application->metadata, 'annex.filming_locations.0.location_name'));
+        $this->assertTrue(data_get($application->metadata, 'annex.work_content_summary.confirmed'));
+        $this->assertSame('Jordanian Lead', data_get($application->metadata, 'annex.cast_crew.0.name'));
+        $this->assertSame('male', data_get($application->metadata, 'annex.cast_crew.0.gender'));
+        $this->assertSame('1990-03-15', data_get($application->metadata, 'annex.cast_crew.0.birth_date'));
+        $this->assertSame('Downtown Amman', data_get($application->metadata, 'annex.filming_locations.0.location_name'));
         $this->assertSame('GPS pin 31.9,35.9', data_get($application->metadata, 'annex.filming_locations.0.address'));
         $this->assertSame('Road lockup from 6 AM', data_get($application->metadata, 'annex.special_location_requirements.road_closures.notes'));
         $this->assertSame('RJ101', data_get($application->metadata, 'annex.equipment_flights.0.flight_number'));
@@ -764,9 +921,9 @@ class ApplicationWorkflowTest extends TestCase
         $response = $this->actingAs($applicant)->post(route('applications.annex.update', $application), [
             'work_content_summary_synopsis' => 'Updated annex synopsis after submission.',
             'work_content_summary_confirmed' => '1',
-	            'cast_crew' => [
-	                ['name' => 'New Annex Actor', 'role' => 'Lead', 'nationality' => 'jordanian', 'gender' => 'female', 'birth_date' => '1995-08-20', 'identity_number' => 'J-900'],
-	            ],
+            'cast_crew' => [
+                ['name' => 'New Annex Actor', 'role' => 'Lead', 'nationality' => 'jordanian', 'gender' => 'female', 'birth_date' => '1995-08-20', 'identity_number' => 'J-900'],
+            ],
             'safety_guidelines_acknowledged' => '1',
             'airport_filming_airport_name' => 'Queen Alia International Airport',
             'airport_people' => [
@@ -778,39 +935,69 @@ class ApplicationWorkflowTest extends TestCase
 
         $application->refresh();
 
-	        $this->assertSame('Updated annex synopsis after submission.', data_get($application->metadata, 'annex.work_content_summary.synopsis'));
-	        $this->assertTrue(data_get($application->metadata, 'annex.work_content_summary.confirmed'));
-	        $this->assertSame('New Annex Actor', data_get($application->metadata, 'annex.cast_crew.0.name'));
-	        $this->assertSame('female', data_get($application->metadata, 'annex.cast_crew.0.gender'));
-	        $this->assertSame('1995-08-20', data_get($application->metadata, 'annex.cast_crew.0.birth_date'));
-	        $this->assertSame('Queen Alia International Airport', data_get($application->metadata, 'annex.airport_filming.airport_name'));
-        $this->assertSame('Airport Access Lead', data_get($application->metadata, 'annex.airport_people.0.full_name'));
+        $this->assertNull(data_get($application->metadata, 'annex.work_content_summary.synopsis'));
+        $this->assertNull(data_get($application->metadata, 'annex.cast_crew.0.name'));
+        $this->assertSame('Wadi Rum Reserve', data_get($application->metadata, 'annex.filming_locations.0.location_name'));
+
+        $submission = ApplicationAnnexSubmission::query()->firstOrFail();
+
+        $this->assertSame($application->getKey(), $submission->application_id);
+        $this->assertSame(ApplicationAnnexSubmission::STATUS_SUBMITTED, $submission->status);
+        $this->assertSame('Updated annex synopsis after submission.', data_get($submission->payload, 'work_content_summary.synopsis'));
+        $this->assertTrue(data_get($submission->payload, 'work_content_summary.confirmed'));
+        $this->assertSame('New Annex Actor', data_get($submission->payload, 'cast_crew.0.name'));
+        $this->assertSame('female', data_get($submission->payload, 'cast_crew.0.gender'));
+        $this->assertSame('1995-08-20', data_get($submission->payload, 'cast_crew.0.birth_date'));
+        $this->assertSame('Queen Alia International Airport', data_get($submission->payload, 'airport_filming.airport_name'));
+        $this->assertSame('Airport Access Lead', data_get($submission->payload, 'airport_people.0.full_name'));
+        $this->assertSame('Wadi Rum Reserve', data_get($submission->previous_payload, 'filming_locations.0.location_name'));
 
         $this->assertDatabaseHas('application_status_histories', [
             'application_id' => $application->getKey(),
             'status' => 'submitted',
-            'note' => 'Attached annex forms were updated by the applicant.',
+            'note' => 'An annex update was submitted by the applicant for RFC review.',
         ]);
         $this->assertNotNull(data_get($application->metadata, 'applicant_annex_submission.submitted_at'));
+        $this->assertSame(ApplicationAnnexSubmission::STATUS_SUBMITTED, data_get($application->metadata, 'applicant_annex_submission.status'));
         $this->assertSame($applicant->getKey(), data_get($application->metadata, 'applicant_annex_submission.submitted_by_user_id'));
 
-        $this->actingAs($applicant)
+        $applicantPendingResponse = $this->actingAs($applicant)
             ->get(route('applications.show', $application))
-            ->assertOk()
+            ->assertOk();
+
+        $applicantPendingResponse
             ->assertSee('applicant-annex-table', false)
+            ->assertSeeText('Annex under RFC review')
             ->assertSee('WorkContentSummary', false)
             ->assertSeeText('Annex 1')
             ->assertSeeText('Updated annex synopsis after submission.')
             ->assertSeeText('New Annex Actor')
             ->assertSeeText('Airport Access Lead');
 
+        $this->assertMatchesRegularExpression('/<button[^>]*data-annex-add-button[^>]*disabled/s', $applicantPendingResponse->getContent());
+
         $this->actingAs($admin)
             ->get(route('admin.applications.show', $application))
             ->assertOk()
             ->assertSee('href="#profile-Annex"', false)
             ->assertSeeText('Attached Annexes:')
+            ->assertSeeText('Annex awaiting RFC review')
             ->assertSeeText('Updated annex synopsis after submission.')
             ->assertSeeText('New Annex Actor');
+
+        $this->actingAs($admin)->post(route('admin.applications.annex-submissions.review', [$application, $submission]), [
+            'decision' => ApplicationAnnexSubmission::STATUS_APPROVED,
+        ])->assertRedirect(route('admin.applications.show', $application));
+
+        $application->refresh();
+        $submission->refresh();
+
+        $this->assertSame(ApplicationAnnexSubmission::STATUS_APPROVED, $submission->status);
+        $this->assertSame('Updated annex synopsis after submission.', data_get($application->metadata, 'annex.work_content_summary.synopsis'));
+        $this->assertTrue(data_get($application->metadata, 'annex.work_content_summary.confirmed'));
+        $this->assertSame('New Annex Actor', data_get($application->metadata, 'annex.cast_crew.0.name'));
+        $this->assertSame('Queen Alia International Airport', data_get($application->metadata, 'annex.airport_filming.airport_name'));
+        $this->assertSame(ApplicationAnnexSubmission::STATUS_APPROVED, data_get($application->metadata, 'applicant_annex_submission.status'));
     }
 
     public function test_admin_can_review_submitted_application_and_request_clarification(): void
@@ -1054,7 +1241,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $uploadResponse->assertRedirect(route('applications.show', $application));
 
-        $documentPath = \App\Models\ApplicationDocument::query()->value('file_path');
+        $documentPath = ApplicationDocument::query()->value('file_path');
 
         Storage::disk('local')->assertExists($documentPath);
         $this->assertDatabaseHas('application_documents', [
@@ -1083,7 +1270,7 @@ class ApplicationWorkflowTest extends TestCase
             ->assertOk()
             ->assertDontSeeText('Uploaded files');
 
-        $documentId = \App\Models\ApplicationDocument::query()->value('id');
+        $documentId = ApplicationDocument::query()->value('id');
 
         $reviewResponse = $this->actingAs($admin)->post(route('admin.applications.documents.review', [$application, $documentId]), [
             'status' => 'needs_revision',
@@ -1164,6 +1351,7 @@ class ApplicationWorkflowTest extends TestCase
             'application_id' => $application->getKey(),
             'application_authority_approval_id' => null,
             'target_entity_id' => $publicSecurityEntity->getKey(),
+            'recipient_type' => 'authority',
             'status' => 'draft',
         ]);
 
@@ -1176,9 +1364,17 @@ class ApplicationWorkflowTest extends TestCase
             'application_id' => $application->getKey(),
             'application_authority_approval_id' => null,
             'target_entity_id' => $environmentApproval->entity_id,
+            'recipient_type' => 'authority',
             'status' => 'draft',
         ]);
-        $this->assertSame(2, $application->officialLetters()->count());
+        $this->assertDatabaseHas('application_official_letters', [
+            'application_id' => $application->getKey(),
+            'application_authority_approval_id' => null,
+            'recipient_type' => 'applicant',
+            'serial_number' => $application->code.'-RFC-FAC-01',
+            'status' => 'issued',
+        ]);
+        $this->assertSame(3, $application->officialLetters()->count());
 
         $letter = $application->officialLetters()
             ->where('target_entity_id', $publicSecurityEntity->getKey())
@@ -1206,8 +1402,13 @@ class ApplicationWorkflowTest extends TestCase
             'status' => 'draft',
         ]);
         $this->assertNull($letter->fresh()->issued_at);
+        $this->assertTrue($applicant->fresh()->unreadNotifications->contains(
+            fn ($notification) => data_get($notification->data, 'type_key') === 'official_letter_issued'
+                && data_get($notification->data, 'notification_highlight_summary') === 'Filming facilitation letter: Filming facilitation letter for request '.$application->code
+        ));
         $this->assertFalse($applicant->fresh()->unreadNotifications->contains(
             fn ($notification) => data_get($notification->data, 'type_key') === 'official_letter_issued'
+                && data_get($notification->data, 'notification_highlight_summary') === 'Official book: Updated facilitation book'
         ));
         $this->assertFalse($authorityUser->fresh()->unreadNotifications->contains(
             fn ($notification) => data_get($notification->data, 'type_key') === 'official_letter_issued'
@@ -2328,6 +2529,132 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertMatchesRegularExpression('/Due at: .* (AM|PM)/', $authorityShowResponse->getContent());
     }
 
+    public function test_authority_sla_warning_notifies_rfc_before_deadline_without_escalating(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $now = Carbon::parse('2026-07-04 10:00:00');
+        Carbon::setTestNow($now);
+
+        try {
+            $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+            $rfcEntity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+            [$user, $entity] = $this->createApplicantContext();
+            [$authorityUser, $authorityEntity] = $this->createAuthorityContext([
+                'name' => 'SLA Warning Authority Owner',
+                'username' => 'sla-warning-authority-owner',
+                'email' => 'sla-warning-authority-owner@example.com',
+            ]);
+
+            $rfcAdmin = User::query()->create([
+                'name' => 'RFC SLA Warning Admin',
+                'username' => 'rfc_sla_warning_admin',
+                'email' => 'rfc-sla-warning-admin@example.com',
+                'phone' => '0793111333',
+                'status' => 'active',
+                'password' => Hash::make('Password@123'),
+            ]);
+
+            $rfcAdmin->entities()->attach($rfcEntity->getKey(), [
+                'is_primary' => true,
+                'status' => 'active',
+                'joined_at' => $now,
+            ]);
+
+            app(PermissionRegistrar::class)->setPermissionsTeamId($rfcEntity->getKey());
+            $rfcAdmin->assignRole('rfc_admin');
+            app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+            $authorityEntity->forceFill([
+                'metadata' => [
+                    ...($authorityEntity->metadata ?? []),
+                    'authority_sla' => [
+                        'response_time_days' => 2,
+                        'escalation_user_ids' => [$admin->getKey()],
+                        'escalation_role_names' => ['rfc_admin'],
+                    ],
+                ],
+            ])->save();
+
+            $application = Application::query()->create([
+                'code' => 'REQ-50005',
+                'entity_id' => $entity->getKey(),
+                'submitted_by_user_id' => $user->getKey(),
+                'project_name' => 'Due Soon Authority Project',
+                'project_nationality' => 'jordanian',
+                'work_category' => 'feature_film',
+                'release_method' => 'cinema',
+                'planned_start_date' => '2026-10-01',
+                'planned_end_date' => '2026-10-12',
+                'project_summary' => 'Close to the authority deadline.',
+                'status' => 'submitted',
+                'submitted_at' => $now->copy()->subHours(36),
+            ]);
+
+            $approval = $application->authorityApprovals()->create([
+                'authority_code' => 'public_security',
+                'entity_id' => $authorityEntity->getKey(),
+                'assigned_user_id' => $authorityUser->getKey(),
+                'assigned_at' => $now->copy()->subHours(36),
+                'status' => 'pending',
+            ]);
+
+            $approval->forceFill([
+                'created_at' => $now->copy()->subHours(36),
+                'updated_at' => $now->copy()->subHours(36),
+            ])->saveQuietly();
+
+            $signal = app(AuthorityEscalationService::class)->signalForApproval($approval->fresh(), $now);
+
+            $this->assertTrue($signal['is_due_soon']);
+            $this->assertFalse($signal['is_overdue']);
+
+            Artisan::call('authority-approvals:check-escalations');
+
+            $approval->refresh();
+
+            $this->assertNotNull($approval->sla_warning_notified_at);
+            $this->assertNull($approval->escalated_at);
+            $this->assertTrue($admin->fresh()->notifications->contains(
+                fn ($notification) => data_get($notification->data, 'type_key') === 'authority_approval_sla_warning'
+            ));
+            $this->assertTrue($rfcAdmin->fresh()->notifications->contains(
+                fn ($notification) => data_get($notification->data, 'type_key') === 'authority_approval_sla_warning'
+            ));
+            $this->assertFalse($authorityUser->fresh()->notifications->contains(
+                fn ($notification) => data_get($notification->data, 'type_key') === 'authority_approval_sla_warning'
+            ));
+
+            Artisan::call('authority-approvals:check-escalations');
+
+            $this->assertSame(1, $admin->fresh()->notifications
+                ->filter(fn ($notification) => data_get($notification->data, 'type_key') === 'authority_approval_sla_warning')
+                ->count());
+
+            $reportResponse = $this->actingAs($admin)->get(route('admin.authority-escalations.report', [
+                'window' => '30',
+                'authority' => $authorityEntity->getKey(),
+            ]));
+
+            $reportResponse
+                ->assertOk()
+                ->assertSeeText('Approaching response deadlines')
+                ->assertSeeText('Due Soon Authority Project')
+                ->assertSeeText('Due soon approvals');
+
+            $indexResponse = $this->actingAs($admin)->get(route('admin.applications.index'));
+
+            $indexResponse
+                ->assertOk()
+                ->assertSeeText('Requests with authorities due soon')
+                ->assertSeeText('Due Soon Authority Project')
+                ->assertSeeText('Due soon:');
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_authority_pages_show_configured_response_time_for_legacy_code_based_approval(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -2417,10 +2744,10 @@ class ApplicationWorkflowTest extends TestCase
         $response
             ->assertOk()
             ->assertSeeText('Project Information')
-            ->assertSeeText('Studio One')
-            ->assertSeeText('Amman')
-            ->assertSeeText('065555555')
-            ->assertSeeText('producer@example.com')
+            ->assertSeeText('Applicant Studio')
+            ->assertSeeText('Amman, Jordan')
+            ->assertSeeText('0793333111')
+            ->assertSeeText('studio@applicant.test')
             ->assertSeeText('Liaison Person')
             ->assertSeeText('Open profile')
             ->assertDontSeeText('Producer Information')
@@ -2910,7 +3237,7 @@ class ApplicationWorkflowTest extends TestCase
             'submitted_at' => now(),
         ]);
 
-        \App\Models\ScoutingRequest::query()->create([
+        ScoutingRequest::query()->create([
             'code' => 'SCOUT-88001',
             'entity_id' => $entity->getKey(),
             'submitted_by_user_id' => $user->getKey(),

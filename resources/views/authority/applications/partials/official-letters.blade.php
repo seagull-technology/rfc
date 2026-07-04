@@ -86,7 +86,7 @@
                 <div class="meta pt-2">
                     <div class="mb-2"><span class="form-label px-2">{{ __('app.official_letters.letter_date') }}:</span> <span>{{ $letter->letter_date?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</span></div>
                     <div class="mb-2"><span class="form-label px-2">{{ __('app.official_letters.serial_number') }}:</span> <span>{{ $letter->serial_number ?: __('app.dashboard.not_available') }}</span></div>
-                    <div class="mb-2"><span class="form-label px-2">{{ __('app.official_letters.target_entity') }}:</span> <span>{{ $letter->targetEntity?->displayName() ?? __('app.dashboard.not_available') }}</span></div>
+                    <div class="mb-2"><span class="form-label px-2">{{ __('app.official_letters.target_entity') }}:</span> <span>{{ $letter->recipientDisplayName() }}</span></div>
                     <div class="mb-2"><span class="form-label px-2">{{ $letter->recipient_prefix ?: __('app.official_letters.recipient_prefix') }}:</span> <span>{{ $letter->recipient_name }}</span></div>
                 </div>
                 <div class="subject mt-3">

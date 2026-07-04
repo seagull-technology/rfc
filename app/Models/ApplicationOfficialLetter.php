@@ -15,6 +15,7 @@ class ApplicationOfficialLetter extends Model
         'application_id',
         'application_authority_approval_id',
         'target_entity_id',
+        'recipient_type',
         'created_by_user_id',
         'updated_by_user_id',
         'letter_date',
@@ -65,5 +66,19 @@ class ApplicationOfficialLetter extends Model
     public function localizedStatus(): string
     {
         return __('app.official_letters.statuses.'.Str::lower($this->status ?: 'draft'));
+    }
+
+    public function isApplicantLetter(): bool
+    {
+        return $this->recipient_type === 'applicant';
+    }
+
+    public function recipientDisplayName(): string
+    {
+        if ($this->isApplicantLetter()) {
+            return $this->targetEntity?->displayName() ?? __('app.official_letters.applicant_recipient');
+        }
+
+        return $this->targetEntity?->displayName() ?? __('app.dashboard.not_available');
     }
 }

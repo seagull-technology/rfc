@@ -21,6 +21,7 @@ use App\Http\Controllers\Admin\FormLookupOptionController;
 use App\Http\Controllers\Admin\GroupManagementController;
 use App\Http\Controllers\Admin\IntegrationDiagnosticsController;
 use App\Http\Controllers\Admin\NationalityLookupController;
+use App\Http\Controllers\Admin\NotificationCenterController;
 use App\Http\Controllers\Admin\PermitRegistryController;
 use App\Http\Controllers\Admin\ProducerDirectoryController;
 use App\Http\Controllers\Admin\ReportsController;
@@ -185,6 +186,9 @@ Route::group([
                 Route::post('/applications/{application}/issue-facilitation-letter', [ApplicationManagementController::class, 'issueFacilitationLetter'])
                     ->middleware('permission:applications.review')
                     ->name('applications.issue-facilitation-letter');
+                Route::post('/applications/{application}/annex-submissions/{annexSubmission}/review', [ApplicationManagementController::class, 'reviewAnnexSubmission'])
+                    ->middleware('permission:applications.review')
+                    ->name('applications.annex-submissions.review');
                 Route::post('/applications/{application}/finalize', [ApplicationManagementController::class, 'finalize'])
                     ->middleware('permission:applications.approve')
                     ->name('applications.finalize');
@@ -276,6 +280,16 @@ Route::group([
                 Route::get('/groups', [GroupManagementController::class, 'index'])
                     ->middleware('permission:groups.view')
                     ->name('groups.index');
+                Route::post('/groups/roles/{role}/permissions', [GroupManagementController::class, 'updateRolePermissions'])
+                    ->middleware('permission:permissions.manage')
+                    ->name('groups.roles.permissions.update');
+
+                Route::get('/notification-center', [NotificationCenterController::class, 'index'])
+                    ->middleware('permission:notifications.view')
+                    ->name('notification-center.index');
+                Route::get('/notification-center/export', [NotificationCenterController::class, 'export'])
+                    ->middleware('permission:notifications.view')
+                    ->name('notification-center.export');
 
                 Route::get('/integrations', [IntegrationDiagnosticsController::class, 'index'])
                     ->middleware('permission:settings.manage')
@@ -482,6 +496,9 @@ Route::group([
                 Route::post('/users/{user}/update', [UserManagementController::class, 'update'])
                     ->middleware('permission:users.manage')
                     ->name('users.update');
+                Route::post('/users/{user}/password', [UserManagementController::class, 'updatePassword'])
+                    ->middleware('permission:users.manage')
+                    ->name('users.password');
                 Route::post('/users/{user}/status', [UserManagementController::class, 'updateStatus'])
                     ->middleware('permission:users.manage')
                     ->name('users.status');

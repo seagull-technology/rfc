@@ -59,6 +59,7 @@
                             <div class="authority-badge-stack">
                             <span class="badge bg-dark">{{ __('app.admin.authority_escalations.metrics.authorities') }}: {{ $stats['authorities'] }}</span>
                             <span class="badge bg-secondary">{{ __('app.admin.authority_escalations.metrics.configured') }}: {{ $stats['configured'] }}</span>
+                            <span class="badge bg-warning text-dark">{{ __('app.admin.authority_escalations.metrics.due_soon_approvals') }}: {{ $stats['due_soon_approvals'] }}</span>
                             <span class="badge bg-danger">{{ __('app.admin.authority_escalations.metrics.overdue_approvals') }}: {{ $stats['overdue_approvals'] }}</span>
                             </div>
                         </div>
@@ -71,9 +72,10 @@
             ['label' => __('app.admin.authority_escalations.metrics.authorities'), 'value' => $stats['authorities']],
             ['label' => __('app.admin.authority_escalations.metrics.configured'), 'value' => $stats['configured']],
             ['label' => __('app.admin.authority_escalations.metrics.live_approvals'), 'value' => $stats['live_approvals']],
+            ['label' => __('app.admin.authority_escalations.metrics.due_soon_approvals'), 'value' => $stats['due_soon_approvals']],
             ['label' => __('app.admin.authority_escalations.metrics.overdue_approvals'), 'value' => $stats['overdue_approvals']],
         ] as $metric)
-            <div class="col-md-3">
+            <div class="col-xl col-md-4">
                 <div class="card">
                     <div class="card-body">
                         <h6>{{ $metric['label'] }}</h6>
@@ -97,6 +99,7 @@
                                     </div>
                                     <div class="authority-badge-stack">
                                         <span class="badge bg-info-subtle text-dark">{{ __('app.admin.authority_escalations.live_badges.live', ['count' => $row['live_approvals']]) }}</span>
+                                        <span class="badge bg-warning-subtle text-dark">{{ __('app.admin.authority_escalations.live_badges.due_soon', ['count' => $row['due_soon_approvals']]) }}</span>
                                         <span class="badge bg-danger-subtle text-dark">{{ __('app.admin.authority_escalations.live_badges.overdue', ['count' => $row['overdue_approvals']]) }}</span>
                                         <span class="badge bg-dark-subtle text-dark">{{ __('app.admin.authority_escalations.live_badges.escalated', ['count' => $row['escalated_approvals']]) }}</span>
                                     </div>

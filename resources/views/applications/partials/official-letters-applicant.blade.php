@@ -19,7 +19,7 @@
                             <img src="{{ asset('images/envelope.png') }}" class="avatar-50 p-1 rounded-circle img-fluid bg-light" alt="{{ __('app.official_letters.title') }}" loading="lazy">
                             <div class="ms-3">
                                 <h5 class="mt-2 mb-1">
-                                    <span class="fw-600">{{ $letter->targetEntity?->displayName() ?? __('app.dashboard.not_available') }}</span>
+                                    <span class="fw-600">{{ $letter->recipientDisplayName() }}</span>
                                 </h5>
                                 <div class="text-muted small">
                                     {{ $letter->letter_date?->format('Y-m-d') ?: __('app.dashboard.not_available') }}
@@ -63,7 +63,7 @@
                     <img src="{{ asset('images/logo.svg') }}" alt="{{ config('app.name') }}" style="max-height: 110px;">
                 </div>
                 <div class="meta pt-2">
-                    <div><span class="form-label px-2">{{ __('app.official_letters.target_entity') }}:</span> <span>{{ $letter->targetEntity?->displayName() ?? __('app.dashboard.not_available') }}</span></div>
+                    <div><span class="form-label px-2">{{ __('app.official_letters.target_entity') }}:</span> <span>{{ $letter->recipientDisplayName() }}</span></div>
                     <div><span class="form-label px-2">{{ __('app.official_letters.letter_date') }}:</span> <span>{{ $letter->letter_date?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</span></div>
                     <div><span class="form-label px-2">{{ __('app.official_letters.serial_number') }}:</span> <span>{{ $letter->serial_number ?: __('app.dashboard.not_available') }}</span></div>
                     <div><span class="form-label px-2">{{ $letter->recipient_prefix ?: __('app.official_letters.recipient_prefix') }}:</span> <span>{{ $letter->recipient_name }}</span></div>

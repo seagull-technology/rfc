@@ -41,7 +41,9 @@ class AuthFlowTest extends TestCase
             'password_confirmation' => 'Password123!',
         ]);
 
-        $response->assertRedirect(route('login'));
+        $response
+            ->assertRedirect(route('login'))
+            ->assertSessionHas('status', 'Your account has been submitted for review. We will notify you by email and SMS once it is approved, rejected, or requires additional information.');
 
         $user = User::query()->where('email', 'ali@example.com')->firstOrFail();
         $entity = Entity::query()->where('national_id', '9876543210')->firstOrFail();
@@ -192,7 +194,9 @@ class AuthFlowTest extends TestCase
             'password_confirmation' => 'Password123!',
         ]);
 
-        $response->assertRedirect(route('login'));
+        $response
+            ->assertRedirect(route('login'))
+            ->assertSessionHas('status', 'Your account has been submitted for review. We will notify you by email and SMS once it is approved, rejected, or requires additional information.');
 
         $entity = Entity::query()->where('registration_no', 'REG-1122')->firstOrFail();
         $user = User::query()->where('email', 'info@futurefilms.test')->firstOrFail();

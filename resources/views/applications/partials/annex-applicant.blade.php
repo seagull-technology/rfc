@@ -29,6 +29,8 @@
     $rowHasData = static fn ($row): bool => collect((array) $row)->flatten()->contains(fn ($value) => filled($value));
     $rowsHaveData = static fn ($rows): bool => collect((array) $rows)->contains(fn ($row) => $rowHasData($row));
     $canUpdateApplicantAnnex = $application->canUpdateApplicantAnnex();
+    $annexSubmissions = collect($annexSubmissions ?? $application->annexSubmissions ?? []);
+    $pendingAnnexSubmission = $annexSubmissions->firstWhere('status', \App\Models\ApplicationAnnexSubmission::STATUS_SUBMITTED);
     $locationTypeOptionsForGovernorate = static function ($governorateCode) use ($locationTypeOptions, $locationTypesByGovernorate) {
         $governorateCode = filled($governorateCode) ? (string) $governorateCode : null;
 
@@ -124,6 +126,28 @@
                 <h2 class="episode-playlist-title wp-heading-inline">
                     <span class="position-relative">{{ __('app.documents.annex_forms_heading') }}</span>
                 </h2>
+
+                @if ($pendingAnnexSubmission)
+                    <div class="alert alert-warning border mt-4 mb-0">
+                        <div class="fw-600">{{ __('app.annex_submissions.pending_applicant_title') }}</div>
+                        <div>{{ __('app.annex_submissions.pending_applicant_body') }}</div>
+                        <div class="border-top mt-3 pt-3">
+                            @include('applications.partials.annex-summary', [
+                                'application' => $application,
+                                'annexPayload' => $pendingAnnexSubmission->payload ?? [],
+                                'tableClass' => 'table table-striped mb-0',
+                            ])
+                        </div>
+                    </div>
+                @elseif ($annexSubmissions->isNotEmpty())
+                    <div class="alert alert-light border mt-4 mb-0">
+                        <div class="fw-600">{{ __('app.annex_submissions.latest_status_title') }}</div>
+                        <div>{{ $annexSubmissions->first()?->localizedStatus() }}</div>
+                        @if (filled($annexSubmissions->first()?->review_note))
+                            <div class="mt-2">{{ $annexSubmissions->first()?->review_note }}</div>
+                        @endif
+                    </div>
+                @endif
 
                 <div class="row">
                     <div class="table-responsive mt-4 applicant-annex-table-wrap">

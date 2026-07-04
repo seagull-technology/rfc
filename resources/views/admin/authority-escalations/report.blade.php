@@ -117,6 +117,7 @@
         @foreach ([
             ['label' => __('app.admin.authority_escalations.metrics.authorities'), 'value' => $stats['authorities']],
             ['label' => __('app.admin.authority_escalations.metrics.live_approvals'), 'value' => $stats['live_approvals']],
+            ['label' => __('app.admin.authority_escalations.metrics.due_soon_approvals'), 'value' => $stats['due_soon_approvals']],
             ['label' => __('app.admin.authority_escalations.metrics.overdue_approvals'), 'value' => $stats['overdue_approvals']],
             ['label' => __('app.admin.authority_escalations.metrics.escalated_approvals'), 'value' => $stats['escalated_approvals']],
             ['label' => __('app.admin.authority_escalations.recent_escalations'), 'value' => $stats['recent_escalations']],
@@ -147,6 +148,7 @@
                                         </div>
                                     </div>
                                     <div class="badge-stack">
+                                        <span class="badge bg-warning-subtle text-dark">{{ __('app.admin.authority_escalations.live_badges.due_soon', ['count' => $row['due_soon_live_approvals']]) }}</span>
                                         <span class="badge bg-danger-subtle text-dark">{{ __('app.admin.authority_escalations.live_badges.overdue', ['count' => $row['overdue_live_approvals']]) }}</span>
                                         <span class="badge bg-dark-subtle text-dark">{{ __('app.admin.authority_escalations.live_badges.escalated', ['count' => $row['escalated_live_approvals']]) }}</span>
                                         <span class="badge bg-info-subtle text-dark">{{ __('app.admin.authority_escalations.live_badges.live', ['count' => $row['live_approvals']]) }}</span>
@@ -165,6 +167,10 @@
                                     <div class="report-metric">
                                         <h6>{{ __('app.admin.authority_escalations.metrics.live_approvals') }}</h6>
                                         <div class="h3 mb-0">{{ $row['live_approvals'] }}</div>
+                                    </div>
+                                    <div class="report-metric">
+                                        <h6>{{ __('app.admin.authority_escalations.metrics.due_soon_approvals') }}</h6>
+                                        <div class="h3 mb-0">{{ $row['due_soon_live_approvals'] }}</div>
                                     </div>
                                     <div class="report-metric">
                                         <h6>{{ __('app.admin.authority_escalations.metrics.overdue_approvals') }}</h6>
@@ -217,6 +223,45 @@
                         </div>
                     </div>
                 @endforelse
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card overdue-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                        <div>
+                            <h4 class="mb-1">{{ __('app.admin.authority_escalations.top_due_soon_title') }}</h4>
+                            <div class="report-meta">{{ __('app.admin.authority_escalations.top_due_soon_intro') }}</div>
+                        </div>
+                    </div>
+
+                    @forelse ($recentDueSoonApprovals as $item)
+                        <div class="report-list-item">
+                            <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+                                <div>
+                                    <h5 class="mb-1">{{ $item['approval']->application?->project_name ?? __('app.dashboard.not_available') }}</h5>
+                                    <div class="report-meta">
+                                        {{ $item['approval']->application?->code ?? __('app.dashboard.not_available') }}
+                                        · {{ $item['approval']->localizedAuthority() }}
+                                    </div>
+                                    <div class="report-meta mt-1">
+                                        {{ $item['approval']->assignedTo?->displayName() ?? __('app.admin.applications.authority_shared_inbox') }}
+                                        · {{ __('app.admin.authority_escalations.due_at_label', ['date' => optional($item['signal']['due_at'])->format('Y-m-d h:i A') ?? __('app.dashboard.not_available')]) }}
+                                    </div>
+                                </div>
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <span class="badge bg-warning text-dark">{{ $item['signal']['label'] }}</span>
+                                    @if ($item['approval']->application)
+                                        <a class="btn btn-sm btn-outline-dark" href="{{ route('admin.applications.show', $item['approval']->application) }}">{{ __('app.admin.authority_escalations.open_request') }}</a>
+                                    @endif
+                                </div>
+                            </div>
+                        </div>
+                    @empty
+                        <div class="text-center text-muted py-4">{{ __('app.admin.authority_escalations.no_due_soon_items') }}</div>
+                    @endforelse
+                </div>
             </div>
         </div>
 
@@ -339,7 +384,7 @@
                                         </div>
                                         <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
                                             @if ($item['signal']['label'])
-                                                <span class="badge {{ $item['signal']['is_overdue'] ? 'bg-danger' : 'bg-secondary' }}">{{ $item['signal']['label'] }}</span>
+                                                <span class="badge {{ $item['signal']['is_overdue'] ? 'bg-danger' : ($item['signal']['is_due_soon'] ? 'bg-warning text-dark' : 'bg-secondary') }}">{{ $item['signal']['label'] }}</span>
                                             @endif
                                             @if ($item['signal']['is_escalated'])
                                                 <span class="badge bg-dark">{{ __('app.admin.authority_escalations.escalated_badge') }}</span>

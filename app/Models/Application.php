@@ -123,6 +123,18 @@ class Application extends Model
         return $this->hasMany(ApplicationOfficialLetter::class)->latest();
     }
 
+    public function annexSubmissions(): HasMany
+    {
+        return $this->hasMany(ApplicationAnnexSubmission::class)->latest('submitted_at')->latest('id');
+    }
+
+    public function pendingAnnexSubmission(): HasOne
+    {
+        return $this->hasOne(ApplicationAnnexSubmission::class)
+            ->where('status', ApplicationAnnexSubmission::STATUS_SUBMITTED)
+            ->latestOfMany('submitted_at');
+    }
+
     public function wrapReport(): HasOne
     {
         return $this->hasOne(ApplicationWrapReport::class);
@@ -183,7 +195,24 @@ class Application extends Model
 
     public function canUpdateApplicantAnnex(): bool
     {
-        return $this->status !== 'draft' && $this->canReceiveApplicantDocuments();
+        return $this->status !== 'draft'
+            && $this->canReceiveApplicantDocuments()
+            && ! $this->hasPendingAnnexSubmission();
+    }
+
+    public function hasPendingAnnexSubmission(): bool
+    {
+        if ($this->relationLoaded('annexSubmissions')) {
+            return $this->annexSubmissions->contains(
+                fn (ApplicationAnnexSubmission $submission): bool => $submission->isPending()
+            );
+        }
+
+        if ($this->relationLoaded('pendingAnnexSubmission')) {
+            return $this->pendingAnnexSubmission !== null;
+        }
+
+        return $this->annexSubmissions()->pending()->exists();
     }
 
     public function finalDecisionIssued(): bool

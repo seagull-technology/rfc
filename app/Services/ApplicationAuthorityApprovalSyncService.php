@@ -76,6 +76,7 @@ class ApplicationAuthorityApprovalSyncService
                 'reviewed_by_user_id' => null,
                 'decided_at' => null,
                 'escalated_at' => null,
+                'sla_warning_notified_at' => null,
                 'assigned_user_id' => $shouldRefreshAssignment ? $resolvedAssignedUserId : $approval->assigned_user_id,
                 'assigned_at' => $shouldRefreshAssignment && $resolvedAssignedUserId
                     ? now()

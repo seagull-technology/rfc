@@ -3,9 +3,11 @@
 namespace App\Notifications;
 
 use App\Models\Entity;
+use App\Notifications\Channels\SmsNotificationChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\Str;
 
 class RegistrationApprovedNotification extends Notification
 {
@@ -19,7 +21,7 @@ class RegistrationApprovedNotification extends Notification
 
     public function via(object $notifiable): array
     {
-        return ['database', 'mail'];
+        return ['database', 'mail', SmsNotificationChannel::class];
     }
 
     public function toArray(object $notifiable): array
@@ -53,5 +55,43 @@ class RegistrationApprovedNotification extends Notification
         return $message
             ->action(__('app.notifications.registration_approved_mail_action'), route('login'))
             ->line(__('app.notifications.registration_approved_mail_outro'));
+    }
+
+    public function toSms(object $notifiable): string
+    {
+        return Str::limit($this->auditTitle($notifiable).' - '.$this->auditBody($notifiable).' '.route('login'), 480, '');
+    }
+
+    public function auditTypeKey(object $notifiable): string
+    {
+        return 'registration_approved';
+    }
+
+    public function auditTitle(object $notifiable): string
+    {
+        return __('app.notifications.registration_approved_title');
+    }
+
+    public function auditBody(object $notifiable): string
+    {
+        return __('app.notifications.registration_approved_body', [
+            'entity' => $this->entity->displayName(),
+        ]);
+    }
+
+    public function auditUrl(object $notifiable): string
+    {
+        return route('login');
+    }
+
+    /**
+     * @return array{type: string, id: int|null}
+     */
+    public function auditContext(object $notifiable): array
+    {
+        return [
+            'type' => 'entity',
+            'id' => $this->entity->getKey(),
+        ];
     }
 }

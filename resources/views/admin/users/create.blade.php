@@ -76,8 +76,11 @@
                         </div>
                         <div class="col-md-6">
                             <label for="roles" class="form-label">{{ __('app.admin.users.initial_roles') }}</label>
-                            <select id="roles" name="roles[]" class="form-select select2-basic-multiple" multiple required disabled data-placeholder="{{ __('app.admin.select_placeholder') }}">
-                            </select>
+                            <div class="admin-role-picker-field is-disabled" data-role-picker-field>
+                                <select id="roles" name="roles[]" class="form-select select2-basic-multiple admin-role-picker-select" multiple required disabled data-placeholder="{{ __('app.admin.users.choose_entity_first') }}" data-active-placeholder="{{ __('app.admin.select_placeholder') }}" data-disabled-placeholder="{{ __('app.admin.users.choose_entity_first') }}" data-empty-placeholder="{{ __('app.admin.users.no_roles_for_entity') }}">
+                                </select>
+                            </div>
+                            <div class="form-text">{{ __('app.admin.users.roles_depend_on_entity') }}</div>
                         </div>
                         <div class="col-12">
                             <label for="is_primary" class="form-label">{{ __('app.admin.entities.member_primary') }}</label>

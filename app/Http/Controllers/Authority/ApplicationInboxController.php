@@ -50,11 +50,12 @@ class ApplicationInboxController extends Controller
                     'at' => null,
                 ]);
                 $slaSignal = $approvalSlaSignals->get($approval->getKey(), [
+                    'is_due_soon' => false,
                     'is_overdue' => false,
                     'is_escalated' => false,
                 ]);
 
-                return (((int) ($slaSignal['is_overdue'] ?? false) * 10) + ((int) ($slaSignal['is_escalated'] ?? false) * 5)) * 100_000_000_000_000_000
+                return (((int) ($slaSignal['is_overdue'] ?? false) * 10) + ((int) ($slaSignal['is_due_soon'] ?? false) * 7) + ((int) ($slaSignal['is_escalated'] ?? false) * 5)) * 100_000_000_000_000_000
                     + ((int) ($signal['priority'] ?? 0) * 10_000_000_000_000_000)
                     + ((int) (($signal['at'] ?? null)?->timestamp ?? $approval->updated_at?->timestamp ?? 0) * 1_000_000)
                     + (int) $approval->getKey();
@@ -81,6 +82,7 @@ class ApplicationInboxController extends Controller
                 'resolved' => $approvals->whereIn('status', ['approved', 'rejected'])->count(),
                 'updates' => $approvalSignals->where('key', 'request_update')->count(),
                 'official_books' => $approvalSignals->where('key', 'official_book_issued')->count(),
+                'due_soon' => $approvalSlaSignals->where('is_due_soon', true)->count(),
                 'overdue' => $approvalSlaSignals->where('is_overdue', true)->count(),
                 'escalated' => $approvals->whereNotNull('escalated_at')->count(),
             ],

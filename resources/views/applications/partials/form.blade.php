@@ -1,6 +1,8 @@
 @php
     $metadata = $application->metadata ?? [];
     $producer = data_get($metadata, 'producer', []);
+    $lockedProducerFields = $lockedProducerFields ?? [];
+    $lockedProducerFieldNames = array_keys($lockedProducerFields);
     $director = data_get($metadata, 'director', []);
     $international = data_get($metadata, 'international', []);
     $requirements = data_get($metadata, 'requirements', []);
@@ -153,13 +155,17 @@
                                                     'liaison_email' => __('app.applications.liaison_email'),
                                                     'liaison_mobile' => __('app.applications.liaison_mobile'),
                                                 ] as $field => $label)
+                                                    @php
+                                                        $isLockedProducerField = in_array($field, $lockedProducerFieldNames, true);
+                                                        $producerFieldValue = old($field, $isLockedProducerField ? ($lockedProducerFields[$field] ?? data_get($producer, $field)) : data_get($producer, $field));
+                                                    @endphp
                                                     <div class="col-lg-{{ in_array($field, ['producer_name', 'production_company_name', 'liaison_name'], true) ? '12' : '6' }}">
                                                         <div class="form-group">
                                                             <label class="form-label">{{ $label }}</label>
                                                             @if (! in_array($field, ['contact_mobile', 'contact_fax'], true))
                                                                 <span class="text-danger">*</span>
                                                             @endif
-                                                            <input class="form-control" type="{{ str_contains($field, 'email') ? 'email' : 'text' }}" name="{{ $field }}" value="{{ old($field, data_get($producer, $field)) }}" @required(! in_array($field, ['contact_mobile', 'contact_fax'], true))>
+                                                            <input class="form-control {{ $isLockedProducerField ? 'bg-light' : '' }}" type="{{ str_contains($field, 'email') ? 'email' : 'text' }}" name="{{ $field }}" value="{{ $producerFieldValue }}" @readonly($isLockedProducerField) @if($isLockedProducerField) aria-readonly="true" @endif @required(! in_array($field, ['contact_mobile', 'contact_fax'], true))>
                                                         </div>
                                                     </div>
                                                 @endforeach
@@ -441,9 +447,15 @@
             <button type="button" name="previous" class="btn btn-dark request-wizard-previous action-button-previous btn-lg">
                 {{ app()->getLocale() === 'ar' ? 'السابق' : 'Previous' }}
             </button>
-            <button type="button" name="next" class="btn btn-danger request-wizard-next action-button float-end btn-lg">
-                {{ app()->getLocale() === 'ar' ? 'التالي' : 'Next' }}
-            </button>
+            <div class="d-flex gap-2 flex-wrap justify-content-end">
+                <button class="btn btn-outline-danger d-flex align-items-center gap-2 btn-lg" type="submit" formnovalidate>
+                    <i class="ph-fill ph-floppy-disk-back"></i>
+                    <span>{{ $submitLabel }}</span>
+                </button>
+                <button type="button" name="next" class="btn btn-danger request-wizard-next action-button float-end btn-lg">
+                    {{ app()->getLocale() === 'ar' ? 'التالي' : 'Next' }}
+                </button>
+            </div>
         </div>
     </fieldset>
 
@@ -883,7 +895,7 @@
             </div>
         </div>
         <div class="form-actions d-flex gap-2 flex-wrap justify-content-end">
-            <button class="btn btn-danger d-flex align-items-center gap-2" type="submit">
+            <button class="btn btn-danger d-flex align-items-center gap-2" type="submit" formnovalidate>
                 <i class="ph-fill ph-floppy-disk-back"></i>
                 <span>{{ $submitLabel }}</span>
             </button>

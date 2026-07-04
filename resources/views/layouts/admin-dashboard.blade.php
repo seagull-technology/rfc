@@ -226,6 +226,14 @@
                             </a>
                         </li>
                     @endcan
+                    @can('notifications.view')
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('admin.notification-center.*') ? 'active' : '' }}" href="{{ route('admin.notification-center.index') }}">
+                                <i class="icon"><i class="ph ph-bell-ringing fs-4"></i></i>
+                                <span class="item-name">{{ __('app.admin.navigation.notification_center') }}</span>
+                            </a>
+                        </li>
+                    @endcan
                     @can('settings.manage')
                         <li class="nav-item">
                             <a class="nav-link {{ request()->routeIs('admin.approval-routing.*') ? 'active' : '' }}" href="{{ route('admin.approval-routing.index') }}">

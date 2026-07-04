@@ -79,11 +79,12 @@ class DashboardController extends Controller
                         'at' => null,
                     ]);
                     $slaSignal = $approvalSlaSignals->get($approval->getKey(), [
+                        'is_due_soon' => false,
                         'is_overdue' => false,
                         'is_escalated' => false,
                     ]);
 
-                    return (((int) ($slaSignal['is_overdue'] ?? false) * 10) + ((int) ($slaSignal['is_escalated'] ?? false) * 5)) * 100_000_000_000_000_000
+                    return (((int) ($slaSignal['is_overdue'] ?? false) * 10) + ((int) ($slaSignal['is_due_soon'] ?? false) * 7) + ((int) ($slaSignal['is_escalated'] ?? false) * 5)) * 100_000_000_000_000_000
                         + ((int) ($signal['priority'] ?? 0) * 10_000_000_000_000_000)
                         + ((int) (($signal['at'] ?? null)?->timestamp ?? $approval->updated_at?->timestamp ?? 0) * 1_000_000)
                         + (int) $approval->getKey();
@@ -214,7 +215,7 @@ class DashboardController extends Controller
     private function latestRegistrationNotification(User $user): ?DatabaseNotification
     {
         return $user->notifications()
-            ->whereIn('data->type_key', ['registration_approved', 'registration_completion_requested'])
+            ->whereIn('data->type_key', ['registration_approved', 'registration_completion_requested', 'registration_rejected'])
             ->latest()
             ->first();
     }

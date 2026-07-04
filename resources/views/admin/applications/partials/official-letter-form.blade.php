@@ -6,7 +6,9 @@
     $status = $letter?->status ?? 'draft';
     $statusClass = $status === 'issued' ? 'success' : 'secondary';
     $displayApprovals = $letter
-        ? ($letter->targetEntity ? collect([['target_entity_name' => $letter->targetEntity->displayName()]]) : ($letter->authorityApproval ? collect([$letter->authorityApproval]) : collect()))
+        ? ($letter->isApplicantLetter()
+            ? collect([['target_entity_name' => $letter->recipientDisplayName()]])
+            : ($letter->targetEntity ? collect([['target_entity_name' => $letter->targetEntity->displayName()]]) : ($letter->authorityApproval ? collect([$letter->authorityApproval]) : collect())))
         : $routedApprovals;
     $targetLabel = static function ($target): string {
         if (is_array($target)) {
@@ -53,8 +55,8 @@
         <div class="col-12">
             <label class="form-label">{{ __('app.official_letters.automatic_recipients') }}</label>
             <div class="border rounded p-3 bg-light">
-                @if ($letter?->targetEntity)
-                    <span class="badge bg-primary-subtle text-primary">{{ $letter->targetEntity->displayName() }}</span>
+                @if ($letter?->targetEntity || $letter?->isApplicantLetter())
+                    <span class="badge bg-primary-subtle text-primary">{{ $letter->recipientDisplayName() }}</span>
                 @elseif ($displayApprovals->isNotEmpty())
                     <div class="d-flex gap-2 flex-wrap">
                         @foreach ($displayApprovals as $target)

@@ -12,6 +12,7 @@ use App\Models\FormLookupOption;
 use App\Models\Governorate;
 use App\Models\Group;
 use App\Models\Nationality;
+use App\Models\NotificationLog;
 use App\Models\ReleaseMethod;
 use App\Models\ScoutingRequest;
 use App\Models\User;
@@ -23,6 +24,7 @@ use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
@@ -92,6 +94,61 @@ class AdminPanelTest extends TestCase
             ->assertSee('.sidebar[data-sidebar="responsive"].sidebar-mobile-open', false)
             ->assertSee('js/sidebar.js?v=5.4.5', false)
             ->assertSee('data-toggle="data-table"', false);
+    }
+
+    public function test_super_admin_can_open_notification_center_and_export_delivery_logs(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $recipient = User::factory()->create([
+            'name' => 'Notification Recipient',
+            'email' => 'recipient@example.test',
+            'phone' => '0795551234',
+        ]);
+
+        $recipient->notify(new InboxMessageNotification(
+            typeKey: 'application_status_changed',
+            title: 'Notification Center Smoke',
+            body: 'This should be logged across all configured delivery channels.',
+            routeName: 'dashboard',
+        ));
+
+        $this->assertSame(3, NotificationLog::query()
+            ->where('recipient_email', 'recipient@example.test')
+            ->where('type_key', 'application_status_changed')
+            ->count());
+
+        $this->assertDatabaseHas('notification_logs', [
+            'recipient_email' => 'recipient@example.test',
+            'channel' => 'database',
+            'status' => 'sent',
+        ]);
+        $this->assertDatabaseHas('notification_logs', [
+            'recipient_email' => 'recipient@example.test',
+            'channel' => 'mail',
+            'status' => 'sent',
+        ]);
+        $this->assertDatabaseHas('notification_logs', [
+            'recipient_email' => 'recipient@example.test',
+            'channel' => 'sms',
+            'status' => 'sent',
+        ]);
+
+        $this
+            ->actingAs($admin)
+            ->get(route('admin.notification-center.index'))
+            ->assertOk()
+            ->assertSeeText('Notification Center')
+            ->assertSeeText('Notification Center Smoke')
+            ->assertSeeText('OTP/SMS');
+
+        $this
+            ->actingAs($admin)
+            ->get(route('admin.notification-center.export'))
+            ->assertOk()
+            ->assertHeader('content-type', 'text/csv; charset=UTF-8');
     }
 
     public function test_super_admin_can_manage_nationality_lookup_values(): void
@@ -458,7 +515,7 @@ class AdminPanelTest extends TestCase
         $content = $response->streamedContent();
 
         $this->assertStringContainsString('metrics', $content);
-        $this->assertStringContainsString('Configured groups', $content);
+        $this->assertStringContainsString('Roles & permissions', $content);
     }
 
     public function test_super_admin_dashboard_shows_operational_production_kpis(): void
@@ -2073,6 +2130,63 @@ class AdminPanelTest extends TestCase
             ->assertDontSeeText('Individuals');
     }
 
+    public function test_super_admin_can_update_role_permissions_from_groups_page(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+
+        $response = $this->actingAs($admin)->post(route('admin.groups.roles.permissions.update', 'rfc_reviewer'), [
+            'permissions' => [
+                'access.admin-panel',
+                'applications.view.all',
+                'reports.view.all',
+                'reports.export',
+            ],
+        ]);
+
+        $response->assertRedirect(route('admin.groups.index'));
+        $response->assertSessionHas('status');
+
+        $role = Role::query()->where('name', 'rfc_reviewer')->firstOrFail();
+        $expectedPermissions = [
+            'access.admin-panel',
+            'applications.view.all',
+            'reports.view.all',
+            'reports.export',
+        ];
+        $actualPermissions = $role->permissions()->pluck('name')->all();
+
+        sort($expectedPermissions);
+        sort($actualPermissions);
+
+        $this->assertSame($expectedPermissions, $actualPermissions);
+    }
+
+    public function test_super_admin_permissions_are_locked_from_groups_page(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+
+        $response = $this->actingAs($admin)->from(route('admin.groups.index'))->post(route('admin.groups.roles.permissions.update', 'super_admin'), [
+            'permissions' => [
+                'reports.view.all',
+            ],
+        ]);
+
+        $response
+            ->assertRedirect(route('admin.groups.index'))
+            ->assertSessionHasErrors('role');
+
+        $role = Role::query()->where('name', 'super_admin')->firstOrFail();
+
+        $this->assertTrue($role->hasPermissionTo('permissions.manage'));
+        $this->assertTrue($role->hasPermissionTo('users.manage'));
+    }
+
     public function test_super_admin_can_approve_pending_registration_entity(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -2239,10 +2353,70 @@ class AdminPanelTest extends TestCase
             function (RegistrationCompletionRequestedNotification $notification, array $channels) use ($owner, $entity): bool {
                 $this->assertContains('database', $channels);
                 $this->assertContains('mail', $channels);
+                $this->assertContains(\App\Notifications\Channels\SmsNotificationChannel::class, $channels);
 
                 $payload = $notification->toArray($owner);
 
                 $this->assertSame('registration_completion_requested', data_get($payload, 'type_key'));
+                $this->assertStringContainsString('/en/registration/link/'.$entity->getKey().'/complete?', (string) data_get($payload, 'url'));
+
+                return true;
+            }
+        );
+    }
+
+    public function test_review_rejection_sends_registration_rejected_notification(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+        Notification::fake();
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $group = Group::query()->where('code', 'organizations')->firstOrFail();
+
+        $owner = User::query()->create([
+            'name' => 'Rejected Primary Owner',
+            'username' => 'rejected-primary-owner',
+            'email' => 'rejected-primary@example.com',
+            'phone' => '0799555111',
+            'status' => 'pending_review',
+            'registration_type' => 'company',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $entity = Entity::query()->create([
+            'group_id' => $group->getKey(),
+            'name_en' => 'Rejected Company',
+            'name_ar' => 'Rejected Company',
+            'registration_no' => 'CO-REJ-1',
+            'email' => 'rejected-primary@example.com',
+            'phone' => '0799555111',
+            'status' => 'pending_review',
+            'registration_type' => 'company',
+        ]);
+
+        $entity->users()->attach($owner->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        $this->actingAs($admin)->post(route('admin.entities.review', $entity), [
+            'decision' => 'reject',
+            'note' => 'The uploaded commercial record is not valid.',
+        ])->assertRedirect(route('admin.entities.show', $entity));
+
+        Notification::assertSentTo(
+            $owner,
+            RegistrationCompletionRequestedNotification::class,
+            function (RegistrationCompletionRequestedNotification $notification, array $channels) use ($owner, $entity): bool {
+                $this->assertContains('database', $channels);
+                $this->assertContains('mail', $channels);
+                $this->assertContains(\App\Notifications\Channels\SmsNotificationChannel::class, $channels);
+
+                $payload = $notification->toArray($owner);
+
+                $this->assertSame('registration_rejected', data_get($payload, 'type_key'));
                 $this->assertStringContainsString('/en/registration/link/'.$entity->getKey().'/complete?', (string) data_get($payload, 'url'));
 
                 return true;
@@ -2297,6 +2471,7 @@ class AdminPanelTest extends TestCase
             function (RegistrationApprovedNotification $notification, array $channels) use ($owner): bool {
                 $this->assertContains('database', $channels);
                 $this->assertContains('mail', $channels);
+                $this->assertContains(\App\Notifications\Channels\SmsNotificationChannel::class, $channels);
 
                 $payload = $notification->toArray($owner);
 
@@ -2489,6 +2664,59 @@ class AdminPanelTest extends TestCase
         $this->assertSoftDeleted('users', [
             'id' => $user->getKey(),
         ]);
+    }
+
+    public function test_super_admin_can_update_user_password_without_profile_fields(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $user = User::factory()->create([
+            'name' => 'Password Target',
+            'username' => 'password_target',
+            'email' => 'password.target@example.com',
+            'password' => Hash::make('OldPassword123!'),
+            'status' => 'active',
+        ]);
+
+        $response = $this->actingAs($admin)->post(route('admin.users.password', $user->getKey()), [
+            'password' => 'NewPassword123!',
+            'password_confirmation' => 'NewPassword123!',
+        ]);
+
+        $response->assertRedirect(route('admin.users.show', $user->getKey()));
+        $this->assertTrue(Hash::check('NewPassword123!', $user->fresh()->password));
+    }
+
+    public function test_profile_update_does_not_change_user_password(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $user = User::factory()->create([
+            'name' => 'Profile Password Target',
+            'username' => 'profile_password_target',
+            'email' => 'profile.password.target@example.com',
+            'password' => Hash::make('OriginalPassword123!'),
+            'status' => 'active',
+        ]);
+
+        $response = $this->actingAs($admin)->post(route('admin.users.update', $user->getKey()), [
+            'name' => 'Profile Password Target Updated',
+            'username' => 'profile_password_target',
+            'email' => 'profile.password.target@example.com',
+            'national_id' => null,
+            'phone' => null,
+            'status' => 'active',
+            'password' => 'IgnoredPassword123!',
+            'password_confirmation' => 'IgnoredPassword123!',
+        ]);
+
+        $response->assertRedirect(route('admin.users.show', $user->getKey()));
+        $this->assertTrue(Hash::check('OriginalPassword123!', $user->fresh()->password));
+        $this->assertFalse(Hash::check('IgnoredPassword123!', $user->fresh()->password));
     }
 
     public function test_super_admin_can_restore_soft_deleted_user(): void

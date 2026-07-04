@@ -36,7 +36,7 @@
 
         .admin-applications-index-layout .applications-status-grid {
             display: grid;
-            grid-template-columns: repeat(5, minmax(0, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
             gap: 1rem;
         }
 
@@ -276,6 +276,12 @@
                         'class' => 'is-warning',
                     ],
                     [
+                        'label' => __('app.admin.authority_escalations.metrics.due_soon_requests'),
+                        'value' => $stats['due_soon_authorities'],
+                        'icon' => 'ph-timer',
+                        'class' => 'is-warning',
+                    ],
+                    [
                         'label' => __('app.admin.authority_escalations.metrics.overdue_requests'),
                         'value' => $stats['overdue_authorities'],
                         'icon' => 'ph-warning-octagon',
@@ -364,7 +370,7 @@
                                                             @if ($applicationSignals->isNotEmpty())
                                                                 <div class="application-authority-signals">
                                                                     @foreach ($applicationSignals->take(2) as $signal)
-                                                                        <span class="badge bg-{{ $signal['is_overdue'] ? 'danger' : 'secondary' }}">{{ $signal['label'] }}</span>
+                                                                        <span class="badge bg-{{ $signal['is_overdue'] ? 'danger' : ($signal['is_due_soon'] ? 'warning text-dark' : 'secondary') }}">{{ $signal['label'] }}</span>
                                                                         @if ($signal['is_escalated'])
                                                                             <span class="badge bg-dark">{{ __('app.admin.authority_escalations.escalated_badge') }}</span>
                                                                         @endif

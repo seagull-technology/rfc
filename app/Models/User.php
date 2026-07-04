@@ -126,6 +126,11 @@ class User extends Authenticatable
         return $this->name ?: $this->email;
     }
 
+    public function routeNotificationForSms(mixed $notification = null): ?string
+    {
+        return $this->phone;
+    }
+
     /**
      * @return Collection<int, string>
      */

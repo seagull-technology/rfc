@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Application as FilmApplication;
+use App\Models\ApplicationAnnexSubmission;
 use App\Models\ApplicationCorrespondence;
 use App\Models\ApplicationDocument;
 use App\Models\Entity;
@@ -21,10 +22,12 @@ use App\Support\WorkflowMessageMetadata;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -36,8 +39,7 @@ class ApplicationController extends Controller
 {
     public function __construct(
         private readonly ApprovalRoutingService $approvalRoutingService,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): View
     {
@@ -93,6 +95,7 @@ class ApplicationController extends Controller
     {
         [$user, $entity] = $this->applicantContext($request);
         $this->ensureApplicantPermission($user, 'applications.create');
+        $lockedProducerFields = $this->lockedApplicantProducerFields($user, $entity);
 
         $application = new FilmApplication([
             'project_name' => '',
@@ -101,13 +104,7 @@ class ApplicationController extends Controller
             'release_method' => '',
             'status' => 'draft',
             'metadata' => [
-                'producer' => [
-                    'producer_name' => $user->name,
-                    'production_company_name' => $entity->displayName(),
-                    'contact_address' => data_get($entity->metadata, 'address'),
-                    'contact_phone' => $entity->phone,
-                    'contact_email' => $entity->email ?: $user->email,
-                ],
+                'producer' => $lockedProducerFields,
             ],
         ]);
 
@@ -123,6 +120,7 @@ class ApplicationController extends Controller
             'locationLookupOptions' => $this->filmingLocationLookupOptions(),
             'workLookupOptions' => $this->workLookupOptionsForApplication($application),
             'formLookupOptions' => $this->formLookupOptionsForApplication(),
+            'lockedProducerFields' => $lockedProducerFields,
         ]);
     }
 
@@ -131,6 +129,7 @@ class ApplicationController extends Controller
         [$user, $entity] = $this->applicantContext($request);
         $this->ensureApplicantPermission($user, 'applications.create');
 
+        $this->mergeLockedApplicantProducerFields($request, $user, $entity);
         $validated = $this->validateApplicationPayload($request);
 
         $application = DB::transaction(function () use ($validated, $user, $entity): FilmApplication {
@@ -167,6 +166,8 @@ class ApplicationController extends Controller
             'correspondences.createdBy',
             'officialLetters.targetEntity',
             'officialLetters.createdBy',
+            'annexSubmissions.submittedBy',
+            'annexSubmissions.reviewedBy',
             'wrapReport.submittedBy',
         ]);
 
@@ -180,6 +181,7 @@ class ApplicationController extends Controller
             'documents' => $record->documents,
             'correspondences' => $record->correspondences,
             'officialLetters' => $record->officialLetters->where('status', 'issued')->values(),
+            'annexSubmissions' => $record->annexSubmissions,
             'nationalityOptions' => $this->nationalityOptionsForApplication($record),
             'locationLookupOptions' => $this->filmingLocationLookupOptions(),
             'workLookupOptions' => $this->workLookupOptionsForApplication($record),
@@ -210,6 +212,7 @@ class ApplicationController extends Controller
             'locationLookupOptions' => $this->filmingLocationLookupOptions(),
             'workLookupOptions' => $this->workLookupOptionsForApplication($record),
             'formLookupOptions' => $this->formLookupOptionsForApplication(),
+            'lockedProducerFields' => $this->lockedApplicantProducerFields($user, $entity),
         ]);
     }
 
@@ -221,6 +224,7 @@ class ApplicationController extends Controller
 
         abort_unless($record->canBeEditedByApplicant(), 403);
 
+        $this->mergeLockedApplicantProducerFields($request, $user, $entity);
         $validated = $this->validateApplicationPayload($request);
 
         $attributes = $this->applicationAttributes($validated);
@@ -247,21 +251,59 @@ class ApplicationController extends Controller
         abort_unless($record->canUpdateApplicantAnnex(), 403);
 
         $validated = $this->validateAnnexPayload($request);
-        $metadata = $record->metadata ?? [];
         $submittedAt = now();
 
-        data_set($metadata, 'annex', $this->annexMetadata($validated));
-        data_set($metadata, 'applicant_annex_submission', [
-            'submitted_at' => $submittedAt->toDateTimeString(),
-            'submitted_by_user_id' => $user->getKey(),
-        ]);
+        $submission = DB::transaction(function () use ($record, $validated, $submittedAt, $user): ApplicationAnnexSubmission {
+            $metadata = $record->metadata ?? [];
+            $submission = $record->annexSubmissions()->create([
+                'submitted_by_user_id' => $user->getKey(),
+                'status' => ApplicationAnnexSubmission::STATUS_SUBMITTED,
+                'payload' => $this->annexMetadata($validated),
+                'previous_payload' => (array) data_get($metadata, 'annex', []),
+                'submitted_at' => $submittedAt,
+            ]);
 
-        $record->forceFill(['metadata' => $metadata])->save();
-        $this->appendHistory($record, $record->status, __('app.applications.history.annex_updated'), $user->getKey());
+            data_set($metadata, 'applicant_annex_submission', [
+                'id' => $submission->getKey(),
+                'status' => ApplicationAnnexSubmission::STATUS_SUBMITTED,
+                'submitted_at' => $submittedAt->toDateTimeString(),
+                'submitted_by_user_id' => $user->getKey(),
+            ]);
+
+            $record->forceFill(['metadata' => $metadata])->save();
+            $this->appendHistory($record, $record->status, __('app.applications.history.annex_submitted'), $user->getKey(), [
+                'type' => 'applicant_annex_submitted',
+                'annex_submission_id' => $submission->getKey(),
+            ]);
+
+            return $submission;
+        });
+
+        $record->loadMissing(['entity', 'submittedBy']);
+        NotificationRecipients::except(NotificationRecipients::adminUsers(), $user->getKey())
+            ->each(fn ($recipient) => $recipient->notify(new InboxMessageNotification(
+                typeKey: 'application_annex_submitted',
+                title: $record->project_name,
+                body: __('app.notifications.application_annex_submitted_body', [
+                    'code' => $record->code,
+                    'entity' => $record->entity?->displayName() ?? __('app.dashboard.no_entity'),
+                ]),
+                routeName: 'admin.applications.show',
+                routeParameters: ['application' => $record->getKey()],
+                meta: [
+                    ...WorkflowMessageMetadata::application($record),
+                    'application_id' => $record->getKey(),
+                    'annex_submission_id' => $submission->getKey(),
+                    'notification_highlight_active' => true,
+                    'notification_highlight_title' => __('app.notifications.application_annex_submitted_title'),
+                    'notification_highlight_summary' => __('app.notifications.application_annex_submitted_summary'),
+                    'notification_highlight_class' => 'warning',
+                ],
+            )));
 
         return redirect()
             ->route('applications.show', $record)
-            ->with('status', __('app.applications.annex_updated'));
+            ->with('status', __('app.applications.annex_submitted'));
     }
 
     public function updateWrapReport(Request $request, string $application): RedirectResponse
@@ -297,6 +339,10 @@ class ApplicationController extends Controller
         $record = $this->findApplicantApplication($application, $entity);
 
         abort_unless($record->canBeSubmittedByApplicant(), 403);
+
+        $this->syncLockedApplicantProducerFields($record, $user, $entity);
+        $this->validateApplicationForSubmission($record);
+
         $wasClarificationResponse = $record->status === 'needs_clarification';
 
         DB::transaction(function () use ($record, $user): void {
@@ -385,22 +431,22 @@ class ApplicationController extends Controller
                 ->each(fn ($recipient) => $recipient->notify(new InboxMessageNotification(
                     typeKey: 'application_submitted',
                     title: $record->project_name,
-                body: __('app.notifications.application_submitted_body', [
-                    'code' => $record->code,
-                    'entity' => $record->entity?->displayName() ?? __('app.dashboard.no_entity'),
-                ]),
-                routeName: 'admin.applications.show',
-                routeParameters: ['application' => $record->getKey()],
-                meta: [
-                    ...WorkflowMessageMetadata::application($record),
-                    ...$this->adminApplicantResponseNotificationMeta(
-                        true,
-                        __('app.admin_request_state.applicant_response_document', [
-                            'item' => __('app.documents.tab'),
-                        ]),
-                    ),
-                ],
-            )));
+                    body: __('app.notifications.application_submitted_body', [
+                        'code' => $record->code,
+                        'entity' => $record->entity?->displayName() ?? __('app.dashboard.no_entity'),
+                    ]),
+                    routeName: 'admin.applications.show',
+                    routeParameters: ['application' => $record->getKey()],
+                    meta: [
+                        ...WorkflowMessageMetadata::application($record),
+                        ...$this->adminApplicantResponseNotificationMeta(
+                            true,
+                            __('app.admin_request_state.applicant_response_document', [
+                                'item' => __('app.documents.tab'),
+                            ]),
+                        ),
+                    ],
+                )));
         }
 
         return redirect()
@@ -549,7 +595,7 @@ class ApplicationController extends Controller
     }
 
     /**
-     * @return array{0: \App\Models\User, 1: Entity}
+     * @return array{0: User, 1: Entity}
      */
     private function applicantContext(Request $request): array
     {
@@ -559,6 +605,36 @@ class ApplicationController extends Controller
         abort_unless($user && $entity, 404);
 
         return [$user, $entity];
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    private function lockedApplicantProducerFields(User $user, Entity $entity): array
+    {
+        return [
+            'producer_name' => $user->name,
+            'production_company_name' => $entity->displayName(),
+            'contact_address' => data_get($entity->metadata, 'address'),
+            'contact_phone' => $entity->phone ?: $user->phone,
+            'contact_email' => $entity->email ?: $user->email,
+        ];
+    }
+
+    private function mergeLockedApplicantProducerFields(Request $request, User $user, Entity $entity): void
+    {
+        $request->merge($this->lockedApplicantProducerFields($user, $entity));
+    }
+
+    private function syncLockedApplicantProducerFields(FilmApplication $application, User $user, Entity $entity): void
+    {
+        $metadata = $application->metadata ?? [];
+
+        foreach ($this->lockedApplicantProducerFields($user, $entity) as $field => $value) {
+            data_set($metadata, 'producer.'.$field, $value);
+        }
+
+        $application->forceFill(['metadata' => $metadata])->save();
     }
 
     private function ensureApplicantPermission($user, string $permission): void
@@ -589,7 +665,7 @@ class ApplicationController extends Controller
     }
 
     /**
-     * @return array<string, \Illuminate\Support\Collection<int, Nationality>>
+     * @return array<string, Collection<int, Nationality>>
      */
     private function nationalityOptionsForApplication(FilmApplication $application): array
     {
@@ -610,7 +686,7 @@ class ApplicationController extends Controller
     }
 
     /**
-     * @return \Illuminate\Support\Collection<int, Nationality>
+     * @return Collection<int, Nationality>
      */
     private function nationalityOptionsForUsage(string $usage, mixed $currentCode)
     {
@@ -672,7 +748,7 @@ class ApplicationController extends Controller
     }
 
     /**
-     * @return array<string, \Illuminate\Support\Collection<int, WorkCategory|ReleaseMethod>>
+     * @return array<string, Collection<int, WorkCategory|ReleaseMethod>>
      */
     private function workLookupOptionsForApplication(FilmApplication $application): array
     {
@@ -699,7 +775,7 @@ class ApplicationController extends Controller
      *
      * @param  class-string<TLookup>  $modelClass
      * @param  array<int, mixed>  $currentCodes
-     * @return \Illuminate\Support\Collection<int, TLookup>
+     * @return Collection<int, TLookup>
      */
     private function lookupOptionsWithCurrentValues(string $modelClass, array $currentCodes)
     {
@@ -726,7 +802,7 @@ class ApplicationController extends Controller
     }
 
     /**
-     * @return array<string, \Illuminate\Support\Collection<int, FormLookupOption>>
+     * @return array<string, Collection<int, FormLookupOption>>
      */
     private function formLookupOptionsForApplication(): array
     {
@@ -877,7 +953,29 @@ class ApplicationController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function validateApplicationPayload(Request $request): array
+    private function validateApplicationPayload(Request $request, bool $requireComplete = false): array
+    {
+        $rules = $this->applicationValidationRules($request);
+
+        if (! $requireComplete) {
+            $rules = $this->draftApplicationValidationRules($rules);
+        }
+
+        return $this->normalizeApplicationPayload($request->validate($rules));
+    }
+
+    private function validateApplicationForSubmission(FilmApplication $application): void
+    {
+        $payload = $this->applicationPayloadFromRecord($application);
+        $request = Request::create('/', 'POST', $payload);
+
+        Validator::make($payload, $this->applicationValidationRules($request))->validate();
+    }
+
+    /**
+     * @return array<string, array<int, mixed>>
+     */
+    private function applicationValidationRules(Request $request): array
     {
         $workCategories = WorkCategory::activeCodes();
         $releaseMethods = ReleaseMethod::activeCodes();
@@ -903,7 +1001,7 @@ class ApplicationController extends Controller
             'military_border_locations.*.location_type',
         ]);
 
-        return $request->validate([
+        return [
             'project_name' => ['required', 'string', 'max:255'],
             'project_nationality' => ['required', Rule::in(Nationality::activeCodesFor(Nationality::USAGE_PROJECT))],
             'work_category' => ['required', Rule::in($workCategories)],
@@ -1053,7 +1151,7 @@ class ApplicationController extends Controller
             'governmental_scenes.*.filming_date' => ['nullable', 'date'],
             'governmental_scenes_confirmed' => ['nullable', 'boolean'],
             'supporting_notes' => ['nullable', 'string', 'max:3000'],
-        ]);
+        ];
     }
 
     /**
@@ -1183,6 +1281,183 @@ class ApplicationController extends Controller
     }
 
     /**
+     * @param  array<string, array<int, mixed>>  $rules
+     * @return array<string, array<int, mixed>>
+     */
+    private function draftApplicationValidationRules(array $rules): array
+    {
+        foreach ($rules as $attribute => $attributeRules) {
+            $relaxedRules = [];
+
+            foreach ($attributeRules as $rule) {
+                if ($rule === 'required') {
+                    if (! in_array('nullable', $relaxedRules, true)) {
+                        $relaxedRules[] = 'nullable';
+                    }
+
+                    continue;
+                }
+
+                if ($rule === 'accepted') {
+                    if (! in_array('nullable', $relaxedRules, true)) {
+                        $relaxedRules[] = 'nullable';
+                    }
+
+                    if (! in_array('boolean', $relaxedRules, true)) {
+                        $relaxedRules[] = 'boolean';
+                    }
+
+                    continue;
+                }
+
+                $relaxedRules[] = $rule;
+            }
+
+            $rules[$attribute] = $relaxedRules;
+        }
+
+        return $rules;
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function normalizeApplicationPayload(array $validated): array
+    {
+        $defaults = [
+            'project_name' => '',
+            'project_nationality' => '',
+            'work_category' => '',
+            'work_categories' => [],
+            'work_category_other' => null,
+            'release_method' => '',
+            'release_methods' => [],
+            'release_method_other' => null,
+            'planned_start_date' => null,
+            'planned_end_date' => null,
+            'schedule_phases' => [],
+            'estimated_crew_count' => null,
+            'estimated_budget' => null,
+            'local_spend_estimate' => null,
+            'budget_items' => [],
+            'project_summary' => null,
+            'producer_name' => null,
+            'production_company_name' => null,
+            'contact_address' => null,
+            'contact_phone' => null,
+            'contact_mobile' => null,
+            'contact_fax' => null,
+            'contact_email' => null,
+            'liaison_name' => null,
+            'liaison_position' => null,
+            'liaison_email' => null,
+            'liaison_mobile' => null,
+            'director_name' => null,
+            'director_nationality' => null,
+            'director_profile_url' => null,
+            'international_producer_name' => null,
+            'international_producer_nationality' => null,
+            'international_producer_company' => null,
+            'international_producer_email' => null,
+            'international_producer_profile_url' => null,
+            'international_producer_address' => null,
+            'international_producer_website' => null,
+            'international_liaison_name' => null,
+            'international_liaison_email' => null,
+            'international_liaison_mobile' => null,
+            'international_account_password' => null,
+            'international_account_password_confirmation' => null,
+            'supporting_notes' => null,
+        ];
+
+        $validated = array_replace($defaults, $validated);
+        $validated['schedule_phases'] = array_replace_recursive([
+            'preparation' => ['start_date' => null, 'end_date' => null],
+            'wrap' => ['start_date' => null, 'end_date' => null],
+            'post_production' => ['start_date' => null, 'end_date' => null],
+        ], (array) ($validated['schedule_phases'] ?? []));
+
+        return $validated;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function applicationPayloadFromRecord(FilmApplication $application): array
+    {
+        $metadata = $application->metadata ?? [];
+        $annex = (array) data_get($metadata, 'annex', []);
+
+        return $this->normalizeApplicationPayload([
+            'project_name' => $application->project_name,
+            'project_nationality' => $application->project_nationality,
+            'work_category' => $application->work_category,
+            'work_categories' => (array) data_get($metadata, 'project.work_categories', []),
+            'work_category_other' => data_get($metadata, 'project.work_category_other'),
+            'release_method' => $application->release_method,
+            'release_methods' => (array) data_get($metadata, 'project.release_methods', []),
+            'release_method_other' => data_get($metadata, 'project.release_method_other'),
+            'planned_start_date' => $application->planned_start_date?->toDateString(),
+            'planned_end_date' => $application->planned_end_date?->toDateString(),
+            'schedule_phases' => (array) data_get($metadata, 'schedule.phases', []),
+            'estimated_crew_count' => $application->estimated_crew_count,
+            'estimated_budget' => $application->estimated_budget,
+            'local_spend_estimate' => data_get($metadata, 'budget.local_spend_estimate'),
+            'budget_items' => (array) data_get($metadata, 'budget.items', []),
+            'project_summary' => $application->project_summary,
+            'producer_name' => data_get($metadata, 'producer.producer_name'),
+            'production_company_name' => data_get($metadata, 'producer.production_company_name'),
+            'contact_address' => data_get($metadata, 'producer.contact_address'),
+            'contact_phone' => data_get($metadata, 'producer.contact_phone'),
+            'contact_mobile' => data_get($metadata, 'producer.contact_mobile'),
+            'contact_fax' => data_get($metadata, 'producer.contact_fax'),
+            'contact_email' => data_get($metadata, 'producer.contact_email'),
+            'liaison_name' => data_get($metadata, 'producer.liaison_name'),
+            'liaison_position' => data_get($metadata, 'producer.liaison_position'),
+            'liaison_email' => data_get($metadata, 'producer.liaison_email'),
+            'liaison_mobile' => data_get($metadata, 'producer.liaison_mobile'),
+            'director_name' => data_get($metadata, 'director.director_name'),
+            'director_nationality' => data_get($metadata, 'director.director_nationality'),
+            'director_profile_url' => data_get($metadata, 'director.director_profile_url'),
+            'international_producer_name' => data_get($metadata, 'international.international_producer_name'),
+            'international_producer_nationality' => data_get($metadata, 'international.international_producer_nationality'),
+            'international_producer_company' => data_get($metadata, 'international.international_producer_company'),
+            'international_producer_email' => data_get($metadata, 'international.international_producer_email'),
+            'international_producer_profile_url' => data_get($metadata, 'international.international_producer_profile_url'),
+            'international_producer_address' => data_get($metadata, 'international.international_producer_address'),
+            'international_producer_website' => data_get($metadata, 'international.international_producer_website'),
+            'international_liaison_name' => data_get($metadata, 'international.international_liaison_name'),
+            'international_liaison_email' => data_get($metadata, 'international.international_liaison_email'),
+            'international_liaison_mobile' => data_get($metadata, 'international.international_liaison_mobile'),
+            'work_content_summary_synopsis' => data_get($annex, 'work_content_summary.synopsis'),
+            'work_content_summary_sensitive_notes' => data_get($annex, 'work_content_summary.sensitive_notes'),
+            'work_content_summary_confirmed' => data_get($annex, 'work_content_summary.confirmed') ? '1' : '0',
+            'cast_crew' => (array) data_get($annex, 'cast_crew', []),
+            'filming_locations' => (array) data_get($annex, 'filming_locations', []),
+            'special_location_requirements' => (array) data_get($annex, 'special_location_requirements', []),
+            'safety_guidelines_acknowledged' => data_get($annex, 'safety_guidelines.acknowledged') ? '1' : '0',
+            'safety_guidelines_notes' => data_get($annex, 'safety_guidelines.notes'),
+            'equipment_flights' => (array) data_get($annex, 'equipment_flights', []),
+            'equipment_travelers' => (array) data_get($annex, 'equipment_travelers', []),
+            'traveler_equipment_acknowledged' => data_get($annex, 'traveler_equipment_acknowledged') ? '1' : '0',
+            'imported_equipment' => (array) data_get($annex, 'imported_equipment', []),
+            'military_border_locations' => (array) data_get($annex, 'military_border_locations', []),
+            'military_border_equipment' => (array) data_get($annex, 'military_border_equipment', []),
+            'military_border_equipment_acknowledged' => data_get($annex, 'military_border_equipment_acknowledged') ? '1' : '0',
+            'airport_filming_airport_name' => data_get($annex, 'airport_filming.airport_name'),
+            'airport_filming_area' => data_get($annex, 'airport_filming.area'),
+            'airport_filming_date' => data_get($annex, 'airport_filming.filming_date'),
+            'airport_filming_crew_count' => data_get($annex, 'airport_filming.crew_count'),
+            'airport_filming_notes' => data_get($annex, 'airport_filming.notes'),
+            'airport_people' => (array) data_get($annex, 'airport_people', []),
+            'governmental_scenes' => (array) data_get($annex, 'governmental_scenes', []),
+            'governmental_scenes_confirmed' => data_get($annex, 'governmental_scenes_confirmed') ? '1' : '0',
+            'supporting_notes' => data_get($metadata, 'requirements.supporting_notes'),
+        ]);
+    }
+
+    /**
      * @param  array<string, mixed>  $validated
      * @return array<string, mixed>
      */
@@ -1190,48 +1465,48 @@ class ApplicationController extends Controller
     {
         $workCategories = array_values(array_filter((array) ($validated['work_categories'] ?? []), fn ($value): bool => filled($value)));
         $releaseMethods = array_values(array_filter((array) ($validated['release_methods'] ?? []), fn ($value): bool => filled($value)));
-        $workCategory = $validated['work_category'] ?: (collect($workCategories)->first(fn ($value) => $value !== 'other') ?: WorkCategory::defaultCode());
-        $releaseMethod = $validated['release_method'] ?: (collect($releaseMethods)->first(fn ($value) => $value !== 'other') ?: ReleaseMethod::defaultCode());
+        $workCategory = ($validated['work_category'] ?? null) ?: collect($workCategories)->first(fn ($value) => $value !== 'other');
+        $releaseMethod = ($validated['release_method'] ?? null) ?: collect($releaseMethods)->first(fn ($value) => $value !== 'other');
         $schedulePhases = (array) ($validated['schedule_phases'] ?? []);
 
         $schedulePhases['shooting'] = [
-            'start_date' => $validated['planned_start_date'],
-            'end_date' => $validated['planned_end_date'],
+            'start_date' => $validated['planned_start_date'] ?? null,
+            'end_date' => $validated['planned_end_date'] ?? null,
         ];
 
         return [
-            'project_name' => $validated['project_name'],
-            'project_nationality' => $validated['project_nationality'],
-            'work_category' => $workCategory,
-            'release_method' => $releaseMethod,
-            'planned_start_date' => $validated['planned_start_date'],
-            'planned_end_date' => $validated['planned_end_date'],
-            'estimated_crew_count' => $validated['estimated_crew_count'] ?: null,
-            'estimated_budget' => $validated['estimated_budget'] ?: null,
-            'project_summary' => $validated['project_summary'],
+            'project_name' => $validated['project_name'] ?? '',
+            'project_nationality' => $validated['project_nationality'] ?? '',
+            'work_category' => $workCategory ?: null,
+            'release_method' => $releaseMethod ?: null,
+            'planned_start_date' => $validated['planned_start_date'] ?? null,
+            'planned_end_date' => $validated['planned_end_date'] ?? null,
+            'estimated_crew_count' => ($validated['estimated_crew_count'] ?? null) ?: null,
+            'estimated_budget' => ($validated['estimated_budget'] ?? null) ?: null,
+            'project_summary' => $validated['project_summary'] ?? null,
             'metadata' => [
                 'project' => [
-                    'work_categories' => $workCategories ?: [$workCategory],
+                    'work_categories' => $workCategories ?: ($workCategory ? [$workCategory] : []),
                     'work_category_other' => ($validated['work_category_other'] ?? null) ?: null,
-                    'release_methods' => $releaseMethods ?: [$releaseMethod],
+                    'release_methods' => $releaseMethods ?: ($releaseMethod ? [$releaseMethod] : []),
                     'release_method_other' => ($validated['release_method_other'] ?? null) ?: null,
                 ],
                 'producer' => [
-                    'producer_name' => $validated['producer_name'],
-                    'production_company_name' => $validated['production_company_name'],
-                    'contact_address' => $validated['contact_address'],
-                    'contact_phone' => $validated['contact_phone'],
+                    'producer_name' => $validated['producer_name'] ?? null,
+                    'production_company_name' => $validated['production_company_name'] ?? null,
+                    'contact_address' => $validated['contact_address'] ?? null,
+                    'contact_phone' => $validated['contact_phone'] ?? null,
                     'contact_mobile' => $validated['contact_mobile'] ?: null,
                     'contact_fax' => $validated['contact_fax'] ?: null,
-                    'contact_email' => $validated['contact_email'],
-                    'liaison_name' => $validated['liaison_name'],
-                    'liaison_position' => $validated['liaison_position'],
-                    'liaison_email' => $validated['liaison_email'],
-                    'liaison_mobile' => $validated['liaison_mobile'],
+                    'contact_email' => $validated['contact_email'] ?? null,
+                    'liaison_name' => $validated['liaison_name'] ?? null,
+                    'liaison_position' => $validated['liaison_position'] ?? null,
+                    'liaison_email' => $validated['liaison_email'] ?? null,
+                    'liaison_mobile' => $validated['liaison_mobile'] ?? null,
                 ],
                 'director' => [
-                    'director_name' => $validated['director_name'],
-                    'director_nationality' => $validated['director_nationality'],
+                    'director_name' => $validated['director_name'] ?? null,
+                    'director_nationality' => $validated['director_nationality'] ?? null,
                     'director_profile_url' => $validated['director_profile_url'] ?: null,
                 ],
                 'international' => [
@@ -1364,12 +1639,16 @@ class ApplicationController extends Controller
         return 'REQ-'.str_pad((string) $nextId, 5, '0', STR_PAD_LEFT);
     }
 
-    private function appendHistory(FilmApplication $application, string $status, ?string $note, ?int $userId): void
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function appendHistory(FilmApplication $application, string $status, ?string $note, ?int $userId, array $metadata = []): void
     {
         $application->statusHistory()->create([
             'user_id' => $userId,
             'status' => $status,
             'note' => $note,
+            'metadata' => $metadata === [] ? null : $metadata,
             'happened_at' => now(),
         ]);
     }

@@ -52,6 +52,7 @@ class AuthorityEscalationController extends Controller
                     'settings' => $this->authorityEscalationService->settingsForEntity($authority),
                     'approval_codes' => $authority->authorityApprovalCodes(),
                     'live_approvals' => $liveApprovals->count(),
+                    'due_soon_approvals' => $signals->where('signal.is_due_soon', true)->count(),
                     'overdue_approvals' => $signals->where('signal.is_overdue', true)->count(),
                     'escalated_approvals' => $liveApprovals->whereNotNull('escalated_at')->count(),
                 ];
@@ -72,6 +73,13 @@ class AuthorityEscalationController extends Controller
                     ->get()
                     ->filter(fn (ApplicationAuthorityApproval $approval): bool => $this->authorityEscalationService->signalForApproval($approval, $now)['is_overdue'])
                     ->count(),
+                'due_soon_approvals' => ApplicationAuthorityApproval::query()
+                    ->with('entity.group')
+                    ->whereIn('status', ['pending', 'in_review'])
+                    ->whereHas('entity.group', fn (Builder $query) => $query->where('code', 'authorities'))
+                    ->get()
+                    ->filter(fn (ApplicationAuthorityApproval $approval): bool => $this->authorityEscalationService->signalForApproval($approval, $now)['is_due_soon'])
+                    ->count(),
             ],
         ]);
     }
@@ -90,6 +98,7 @@ class AuthorityEscalationController extends Controller
             $row['response_time_days'] ?? __('app.dashboard.not_available'),
             implode(', ', $row['approval_labels']),
             $row['live_approvals'],
+            $row['due_soon_live_approvals'],
             $row['overdue_live_approvals'],
             $row['escalated_live_approvals'],
             $row['shared_inbox_live_approvals'],
@@ -109,6 +118,7 @@ class AuthorityEscalationController extends Controller
                 __('app.admin.authority_escalations.response_time_days'),
                 __('app.admin.authority_escalations.approval_codes'),
                 __('app.admin.authority_escalations.metrics.live_approvals'),
+                __('app.admin.authority_escalations.metrics.due_soon_approvals'),
                 __('app.admin.authority_escalations.metrics.overdue_approvals'),
                 __('app.admin.authority_escalations.metrics.escalated_approvals'),
                 __('app.admin.authority_escalations.shared_inbox_live'),
@@ -376,6 +386,7 @@ class AuthorityEscalationController extends Controller
                         ->values()
                         ->all(),
                     'live_approvals' => $authorityLiveApprovals->count(),
+                    'due_soon_live_approvals' => $liveSignals->where('signal.is_due_soon', true)->count(),
                     'overdue_live_approvals' => $liveSignals->where('signal.is_overdue', true)->count(),
                     'escalated_live_approvals' => $authorityLiveApprovals->whereNotNull('escalated_at')->count(),
                     'shared_inbox_live_approvals' => $authorityLiveApprovals->whereNull('assigned_user_id')->count(),
@@ -393,6 +404,7 @@ class AuthorityEscalationController extends Controller
             })
             ->sortByDesc(fn (array $row): array => [
                 $row['overdue_live_approvals'],
+                $row['due_soon_live_approvals'],
                 $row['escalated_live_approvals'],
                 $row['live_approvals'],
                 $row['recent_escalations_count'],
@@ -418,6 +430,25 @@ class AuthorityEscalationController extends Controller
             ->take(10)
             ->values();
 
+        $recentDueSoonApprovals = $liveApprovals
+            ->map(function (ApplicationAuthorityApproval $approval) use ($now): ?array {
+                $signal = $this->authorityEscalationService->signalForApproval($approval, $now);
+
+                if (! $signal['is_due_soon']) {
+                    return null;
+                }
+
+                return [
+                    'approval' => $approval,
+                    'signal' => $signal,
+                    'remaining_hours' => $signal['due_at'] !== null ? round($now->diffInHours($signal['due_at']), 1) : null,
+                ];
+            })
+            ->filter()
+            ->sortBy('remaining_hours')
+            ->take(10)
+            ->values();
+
         $averageResolutionHours = $rows
             ->pluck('average_resolution_hours')
             ->filter(fn ($value): bool => $value !== null)
@@ -431,12 +462,14 @@ class AuthorityEscalationController extends Controller
             'availableAuthorities' => $authorities,
             'rows' => $rows,
             'recentOverdueApprovals' => $recentOverdueApprovals,
+            'recentDueSoonApprovals' => $recentDueSoonApprovals,
             'selectedAuthority' => $selectedAuthority,
             'selectedAuthorityDetails' => $selectedAuthorityDetails,
             'stats' => [
                 'authorities' => $rows->count(),
                 'configured' => $rows->filter(fn (array $row): bool => $row['response_time_days'] !== null)->count(),
                 'live_approvals' => $rows->sum('live_approvals'),
+                'due_soon_approvals' => $rows->sum('due_soon_live_approvals'),
                 'overdue_approvals' => $rows->sum('overdue_live_approvals'),
                 'escalated_approvals' => $rows->sum('escalated_live_approvals'),
                 'recent_escalations' => $rows->sum('recent_escalations_count'),
@@ -489,6 +522,7 @@ class AuthorityEscalationController extends Controller
 
                 return [
                     $signal['is_overdue'] ? 1 : 0,
+                    $signal['is_due_soon'] ? 1 : 0,
                     $signal['is_escalated'] ? 1 : 0,
                     $approval->created_at?->timestamp ?? 0,
                 ];
