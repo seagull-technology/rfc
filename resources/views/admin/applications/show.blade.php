@@ -1519,6 +1519,59 @@
 @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', function () {
+            const tabList = document.getElementById('profile-pills-tab');
+            const tabStorageKey = 'rfc.adminApplication.activeTab:' + window.location.pathname;
+            const findTabTrigger = function (target) {
+                if (!tabList || !target) {
+                    return null;
+                }
+
+                return Array.from(tabList.querySelectorAll('[data-bs-toggle="tab"]'))
+                    .find(function (trigger) {
+                        return trigger.getAttribute('href') === target
+                            || trigger.getAttribute('data-bs-target') === target;
+                    }) || null;
+            };
+
+            const restoreActiveTab = function () {
+                const initialTarget = window.location.hash || (function () {
+                    try {
+                        return window.localStorage.getItem(tabStorageKey);
+                    } catch (error) {
+                        return null;
+                    }
+                })();
+                const trigger = findTabTrigger(initialTarget);
+
+                if (!trigger || !window.bootstrap || !window.bootstrap.Tab) {
+                    return;
+                }
+
+                window.bootstrap.Tab.getOrCreateInstance(trigger).show();
+            };
+
+            if (tabList) {
+                tabList.addEventListener('shown.bs.tab', function (event) {
+                    const target = event.target?.getAttribute('href') || event.target?.getAttribute('data-bs-target');
+
+                    if (!target) {
+                        return;
+                    }
+
+                    try {
+                        window.localStorage.setItem(tabStorageKey, target);
+                    } catch (error) {
+                        // Ignore storage restrictions; the tab still works for the current page view.
+                    }
+
+                    if (window.history && window.history.replaceState) {
+                        window.history.replaceState(null, '', target);
+                    }
+                });
+
+                restoreActiveTab();
+            }
+
             document.querySelectorAll('[data-rfc-decision-select]').forEach(function (select) {
                 const form = select.closest('form');
                 const noteWrap = form ? form.querySelector('[data-rfc-decision-note-wrap]') : null;
