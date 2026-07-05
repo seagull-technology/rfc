@@ -213,6 +213,19 @@ class AuthFlowTest extends TestCase
         Storage::disk('local')->assertExists((string) data_get($entity->metadata, 'registration_document_path'));
     }
 
+    public function test_registration_page_exposes_company_address_field(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+
+        $response = $this->get(route('register'));
+
+        $response
+            ->assertOk()
+            ->assertSeeText('Company address')
+            ->assertSee('id="company-address"', false)
+            ->assertSee('autocomplete="street-address"', false);
+    }
+
     public function test_company_registration_requires_verified_commercial_registration_lookup(): void
     {
         Storage::fake('local');
@@ -238,6 +251,28 @@ class AuthFlowTest extends TestCase
         $this->assertDatabaseMissing('users', [
             'email' => 'unchecked-company@example.com',
         ]);
+    }
+
+    public function test_ngo_registration_creates_pending_account_with_address(): void
+    {
+        $this->assertOrganizationRegistrationCreatesPendingAccount(
+            registrationType: 'ngo',
+            registrationNumber: 'NGO-REG-1122',
+            email: 'ngo-registration@example.com',
+            phone: '0790000011',
+            address: 'NGO address, Amman',
+        );
+    }
+
+    public function test_school_registration_creates_pending_account_with_address(): void
+    {
+        $this->assertOrganizationRegistrationCreatesPendingAccount(
+            registrationType: 'school',
+            registrationNumber: 'SCH-REG-1122',
+            email: 'school-registration@example.com',
+            phone: '0790000012',
+            address: 'School address, Amman',
+        );
     }
 
     public function test_pending_organization_user_can_sign_in_and_is_sent_to_registration_status_page(): void
@@ -573,5 +608,43 @@ class AuthFlowTest extends TestCase
             ->assertSeeText('حقل البريد الإلكتروني مطلوب.')
             ->assertSeeText('حقل الرقم الوطني مطلوب.')
             ->assertSeeText('حقل رقم الهاتف مطلوب.');
+    }
+
+    private function assertOrganizationRegistrationCreatesPendingAccount(
+        string $registrationType,
+        string $registrationNumber,
+        string $email,
+        string $phone,
+        string $address,
+    ): void {
+        Storage::fake('local');
+        $this->seed(AccessControlSeeder::class);
+
+        $response = $this->post(route('register.store'), [
+            'registration_type' => $registrationType,
+            'entity_name' => ucfirst($registrationType).' Test Entity',
+            'registration_number' => $registrationNumber,
+            'email' => $email,
+            'phone' => $phone,
+            'address' => $address,
+            'description' => ucfirst($registrationType).' registration test',
+            'registration_document' => UploadedFile::fake()->create($registrationType.'-license.pdf', 250, 'application/pdf'),
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ]);
+
+        $response
+            ->assertRedirect(route('login'))
+            ->assertSessionHas('status', 'Your account has been submitted for review. We will notify you by email and SMS once it is approved, rejected, or requires additional information.');
+
+        $entity = Entity::query()->where('registration_no', $registrationNumber)->firstOrFail();
+        $user = User::query()->where('email', $email)->firstOrFail();
+
+        $this->assertSame($registrationType, $entity->registration_type);
+        $this->assertSame($registrationType, $user->registration_type);
+        $this->assertSame('pending_review', $entity->status);
+        $this->assertSame('pending_review', $user->status);
+        $this->assertSame($address, data_get($entity->metadata, 'address'));
+        Storage::disk('local')->assertExists((string) data_get($entity->metadata, 'registration_document_path'));
     }
 }

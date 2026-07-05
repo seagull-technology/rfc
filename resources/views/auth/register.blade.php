@@ -295,8 +295,8 @@
 
                                                                     <div class="col-md-6">
                                                                         <div class="mb-3">
-                                                                            <label class="form-label">{{ __('app.auth.address_labels.company') }}</label>
-                                                                            <input type="text" name="address" class="form-control @error('address') is-invalid @enderror" placeholder="{{ __('app.auth.address_placeholder') }}" value="{{ old('registration_type') === 'company' ? old('address') : '' }}" data-company-account-input @if($companyLookupCompleted) required @endif>
+                                                                            <label for="company-address" class="form-label">{{ __('app.auth.address_labels.company') }}</label>
+                                                                            <input id="company-address" type="text" name="address" class="form-control @error('address') is-invalid @enderror" placeholder="{{ __('app.auth.address_placeholder') }}" value="{{ old('registration_type') === 'company' ? old('address') : '' }}" autocomplete="street-address" data-company-account-input @if($companyLookupCompleted) required @endif>
                                                                             @error('address')
                                                                                 <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                             @enderror
@@ -395,8 +395,8 @@
 
                                                             <div class="col-md-6">
                                                                 <div class="mb-3">
-                                                                    <label class="form-label">{{ __('app.auth.address_labels.'.$type) }}</label>
-                                                                    <input type="text" name="address" class="form-control @error('address') is-invalid @enderror" placeholder="{{ __('app.auth.address_placeholder') }}" value="{{ old('registration_type') === $type ? old('address') : '' }}" required>
+                                                                    <label for="{{ $type }}-address" class="form-label">{{ __('app.auth.address_labels.'.$type) }}</label>
+                                                                    <input id="{{ $type }}-address" type="text" name="address" class="form-control @error('address') is-invalid @enderror" placeholder="{{ __('app.auth.address_placeholder') }}" value="{{ old('registration_type') === $type ? old('address') : '' }}" autocomplete="street-address" required>
                                                                     @error('address')
                                                                         <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                     @enderror
