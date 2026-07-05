@@ -10,8 +10,10 @@ use App\Models\User;
 use App\Support\ApplicantDashboardState;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class ProfileController extends Controller
@@ -34,6 +36,12 @@ class ProfileController extends Controller
             ->where('entity_id', $entity->getKey())
             ->newestFirst()
             ->get();
+
+        if ($variant === 'foreign_producer' && $this->isInternationalProducerUser($user)) {
+            $applications = $this->applicationsLinkedToInternationalProducer($applications, $user);
+            $scoutingRequests = $this->scoutingRequestsLinkedToInternationalProducer($scoutingRequests, $user);
+        }
+
         $monthlyApplications = collect(range(5, 0))
             ->map(fn (int $offset) => now()->copy()->startOfMonth()->subMonths($offset))
             ->map(function ($month) use ($applications): array {
@@ -186,6 +194,45 @@ class ProfileController extends Controller
         ]);
     }
 
+    public function signForeignProducerDeclaration(Request $request, string $application): RedirectResponse
+    {
+        $user = $request->user();
+        $entity = $user->primaryEntity();
+
+        abort_unless($user && $entity && $this->isInternationalProducerUser($user), 403);
+
+        $record = FilmApplication::query()
+            ->where('entity_id', $entity->getKey())
+            ->where(fn (Builder $query): Builder => $query
+                ->whereKey($application)
+                ->orWhere('code', $application)
+            )
+            ->firstOrFail();
+
+        abort_unless($this->applicationIsLinkedToInternationalProducer($record, $user), 403);
+
+        $request->validate([
+            'declaration_accepted' => ['accepted'],
+        ]);
+
+        $metadata = $record->metadata ?? [];
+        data_set($metadata, 'international.account.declaration', [
+            'accepted' => true,
+            'signed_at' => now()->toIso8601String(),
+            'signed_by_user_id' => $user->getKey(),
+            'signed_by_name' => $user->displayName(),
+            'signed_by_email' => $user->email,
+            'ip_address' => $request->ip(),
+            'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
+        ]);
+
+        $record->forceFill(['metadata' => $metadata])->save();
+
+        return redirect()
+            ->route('profile.show', ['variant' => 'foreign_producer'])
+            ->with('status', __('app.profile.foreign_producer_declaration_saved'));
+    }
+
     private function statusClass(?string $status): string
     {
         return match ($status) {
@@ -225,5 +272,37 @@ class ProfileController extends Controller
             ->whereIn('data->type_key', ['registration_approved', 'registration_completion_requested', 'registration_rejected'])
             ->latest()
             ->first();
+    }
+
+    private function isInternationalProducerUser(User $user): bool
+    {
+        return $user->registration_type === 'international_producer';
+    }
+
+    /**
+     * @param  Collection<int, FilmApplication>  $applications
+     * @return Collection<int, FilmApplication>
+     */
+    private function applicationsLinkedToInternationalProducer(Collection $applications, User $user): Collection
+    {
+        return $applications
+            ->filter(fn (FilmApplication $application): bool => $this->applicationIsLinkedToInternationalProducer($application, $user))
+            ->values();
+    }
+
+    private function applicationIsLinkedToInternationalProducer(FilmApplication $application, User $user): bool
+    {
+        return (int) data_get($application->metadata, 'international.account.user_id') === $user->getKey();
+    }
+
+    /**
+     * @param  Collection<int, ScoutingRequest>  $scoutingRequests
+     * @return Collection<int, ScoutingRequest>
+     */
+    private function scoutingRequestsLinkedToInternationalProducer(Collection $scoutingRequests, User $user): Collection
+    {
+        return $scoutingRequests
+            ->filter(fn (ScoutingRequest $request): bool => (int) data_get($request->metadata, 'international.account.user_id') === $user->getKey())
+            ->values();
     }
 }

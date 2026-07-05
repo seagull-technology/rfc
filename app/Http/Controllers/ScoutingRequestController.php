@@ -53,6 +53,12 @@ class ScoutingRequestController extends Controller
 
         $requests = $query->newestFirst()->get();
 
+        if ($this->isInternationalProducerUser($user)) {
+            $requests = $requests
+                ->filter(fn (ScoutingRequest $request): bool => $this->requestIsLinkedToInternationalProducer($request, $user))
+                ->values();
+        }
+
         return view('scouting.index', [
             'user' => $user,
             'entity' => $entity,
@@ -366,10 +372,28 @@ class ScoutingRequestController extends Controller
 
     private function findApplicantRequest(string $requestId, Entity $entity): ScoutingRequest
     {
-        return ScoutingRequest::query()
+        $record = ScoutingRequest::query()
             ->with(['entity', 'submittedBy', 'reviewedBy'])
             ->where('entity_id', $entity->getKey())
             ->findOrFail($requestId);
+
+        $user = auth()->user();
+
+        if ($user && $this->isInternationalProducerUser($user)) {
+            abort_unless($this->requestIsLinkedToInternationalProducer($record, $user), 403);
+        }
+
+        return $record;
+    }
+
+    private function isInternationalProducerUser($user): bool
+    {
+        return $user?->registration_type === 'international_producer';
+    }
+
+    private function requestIsLinkedToInternationalProducer(ScoutingRequest $request, $user): bool
+    {
+        return (int) data_get($request->metadata, 'international.account.user_id') === $user->getKey();
     }
 
     private function findApplicantCorrespondence(string $correspondence, ScoutingRequest $record): ScoutingRequestCorrespondence

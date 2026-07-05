@@ -3271,6 +3271,220 @@ class ApplicationWorkflowTest extends TestCase
             ->assertDontSeeText('Work category');
     }
 
+    public function test_international_producer_profile_only_lists_linked_requests(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$owner, $entity] = $this->createApplicantContext([], [
+            'name_en' => 'Linked Foreign Studio',
+            'name_ar' => 'Linked Foreign Studio',
+            'registration_no' => 'ORG-FOREIGN-1',
+        ]);
+        $foreignProducer = $this->createInternationalProducerUser($entity);
+
+        $linkedApplication = Application::query()->create([
+            'code' => 'REQ-LINKED',
+            'entity_id' => $entity->getKey(),
+            'submitted_by_user_id' => $owner->getKey(),
+            'project_name' => 'Linked International Feature',
+            'project_nationality' => 'international',
+            'work_category' => 'feature_film',
+            'release_method' => 'festival',
+            'planned_start_date' => '2026-09-01',
+            'planned_end_date' => '2026-09-12',
+            'estimated_crew_count' => 14,
+            'estimated_budget' => 64000,
+            'project_summary' => 'Visible to the linked producer.',
+            'status' => 'submitted',
+            'current_stage' => 'intake',
+            'submitted_at' => now(),
+            'metadata' => [
+                'international' => [
+                    'account' => [
+                        'user_id' => $foreignProducer->getKey(),
+                        'email' => $foreignProducer->email,
+                        'read_only' => true,
+                    ],
+                ],
+            ],
+        ]);
+
+        $hiddenApplication = Application::query()->create([
+            'code' => 'REQ-HIDDEN',
+            'entity_id' => $entity->getKey(),
+            'submitted_by_user_id' => $owner->getKey(),
+            'project_name' => 'Hidden Entity Feature',
+            'project_nationality' => 'international',
+            'work_category' => 'feature_film',
+            'release_method' => 'festival',
+            'planned_start_date' => '2026-10-01',
+            'planned_end_date' => '2026-10-12',
+            'estimated_crew_count' => 12,
+            'estimated_budget' => 50000,
+            'project_summary' => 'Must not leak to the foreign producer.',
+            'status' => 'submitted',
+            'current_stage' => 'intake',
+            'submitted_at' => now(),
+            'metadata' => [
+                'international' => [
+                    'account' => [
+                        'user_id' => $owner->getKey(),
+                        'email' => $owner->email,
+                        'read_only' => true,
+                    ],
+                ],
+            ],
+        ]);
+
+        $linkedScoutingRequest = ScoutingRequest::query()->create([
+            'code' => 'SCOUT-LINKED',
+            'entity_id' => $entity->getKey(),
+            'submitted_by_user_id' => $owner->getKey(),
+            'project_name' => 'Linked Foreign Scout',
+            'project_nationality' => 'international',
+            'status' => 'submitted',
+            'current_stage' => 'intake',
+            'submitted_at' => now(),
+            'metadata' => [
+                'international' => [
+                    'account' => [
+                        'user_id' => $foreignProducer->getKey(),
+                    ],
+                ],
+            ],
+        ]);
+
+        $hiddenScoutingRequest = ScoutingRequest::query()->create([
+            'code' => 'SCOUT-HIDDEN',
+            'entity_id' => $entity->getKey(),
+            'submitted_by_user_id' => $owner->getKey(),
+            'project_name' => 'Hidden Foreign Scout',
+            'project_nationality' => 'international',
+            'status' => 'submitted',
+            'current_stage' => 'intake',
+            'submitted_at' => now(),
+            'metadata' => [],
+        ]);
+
+        $this
+            ->actingAs($foreignProducer)
+            ->get(route('dashboard'))
+            ->assertRedirect(route('profile.show', ['variant' => 'foreign_producer']));
+
+        $response = $this->actingAs($foreignProducer)->get(route('profile.show', ['variant' => 'foreign_producer']));
+
+        $response
+            ->assertOk()
+            ->assertSeeText('Linked International Feature')
+            ->assertSeeText('Linked Foreign Scout')
+            ->assertSeeText('Declaration pending')
+            ->assertDontSeeText('Hidden Entity Feature')
+            ->assertDontSeeText('Hidden Foreign Scout');
+
+        $this
+            ->actingAs($foreignProducer)
+            ->get(route('applications.index'))
+            ->assertOk()
+            ->assertSeeText('Linked International Feature')
+            ->assertDontSeeText('Hidden Entity Feature');
+
+        $this
+            ->actingAs($foreignProducer)
+            ->get(route('applications.show', $linkedApplication))
+            ->assertOk()
+            ->assertSeeText('Linked International Feature');
+
+        $this
+            ->actingAs($foreignProducer)
+            ->get(route('applications.show', $hiddenApplication))
+            ->assertForbidden();
+
+        $this
+            ->actingAs($foreignProducer)
+            ->get(route('scouting-requests.index'))
+            ->assertOk()
+            ->assertSeeText('Linked Foreign Scout')
+            ->assertDontSeeText('Hidden Foreign Scout');
+
+        $this
+            ->actingAs($foreignProducer)
+            ->get(route('scouting-requests.show', $linkedScoutingRequest))
+            ->assertOk()
+            ->assertSeeText('Linked Foreign Scout');
+
+        $this
+            ->actingAs($foreignProducer)
+            ->get(route('scouting-requests.show', $hiddenScoutingRequest))
+            ->assertForbidden();
+
+        $this->assertSame($foreignProducer->getKey(), data_get($linkedApplication->fresh()->metadata, 'international.account.user_id'));
+    }
+
+    public function test_international_producer_can_sign_linked_application_declaration(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$owner, $entity] = $this->createApplicantContext([], [
+            'registration_no' => 'ORG-FOREIGN-2',
+        ]);
+        $foreignProducer = $this->createInternationalProducerUser($entity, [
+            'email' => 'signer.foreign@example.com',
+            'username' => 'signer-foreign-producer',
+        ]);
+
+        $application = Application::query()->create([
+            'code' => 'REQ-SIGN',
+            'entity_id' => $entity->getKey(),
+            'submitted_by_user_id' => $owner->getKey(),
+            'project_name' => 'Signature Required Feature',
+            'project_nationality' => 'international',
+            'work_category' => 'feature_film',
+            'release_method' => 'festival',
+            'planned_start_date' => '2026-11-01',
+            'planned_end_date' => '2026-11-12',
+            'estimated_crew_count' => 14,
+            'estimated_budget' => 64000,
+            'project_summary' => 'Needs foreign producer declaration.',
+            'status' => 'submitted',
+            'current_stage' => 'intake',
+            'submitted_at' => now(),
+            'metadata' => [
+                'international' => [
+                    'account' => [
+                        'user_id' => $foreignProducer->getKey(),
+                        'email' => $foreignProducer->email,
+                        'read_only' => true,
+                    ],
+                ],
+            ],
+        ]);
+
+        $this
+            ->actingAs($foreignProducer)
+            ->withServerVariables(['REMOTE_ADDR' => '127.10.10.10'])
+            ->post(route('profile.foreign-producer.applications.declaration.store', $application), [
+                'declaration_accepted' => '1',
+            ])
+            ->assertRedirect(route('profile.show', ['variant' => 'foreign_producer']))
+            ->assertSessionHas('status', __('app.profile.foreign_producer_declaration_saved'));
+
+        $declaration = data_get($application->fresh()->metadata, 'international.account.declaration');
+
+        $this->assertTrue(data_get($declaration, 'accepted'));
+        $this->assertSame($foreignProducer->getKey(), data_get($declaration, 'signed_by_user_id'));
+        $this->assertSame('signer.foreign@example.com', data_get($declaration, 'signed_by_email'));
+        $this->assertNotEmpty(data_get($declaration, 'signed_at'));
+
+        $this
+            ->actingAs($owner)
+            ->post(route('profile.foreign-producer.applications.declaration.store', $application), [
+                'declaration_accepted' => '1',
+            ])
+            ->assertForbidden();
+    }
+
     public function test_admin_can_export_filtered_applications_directory(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -3683,6 +3897,35 @@ class ApplicationWorkflowTest extends TestCase
         app(PermissionRegistrar::class)->setPermissionsTeamId(null);
 
         return [$user, $entity];
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     */
+    private function createInternationalProducerUser(Entity $entity, array $overrides = []): User
+    {
+        $user = User::query()->create(array_merge([
+            'name' => 'International Producer',
+            'username' => 'international-producer',
+            'email' => 'international.producer@example.com',
+            'phone' => '0797777000',
+            'status' => 'active',
+            'registration_type' => 'international_producer',
+            'password' => Hash::make('International@12345'),
+        ], $overrides));
+
+        $user->entities()->attach($entity->getKey(), [
+            'job_title' => 'International Producer',
+            'is_primary' => false,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($entity->getKey());
+        $user->givePermissionTo('applications.view.entity');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        return $user;
     }
 
     /**

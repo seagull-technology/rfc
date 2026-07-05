@@ -47,6 +47,10 @@ class DashboardController extends Controller
             ]);
         }
 
+        if ($user->registration_type === 'international_producer') {
+            return redirect()->route('profile.show', ['variant' => 'foreign_producer']);
+        }
+
         if ($group?->code === 'authorities') {
             $approvalCodes = ApplicationWorkflowRegistry::approvalCodesForEntity($entity);
 

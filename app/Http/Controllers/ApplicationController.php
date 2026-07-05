@@ -74,6 +74,12 @@ class ApplicationController extends Controller
             ->newestFirst()
             ->get();
 
+        if ($this->isInternationalProducerUser($user)) {
+            $applications = $applications
+                ->filter(fn (FilmApplication $application): bool => $this->applicationIsLinkedToInternationalProducer($application, $user))
+                ->values();
+        }
+
         return view('applications.index', [
             'user' => $user,
             'entity' => $entity,
@@ -644,10 +650,28 @@ class ApplicationController extends Controller
 
     private function findApplicantApplication(string $application, Entity $entity): FilmApplication
     {
-        return FilmApplication::query()
+        $record = FilmApplication::query()
             ->with(['entity', 'submittedBy', 'reviewedBy', 'assignedTo', 'finalDecisionIssuedBy', 'authorityApprovals.entity', 'authorityApprovals.reviewedBy', 'permit'])
             ->where('entity_id', $entity->getKey())
             ->findOrFail($application);
+
+        $user = auth()->user();
+
+        if ($user instanceof User && $this->isInternationalProducerUser($user)) {
+            abort_unless($this->applicationIsLinkedToInternationalProducer($record, $user), 403);
+        }
+
+        return $record;
+    }
+
+    private function isInternationalProducerUser(User $user): bool
+    {
+        return $user->registration_type === 'international_producer';
+    }
+
+    private function applicationIsLinkedToInternationalProducer(FilmApplication $application, User $user): bool
+    {
+        return (int) data_get($application->metadata, 'international.account.user_id') === $user->getKey();
     }
 
     private function findApplicantDocument(string $document, FilmApplication $application): ApplicationDocument

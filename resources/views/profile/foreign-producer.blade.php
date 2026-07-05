@@ -8,6 +8,7 @@
         'rejected' => 'danger',
         default => 'secondary',
     };
+    $isInternationalProducerUser = $user->registration_type === 'international_producer';
 @endphp
 
 @extends('layouts.portal-dashboard', ['title' => $title])
@@ -141,13 +142,24 @@
                                 </thead>
                                 <tbody>
                                     @forelse ($entityApplications as $application)
+                                        @php
+                                            $declaration = data_get($application->metadata, 'international.account.declaration', []);
+                                            $declarationSigned = (bool) data_get($declaration, 'accepted') && filled(data_get($declaration, 'signed_at'));
+                                        @endphp
                                         <tr>
                                             <td>{{ $loop->iteration }}</td>
                                             <td>{{ $application->code }}</td>
                                             <td>{{ $application->project_name }}</td>
                                             <td>{{ $application->submittedBy?->displayName() ?? $user->displayName() }}</td>
                                             <td>{{ $application->submitted_at?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
-                                            <td><span class="badge bg-{{ $statusClass($application->status) }}">{{ $application->localizedStatus() }}</span></td>
+                                            <td>
+                                                <span class="badge bg-{{ $statusClass($application->status) }}">{{ $application->localizedStatus() }}</span>
+                                                @if ($isInternationalProducerUser)
+                                                    <div class="small mt-2 text-{{ $declarationSigned ? 'success' : 'warning' }}">
+                                                        {{ $declarationSigned ? __('app.profile.foreign_producer_declaration_signed') : __('app.profile.foreign_producer_declaration_pending') }}
+                                                    </div>
+                                                @endif
+                                            </td>
                                             <td>
                                                 <a
                                                     class="btn btn-sm btn-icon btn-info-subtle rounded"
@@ -242,6 +254,14 @@
     </div>
 
     @foreach ($entityApplications as $application)
+        @php
+            $declaration = data_get($application->metadata, 'international.account.declaration', []);
+            $declarationSigned = (bool) data_get($declaration, 'accepted') && filled(data_get($declaration, 'signed_at'));
+            $declarationSignedAt = filled(data_get($declaration, 'signed_at'))
+                ? \Illuminate\Support\Carbon::parse((string) data_get($declaration, 'signed_at'))->format('Y-m-d H:i')
+                : null;
+            $declarationFormId = 'foreign-producer-declaration-form-'.$application->getKey();
+        @endphp
         <div class="offcanvas offcanvas-end offcanvas-width-80" tabindex="-1" id="foreign-producer-application-{{ $application->getKey() }}">
             <div class="offcanvas-header">
                 <h2 class="episode-playlist-title wp-heading-inline">
@@ -250,9 +270,37 @@
                 <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
             </div>
             <div class="offcanvas-body">
-                <div class="foreign-producer-declaration">
-                    {{ __('app.profile.foreign_producer_declaration_body') }}
-                </div>
+                @if ($declarationSigned)
+                    <div class="alert alert-success">
+                        <div class="fw-semibold">{{ __('app.profile.foreign_producer_declaration_signed') }}</div>
+                        @if ($declarationSignedAt)
+                            <div class="small mt-1">{{ __('app.profile.foreign_producer_declaration_signed_at', ['date' => $declarationSignedAt]) }}</div>
+                        @endif
+                        @if (filled(data_get($declaration, 'signed_by_name')))
+                            <div class="small">{{ __('app.profile.foreign_producer_declaration_signed_by', ['name' => data_get($declaration, 'signed_by_name')]) }}</div>
+                        @endif
+                    </div>
+                @endif
+                @if ($isInternationalProducerUser && ! $declarationSigned)
+                    <form id="{{ $declarationFormId }}" method="POST" action="{{ route('profile.foreign-producer.applications.declaration.store', $application) }}">
+                        @csrf
+                        <div class="section-form">
+                            <div class="form-check form-group">
+                                <input type="checkbox" class="form-check-input @error('declaration_accepted') is-invalid @enderror" id="declaration-accepted-{{ $application->getKey() }}" name="declaration_accepted" value="1" required>
+                                <label class="form-label" for="declaration-accepted-{{ $application->getKey() }}">
+                                    {{ __('app.profile.foreign_producer_declaration_body') }}
+                                </label>
+                                @error('declaration_accepted')
+                                    <div class="invalid-feedback d-block">{{ $message }}</div>
+                                @enderror
+                            </div>
+                        </div>
+                    </form>
+                @else
+                    <div class="foreign-producer-declaration">
+                        {{ __('app.profile.foreign_producer_declaration_body') }}
+                    </div>
+                @endif
                 <div class="mt-4">
                     <div class="fw-semibold">{{ __('app.applications.request_number') }}: {{ $application->code }}</div>
                     <div class="text-muted">{{ $application->project_name }}</div>
@@ -260,6 +308,11 @@
             </div>
             <div class="offcanvas-footer border-top">
                 <div class="d-flex gap-3 p-3 justify-content-end">
+                    @if ($isInternationalProducerUser && ! $declarationSigned)
+                        <button type="submit" form="{{ $declarationFormId }}" class="btn btn-danger d-flex align-items-center gap-2">
+                            <i class="ph-fill ph-floppy-disk-back"></i>{{ __('app.profile.foreign_producer_declaration_save') }}
+                        </button>
+                    @endif
                     <a class="btn btn-danger d-flex align-items-center gap-2" href="{{ route('applications.show', $application) }}">
                         <i class="ph ph-eye"></i>{{ __('app.profile.foreign_producer_open_request') }}
                     </a>

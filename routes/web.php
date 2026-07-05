@@ -91,6 +91,8 @@ Route::group([
         Route::get('/registration/complete', [RegistrationCompletionController::class, 'edit'])->name('registration.completion.edit');
         Route::post('/registration/complete', [RegistrationCompletionController::class, 'update'])->name('registration.completion.update');
         Route::get('/profile', ProfileController::class)->name('profile.show');
+        Route::post('/profile/foreign-producer/applications/{application}/declaration', [ProfileController::class, 'signForeignProducerDeclaration'])
+            ->name('profile.foreign-producer.applications.declaration.store');
         Route::post('/logout', [LogoutController::class, 'store'])->name('logout');
         Route::get('/notifications/{notification}', NotificationRedirectController::class)->name('notifications.redirect');
         Route::get('/contact-center', [ContactCenterController::class, 'index'])->name('contact-center.index');

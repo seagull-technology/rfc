@@ -2,7 +2,8 @@
     $currentPortalUser = auth()->user();
     $currentPortalEntity = $currentPortalUser?->primaryEntity();
     $currentPortalGroupCode = $currentPortalEntity?->group?->code;
-    $currentPortalRegistrationType = $currentPortalEntity?->registration_type ?? $currentPortalUser?->registration_type;
+    $currentPortalUserRegistrationType = $currentPortalUser?->registration_type;
+    $currentPortalRegistrationType = $currentPortalEntity?->registration_type ?? $currentPortalUserRegistrationType;
     $portalAvailableEntities = $currentPortalUser?->availableEntities() ?? collect();
     $portalAvatar = asset('images/OIP.jpeg');
     $portalUnreadNotifications = $currentPortalUser?->unreadNotifications ?? collect();
@@ -24,6 +25,12 @@
         $portalProfileLinks->push([
             'label' => __('app.portal.profile_links.authority'),
             'url' => route('dashboard'),
+        ]);
+    } elseif ($currentPortalUserRegistrationType === 'international_producer') {
+        $currentPortalProfileUrl = route('profile.show', ['variant' => 'foreign_producer']);
+        $portalProfileLinks->push([
+            'label' => __('app.portal.profile_links.foreign_producer'),
+            'url' => $currentPortalProfileUrl,
         ]);
     } elseif (in_array($currentPortalRegistrationType, ['company', 'ngo', 'school'], true) || $currentPortalGroupCode === 'organizations') {
         $currentPortalProfileUrl = request()->query('variant') === 'foreign_producer'
