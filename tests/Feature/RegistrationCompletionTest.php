@@ -52,6 +52,9 @@ class RegistrationCompletionTest extends TestCase
                 'registration_document_path' => 'registration-documents/company/old-license.pdf',
                 'registration_document_name' => 'old-license.pdf',
                 'registration_document_mime' => 'application/pdf',
+                'logo_path' => 'registration-logos/company/old-logo.png',
+                'logo_name' => 'old-logo.png',
+                'logo_mime' => 'image/png',
             ],
         ]);
 
@@ -80,6 +83,7 @@ class RegistrationCompletionTest extends TestCase
             'address' => 'New address',
             'description' => 'New description',
             'registration_document' => UploadedFile::fake()->create('updated-license.pdf', 120, 'application/pdf'),
+            'logo' => UploadedFile::fake()->image('updated-logo.png')->size(100),
         ]);
 
         $response
@@ -98,6 +102,9 @@ class RegistrationCompletionTest extends TestCase
         $this->assertSame('New description', data_get($entity->metadata, 'description'));
         $this->assertNotNull(data_get($entity->metadata, 'resubmission.submitted_at'));
         Storage::disk('local')->assertExists((string) data_get($entity->metadata, 'registration_document_path'));
+        Storage::disk('local')->assertExists((string) data_get($entity->metadata, 'logo_path'));
+        $this->assertSame('updated-logo.png', data_get($entity->metadata, 'logo_name'));
+        $this->assertSame('image/png', data_get($entity->metadata, 'logo_mime'));
 
         $this->assertSame('Updated Review Company', $user->name);
         $this->assertSame('updated@company.test', $user->email);

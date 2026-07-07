@@ -912,7 +912,7 @@
                                     </div>
                                     <div class="card-body application-detail-list">
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.project_name') }}:</span><span class="ms-2">{{ $application->project_name }}</span></div>
-                                        <div class="mb-1"><span class="fw-600">{{ __('app.applications.project_nationality') }}:</span><span class="ms-2">{{ \App\Models\Nationality::labelFor($application->project_nationality) }}</span></div>
+                                        <div class="mb-1"><span class="fw-600">{{ __('app.applications.project_nationality') }}:</span><span class="ms-2">{{ $application->projectNationalityLabels() }}</span></div>
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.work_category') }}:</span><span class="ms-2">{{ \App\Models\WorkCategory::labelFor($application->work_category) }}</span></div>
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.release_method') }}:</span><span class="ms-2">{{ \App\Models\ReleaseMethod::labelFor($application->release_method) }}</span></div>
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.production_company_name') }}:</span><span class="ms-2">{{ data_get($metadata, 'producer.production_company_name', $application->entity?->displayName() ?? __('app.dashboard.not_available')) }}</span></div>
@@ -924,8 +924,7 @@
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.liaison_name') }}:</span><span class="ms-2">{{ data_get($metadata, 'producer.liaison_name', __('app.dashboard.not_available')) }}</span></div>
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.liaison_position') }}:</span><span class="ms-2">{{ data_get($metadata, 'producer.liaison_position', __('app.dashboard.not_available')) }}</span></div>
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.liaison_email') }}:</span><span class="ms-2">{{ data_get($metadata, 'producer.liaison_email', __('app.dashboard.not_available')) }}</span></div>
-                                        <div class="mb-3"><span class="fw-600">{{ __('app.applications.liaison_mobile') }}:</span><span class="ms-2">{{ data_get($metadata, 'producer.liaison_mobile', __('app.dashboard.not_available')) }}</span></div>
-                                        <div class="mb-0"><span class="fw-600">{{ __('app.applications.project_summary') }}:</span><span class="ms-2">{{ $application->project_summary ?: __('app.dashboard.not_available') }}</span></div>
+                                        <div class="mb-0"><span class="fw-600">{{ __('app.applications.liaison_mobile') }}:</span><span class="ms-2">{{ data_get($metadata, 'producer.liaison_mobile', __('app.dashboard.not_available')) }}</span></div>
                                     </div>
                                 </div>
 
@@ -940,6 +939,7 @@
                                     <div class="card-body application-detail-list">
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.director_name') }}:</span><span class="ms-2">{{ data_get($metadata, 'director.director_name', __('app.dashboard.not_available')) }}</span></div>
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.director_nationality') }}:</span><span class="ms-2">{{ \App\Models\Nationality::labelFor(data_get($metadata, 'director.director_nationality')) }}</span></div>
+                                        <div class="mb-1"><span class="fw-600">{{ __('app.applications.director_email') }}:</span><span class="ms-2">{{ data_get($metadata, 'director.director_email', __('app.dashboard.not_available')) }}</span></div>
                                         <div class="mb-0"><span class="fw-600">{{ __('app.applications.director_profile_url') }}:</span>
                                             @if (filled(data_get($metadata, 'director.director_profile_url')))
                                                 <a href="{{ data_get($metadata, 'director.director_profile_url') }}" class="ms-2" target="_blank" rel="noreferrer">{{ data_get($metadata, 'director.director_profile_url') }}</a>
@@ -980,16 +980,6 @@
                                     </div>
                                 </div>
 
-                                <div class="card">
-                                    <div class="card-header">
-                                        <h2 class="episode-playlist-title wp-heading-inline">
-                                            <span class="position-relative">{{ __('app.applications.summary_title') }}</span>
-                                        </h2>
-                                    </div>
-                                    <div class="card-body application-detail-list">
-                                        <p class="mb-0" style="line-height: 1.8;">{{ $application->project_summary ?: __('app.dashboard.not_available') }}</p>
-                                    </div>
-                                </div>
                             </div>
 
                             <div id="profile-activity" class="tab-pane fade">

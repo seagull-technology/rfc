@@ -13,6 +13,12 @@
         'rejected', 'needs_clarification' => 'danger',
         default => 'secondary',
     };
+    $profileChangeStatusClass = static fn (?string $status): string => match ($status) {
+        'pending' => 'warning',
+        'approved' => 'success',
+        'rejected' => 'danger',
+        default => 'secondary',
+    };
     $profileStats = $entityAnalytics['stats'];
     $chartData = $entityAnalytics['charts'];
     $translateOrFallback = static function (string $translationKey, string $fallback): string {
@@ -132,6 +138,24 @@
             margin-top: 1rem;
         }
 
+        .portal-profile-layout .portal-profile-form-card .card-body {
+            padding: 1.35rem;
+        }
+
+        .portal-profile-layout .portal-profile-official-field {
+            border: 1px solid #e5e9f0;
+            background: #f8f9fb;
+            padding: .9rem 1rem;
+            min-height: 78px;
+        }
+
+        .portal-profile-layout .portal-profile-logo-preview {
+            width: 96px;
+            height: 96px;
+            object-fit: contain;
+            background: #fff;
+        }
+
         @media (max-width: 767.98px) {
             .portal-profile-layout .portal-summary-card .card-body {
                 padding: 1.25rem;
@@ -144,7 +168,7 @@
     <div class="card portal-summary-card mb-4">
         <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
             <div class="d-flex align-items-center gap-3">
-                <img src="{{ asset('images/OIP.jpeg') }}" class="rounded-circle" width="70" alt="entity">
+                <img src="{{ $profileLogoUrl }}" class="rounded-circle" width="70" alt="entity">
                 <div>
                     <h4 class="mb-0">{{ $entity->displayName() }}</h4>
                     <small class="text-muted">{{ data_get($entity->metadata, 'description', $entity->localizedRegistrationType()) }}</small>
@@ -157,6 +181,188 @@
             </div>
         </div>
     </div>
+
+    @if ($canManageEntityProfile)
+        <div class="row g-3 mb-4">
+            <div class="col-xl-6">
+                <div class="card portal-profile-form-card h-100">
+                    <div class="card-header">{{ __('app.profile.account_settings_title') }}</div>
+                    <div class="card-body">
+                        <form method="POST" action="{{ route('profile.account.update') }}" class="row g-3">
+                            @csrf
+                            <div class="col-md-6">
+                                <label for="profile_email" class="form-label">{{ __('app.auth.email') }}</label>
+                                <input id="profile_email" name="email" type="email" class="form-control" value="{{ old('email', $user->email) }}" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="profile_phone" class="form-label">{{ __('app.auth.mobile_number') }}</label>
+                                <input id="profile_phone" name="phone" type="text" class="form-control" value="{{ old('phone', $user->phone) }}" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="profile_current_password" class="form-label">{{ __('app.profile.current_password') }}</label>
+                                <input id="profile_current_password" name="current_password" type="password" class="form-control" autocomplete="current-password">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="profile_password" class="form-label">{{ __('app.profile.new_password') }}</label>
+                                <input id="profile_password" name="password" type="password" class="form-control" autocomplete="new-password">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="profile_password_confirmation" class="form-label">{{ __('app.profile.confirm_password') }}</label>
+                                <input id="profile_password_confirmation" name="password_confirmation" type="password" class="form-control" autocomplete="new-password">
+                            </div>
+                            <div class="col-12">
+                                <small class="text-muted">{{ __('app.profile.password_hint') }}</small>
+                            </div>
+                            <div class="col-12">
+                                <button class="btn btn-danger" type="submit">{{ __('app.profile.save_account_action') }}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-6">
+                <div class="card portal-profile-form-card h-100">
+                    <div class="card-header">{{ __('app.profile.contact_settings_title') }}</div>
+                    <div class="card-body">
+                        <form method="POST" action="{{ route('profile.contact.update') }}" enctype="multipart/form-data" class="row g-3">
+                            @csrf
+                            <div class="col-md-6">
+                                <label for="entity_email" class="form-label">{{ __('app.profile.entity_email') }}</label>
+                                <input id="entity_email" name="email" type="email" class="form-control" value="{{ old('email', $entity->email) }}" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="entity_phone" class="form-label">{{ __('app.profile.entity_phone') }}</label>
+                                <input id="entity_phone" name="phone" type="text" class="form-control" value="{{ old('phone', $entity->phone) }}" required>
+                            </div>
+                            <div class="col-12">
+                                <label for="entity_address" class="form-label">{{ __('app.dashboard.address') }}</label>
+                                <input id="entity_address" name="address" type="text" class="form-control" value="{{ old('address', data_get($entity->metadata, 'address')) }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="entity_website_url" class="form-label">{{ __('app.profile.website_url') }}</label>
+                                <input id="entity_website_url" name="website_url" type="url" class="form-control" value="{{ old('website_url', data_get($entity->metadata, 'website_url')) }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="entity_logo" class="form-label">{{ __('app.profile.logo') }}</label>
+                                <input id="entity_logo" name="logo" type="file" class="form-control" accept="image/png">
+                                <small class="text-muted">{{ __('app.profile.logo_hint') }}</small>
+                            </div>
+                            <div class="col-12 d-flex align-items-center gap-3">
+                                <img src="{{ $profileLogoUrl }}" alt="{{ __('app.profile.logo') }}" class="portal-profile-logo-preview border p-2">
+                                <div class="text-muted">{{ data_get($entity->metadata, 'logo_name', __('app.profile.logo_empty')) }}</div>
+                            </div>
+                            <div class="col-12">
+                                <label for="entity_description" class="form-label">{{ __('app.dashboard.organization_description') }}</label>
+                                <textarea id="entity_description" name="description" rows="3" class="form-control">{{ old('description', data_get($entity->metadata, 'description')) }}</textarea>
+                            </div>
+                            <div class="col-12">
+                                <button class="btn btn-danger" type="submit">{{ __('app.profile.save_contact_action') }}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <div class="card portal-profile-form-card">
+                    <div class="card-header">{{ __('app.profile.official_data_title') }}</div>
+                    <div class="card-body">
+                        <div class="row g-3 mb-4">
+                            @foreach ($profileOfficialFields as $field => $definition)
+                                <div class="col-md-4">
+                                    <div class="portal-profile-official-field">
+                                        <small class="text-muted d-block">{{ $definition['label'] }}</small>
+                                        <strong>
+                                            @if ($field === 'gender' && filled($definition['current']))
+                                                {{ __('app.auth.gender_options.'.$definition['current']) }}
+                                            @else
+                                                {{ $definition['current'] ?: __('app.dashboard.not_available') }}
+                                            @endif
+                                        </strong>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+
+                        @if ($pendingProfileChangeRequest)
+                            <div class="alert alert-warning mb-0">{{ __('app.profile.official_change_pending_notice') }}</div>
+                        @else
+                            <form method="POST" action="{{ route('profile.official-change-request.store') }}" class="row g-3">
+                                @csrf
+                                @foreach ($profileOfficialFields as $field => $definition)
+                                    <div class="col-md-4">
+                                        <label for="official_{{ $field }}" class="form-label">{{ $definition['label'] }}</label>
+                                        @if ($definition['type'] === 'gender')
+                                            <select id="official_{{ $field }}" name="{{ $field }}" class="form-select">
+                                                <option value="">{{ __('app.auth.select_placeholder') }}</option>
+                                                @foreach (['male', 'female'] as $gender)
+                                                    <option value="{{ $gender }}" @selected(old($field, $definition['current']) === $gender)>{{ __('app.auth.gender_options.'.$gender) }}</option>
+                                                @endforeach
+                                            </select>
+                                        @else
+                                            <input id="official_{{ $field }}" name="{{ $field }}" type="{{ $definition['type'] === 'number' ? 'number' : ($definition['type'] === 'date' ? 'date' : 'text') }}" class="form-control" value="{{ old($field, $definition['current']) }}" @if (in_array($field, ['name_en', 'name_ar'], true)) required @endif>
+                                        @endif
+                                    </div>
+                                @endforeach
+                                <div class="col-12">
+                                    <label for="official_note" class="form-label">{{ __('app.profile.change_note') }}</label>
+                                    <textarea id="official_note" name="note" rows="3" class="form-control">{{ old('note') }}</textarea>
+                                </div>
+                                <div class="col-12">
+                                    <button class="btn btn-danger" type="submit">{{ __('app.profile.submit_official_change_action') }}</button>
+                                </div>
+                            </form>
+                        @endif
+
+                        <hr class="my-4">
+
+                        <div class="table-responsive portal-profile-table-scroll">
+                            <table class="table portal-profile-table mb-0">
+                                <colgroup>
+                                    <col style="width: 130px">
+                                    <col style="width: 180px">
+                                    <col style="width: 360px">
+                                    <col style="width: 260px">
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th>{{ __('app.applications.status') }}</th>
+                                        <th>{{ __('app.profile.requested_at') }}</th>
+                                        <th>{{ __('app.profile.changed_fields') }}</th>
+                                        <th>{{ __('app.profile.review_note') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @forelse ($profileChangeRequests as $changeRequest)
+                                        <tr>
+                                            <td><span class="badge bg-{{ $profileChangeStatusClass($changeRequest['status'] ?? null) }}">{{ __('app.profile.change_statuses.'.($changeRequest['status'] ?? 'pending')) }}</span></td>
+                                            <td>{{ $changeRequest['requested_at'] ?? __('app.dashboard.not_available') }}</td>
+                                            <td>
+                                                @foreach ((array) ($changeRequest['fields'] ?? []) as $change)
+                                                    <div class="mb-1">
+                                                        <strong>{{ $change['label'] ?? '' }}:</strong>
+                                                        {{ $change['current'] ?: __('app.dashboard.not_available') }}
+                                                        <span class="text-muted">&rarr;</span>
+                                                        {{ $change['requested'] ?: __('app.dashboard.not_available') }}
+                                                    </div>
+                                                @endforeach
+                                            </td>
+                                            <td>{{ $changeRequest['review_note'] ?? $changeRequest['note'] ?? __('app.dashboard.not_available') }}</td>
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="4">{{ __('app.profile.official_change_empty') }}</td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
 
     <div class="row g-3">
         @foreach ([

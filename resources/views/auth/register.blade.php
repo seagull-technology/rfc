@@ -49,7 +49,7 @@
 
                                     <div class="tab-content registration-form-panel" id="myTabContent-3">
                                         <div class="tab-pane fade {{ $activeRegistrationType === 'student' ? 'show active' : '' }}" id="home-justify" role="tabpanel" aria-labelledby="home-tab-justify">
-                                            <form method="POST" action="{{ route('register.store') }}" id="register-form-student" data-register-form="student" data-student-lookup-url="{{ route('register.student.lookup') }}">
+                                            <form method="POST" action="{{ route('register.store') }}" id="register-form-student" data-register-form="student" data-student-lookup-url="{{ route('register.student.lookup') }}" enctype="multipart/form-data">
                                                 @csrf
                                                 <input type="hidden" name="registration_type" value="student">
                                                 <input type="hidden" name="student_lookup_verified" value="{{ $studentLookupCompleted ? '1' : '0' }}" data-student-lookup-verified>
@@ -166,6 +166,27 @@
                                                                     @error('phone')
                                                                         <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                     @enderror
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label for="student-address" class="form-label">{{ __('app.auth.address_labels.student') }}</label>
+                                                                    <input id="student-address" type="text" name="address" class="form-control @error('address') is-invalid @enderror" placeholder="{{ __('app.auth.address_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('address') : '' }}" autocomplete="street-address" data-student-account-input @if($studentLookupCompleted) required @endif>
+                                                                    @error('address')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-md-6">
+                                                                <div class="mb-3">
+                                                                    <label for="registration-logo-student" class="form-label custom-file-input">{{ __('app.auth.logo_label') }}</label>
+                                                                    <input class="form-control @error('logo') is-invalid @enderror" type="file" id="registration-logo-student" name="logo" accept="image/png" data-student-account-input>
+                                                                    @error('logo')
+                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                    @enderror
+                                                                    <div class="form-text">{{ __('app.auth.logo_help') }}</div>
                                                                 </div>
                                                             </div>
 
@@ -313,6 +334,15 @@
                                                                         @enderror
                                                                     </div>
 
+                                                                    <div class="col-md-6">
+                                                                        <label for="registration-logo-company" class="form-label custom-file-input">{{ __('app.auth.logo_label') }}</label>
+                                                                        <input class="form-control @error('logo') is-invalid @enderror" type="file" id="registration-logo-company" name="logo" accept="image/png" data-company-account-input>
+                                                                        @error('logo')
+                                                                            <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                        @enderror
+                                                                        <div class="form-text">{{ __('app.auth.logo_help') }}</div>
+                                                                    </div>
+
                                                                     <div class="col-md-12">
                                                                         <div class="mb-3">
                                                                             <label class="form-label">{{ __('app.auth.description_labels.company') }}</label>
@@ -421,6 +451,15 @@
                                                                 @error('registration_document')
                                                                     <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                 @enderror
+                                                            </div>
+
+                                                            <div class="col-md-12">
+                                                                <label for="registration-logo-{{ $type }}" class="form-label custom-file-input">{{ __('app.auth.logo_label') }}</label>
+                                                                <input class="form-control @error('logo') is-invalid @enderror" type="file" id="registration-logo-{{ $type }}" name="logo" accept="image/png">
+                                                                @error('logo')
+                                                                    <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                @enderror
+                                                                <div class="form-text">{{ __('app.auth.logo_help') }}</div>
                                                             </div>
 
                                                             <div class="col-md-6">

@@ -519,6 +519,10 @@ class ScoutingRequestController extends Controller
             'location_type_labels' => $locationTypes
                 ->mapWithKeys(fn (FilmingLocationType $locationType): array => [$locationType->code => $locationType->displayName()])
                 ->all(),
+            'location_type_approval_days' => $locationTypes
+                ->filter(fn (FilmingLocationType $locationType): bool => (int) $locationType->approval_days > 0)
+                ->mapWithKeys(fn (FilmingLocationType $locationType): array => [$locationType->code => (int) $locationType->approval_days])
+                ->all(),
         ];
     }
 

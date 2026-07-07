@@ -91,6 +91,10 @@ Route::group([
         Route::get('/registration/complete', [RegistrationCompletionController::class, 'edit'])->name('registration.completion.edit');
         Route::post('/registration/complete', [RegistrationCompletionController::class, 'update'])->name('registration.completion.update');
         Route::get('/profile', ProfileController::class)->name('profile.show');
+        Route::get('/profile/logo', [ProfileController::class, 'logo'])->name('profile.logo');
+        Route::post('/profile/account', [ProfileController::class, 'updateAccount'])->name('profile.account.update');
+        Route::post('/profile/contact', [ProfileController::class, 'updateContact'])->name('profile.contact.update');
+        Route::post('/profile/official-change-request', [ProfileController::class, 'storeOfficialChangeRequest'])->name('profile.official-change-request.store');
         Route::post('/profile/foreign-producer/applications/{application}/declaration', [ProfileController::class, 'signForeignProducerDeclaration'])
             ->name('profile.foreign-producer.applications.declaration.store');
         Route::post('/logout', [LogoutController::class, 'store'])->name('logout');
@@ -452,9 +456,15 @@ Route::group([
                 Route::get('/entities/{entity}/registration-document', [EntityManagementController::class, 'downloadRegistrationDocument'])
                     ->middleware('permission:entities.view')
                     ->name('entities.registration-document');
+                Route::get('/entities/{entity}/registration-logo', [EntityManagementController::class, 'registrationLogo'])
+                    ->middleware('permission:entities.view')
+                    ->name('entities.registration-logo');
                 Route::post('/entities/{entity}/review', [EntityManagementController::class, 'review'])
                     ->middleware('permission:entities.manage')
                     ->name('entities.review');
+                Route::post('/entities/{entity}/profile-change-requests/{requestKey}', [EntityManagementController::class, 'reviewProfileChangeRequest'])
+                    ->middleware('permission:entities.manage')
+                    ->name('entities.profile-change-requests.review');
                 Route::post('/entities/{entity}/members', [EntityManagementController::class, 'storeMember'])
                     ->middleware('permission:entities.manage')
                     ->name('entities.members.store');

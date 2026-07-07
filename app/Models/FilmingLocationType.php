@@ -21,11 +21,13 @@ class FilmingLocationType extends Model
         'name_ar',
         'is_active',
         'sort_order',
+        'approval_days',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
         'sort_order' => 'integer',
+        'approval_days' => 'integer',
     ];
 
     public function governorates(): BelongsToMany

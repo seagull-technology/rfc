@@ -21,6 +21,7 @@ class Application extends Model
         'submitted_by_user_id',
         'project_name',
         'project_nationality',
+        'project_nationalities',
         'work_category',
         'release_method',
         'planned_start_date',
@@ -57,8 +58,44 @@ class Application extends Model
             'final_decision_issued_at' => 'datetime',
             'assigned_at' => 'datetime',
             'estimated_budget' => 'decimal:2',
+            'project_nationalities' => 'array',
             'metadata' => 'array',
         ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function projectNationalityCodes(): array
+    {
+        $codes = $this->project_nationalities;
+
+        if (! is_array($codes) || blank($codes)) {
+            $codes = data_get($this->metadata, 'project.nationalities', []);
+        }
+
+        if (blank($codes) && filled($this->project_nationality)) {
+            $codes = [$this->project_nationality];
+        }
+
+        return collect((array) $codes)
+            ->filter(fn ($code): bool => filled($code))
+            ->map(fn ($code): string => (string) $code)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    public function projectNationalityLabels(): string
+    {
+        $labels = collect($this->projectNationalityCodes())
+            ->map(fn (string $code): string => Nationality::labelFor($code))
+            ->filter()
+            ->values();
+
+        return $labels->isNotEmpty()
+            ? $labels->implode(app()->getLocale() === 'ar' ? '، ' : ', ')
+            : __('app.dashboard.not_available');
     }
 
     public function scopeNewestFirst(Builder $query): Builder

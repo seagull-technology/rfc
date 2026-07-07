@@ -31,6 +31,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\Rules\RequiredIf;
 use Illuminate\View\View;
 use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -106,6 +107,7 @@ class ApplicationController extends Controller
         $application = new FilmApplication([
             'project_name' => '',
             'project_nationality' => 'jordanian',
+            'project_nationalities' => ['jordanian'],
             'work_category' => '',
             'release_method' => '',
             'status' => 'draft',
@@ -127,6 +129,7 @@ class ApplicationController extends Controller
             'workLookupOptions' => $this->workLookupOptionsForApplication($application),
             'formLookupOptions' => $this->formLookupOptionsForApplication(),
             'lockedProducerFields' => $lockedProducerFields,
+            'canUseInternationalProjectSection' => $this->canUseInternationalProjectSection($user, $entity),
         ]);
     }
 
@@ -136,11 +139,12 @@ class ApplicationController extends Controller
         $this->ensureApplicantPermission($user, 'applications.create');
 
         $this->mergeLockedApplicantProducerFields($request, $user, $entity);
-        $validated = $this->validateApplicationPayload($request);
+        $validated = $this->validateApplicationPayload($request, false, $entity, $user);
+        $requiresInternationalProject = $this->projectRequiresInternationalSection($validated, $entity, $user);
 
-        $application = DB::transaction(function () use ($validated, $user, $entity): FilmApplication {
+        $application = DB::transaction(function () use ($validated, $user, $entity, $requiresInternationalProject): FilmApplication {
             $application = FilmApplication::query()->create([
-                ...$this->applicationAttributes($validated),
+                ...$this->applicationAttributes($validated, $entity, $user),
                 'code' => $this->nextCode(),
                 'entity_id' => $entity->getKey(),
                 'submitted_by_user_id' => $user->getKey(),
@@ -149,7 +153,10 @@ class ApplicationController extends Controller
             ]);
 
             $this->appendHistory($application, 'draft', __('app.applications.history.draft_created'), $user->getKey());
-            $this->syncInternationalProducerAccount($application, $validated, $entity);
+
+            if ($requiresInternationalProject) {
+                $this->syncInternationalProducerAccount($application, $validated, $entity);
+            }
 
             return $application;
         });
@@ -219,6 +226,7 @@ class ApplicationController extends Controller
             'workLookupOptions' => $this->workLookupOptionsForApplication($record),
             'formLookupOptions' => $this->formLookupOptionsForApplication(),
             'lockedProducerFields' => $this->lockedApplicantProducerFields($user, $entity),
+            'canUseInternationalProjectSection' => $this->canUseInternationalProjectSection($user, $entity),
         ]);
     }
 
@@ -231,17 +239,21 @@ class ApplicationController extends Controller
         abort_unless($record->canBeEditedByApplicant(), 403);
 
         $this->mergeLockedApplicantProducerFields($request, $user, $entity);
-        $validated = $this->validateApplicationPayload($request);
+        $validated = $this->validateApplicationPayload($request, false, $entity, $user);
 
-        $attributes = $this->applicationAttributes($validated);
+        $attributes = $this->applicationAttributes($validated, $entity, $user);
+        $requiresInternationalProject = $this->projectRequiresInternationalSection($validated, $entity, $user);
         $existingInternationalAccount = data_get($record->metadata, 'international.account');
 
-        if ($existingInternationalAccount) {
+        if ($requiresInternationalProject && $existingInternationalAccount) {
             data_set($attributes, 'metadata.international.account', $existingInternationalAccount);
         }
 
         $record->forceFill($attributes)->save();
-        $this->syncInternationalProducerAccount($record, $validated, $entity);
+
+        if ($requiresInternationalProject) {
+            $this->syncInternationalProducerAccount($record, $validated, $entity);
+        }
 
         return redirect()
             ->route('applications.show', $record)
@@ -696,7 +708,7 @@ class ApplicationController extends Controller
         return [
             'project' => $this->nationalityOptionsForUsage(
                 Nationality::USAGE_PROJECT,
-                (string) $application->project_nationality,
+                $application->projectNationalityCodes(),
             ),
             'director' => $this->nationalityOptionsForUsage(
                 Nationality::USAGE_DIRECTOR,
@@ -720,11 +732,19 @@ class ApplicationController extends Controller
             ->ordered()
             ->get();
 
-        $currentCode = filled($currentCode) ? (string) $currentCode : null;
+        $currentCodes = collect((array) $currentCode)
+            ->filter(fn ($code): bool => filled($code))
+            ->map(fn ($code): string => (string) $code)
+            ->unique()
+            ->values();
 
-        if ($currentCode && ! $options->contains('code', $currentCode)) {
+        foreach ($currentCodes as $code) {
+            if ($options->contains('code', $code)) {
+                continue;
+            }
+
             $currentNationality = Nationality::query()
-                ->where('code', $currentCode)
+                ->where('code', $code)
                 ->first();
 
             if ($currentNationality) {
@@ -764,6 +784,10 @@ class ApplicationController extends Controller
                 ->all(),
             'location_type_labels' => $locationTypes
                 ->mapWithKeys(fn (FilmingLocationType $locationType): array => [$locationType->code => $locationType->displayName()])
+                ->all(),
+            'location_type_approval_days' => $locationTypes
+                ->filter(fn (FilmingLocationType $locationType): bool => (int) $locationType->approval_days > 0)
+                ->mapWithKeys(fn (FilmingLocationType $locationType): array => [$locationType->code => (int) $locationType->approval_days])
                 ->all(),
             'governorate_labels' => $governorates
                 ->mapWithKeys(fn (Governorate $governorate): array => [$governorate->code => $governorate->displayName()])
@@ -916,6 +940,51 @@ class ApplicationController extends Controller
     }
 
     /**
+     * @return array<int, mixed>
+     */
+    private function workContentSummarySynopsisRules(): array
+    {
+        return ['required', 'string', 'max:12000', $this->arabicTextRule(), $this->minimumWordCountRule(500)];
+    }
+
+    private function arabicTextRule(): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail): void {
+            $text = trim((string) $value);
+
+            if ($text === '') {
+                return;
+            }
+
+            if (preg_match('/[^\p{Arabic}\p{N}\s\.,،؛;:!؟\?\-\(\)\[\]"\'\/%&]+/u', $text)) {
+                $fail(__('validation.arabic_text'));
+            }
+        };
+    }
+
+    private function minimumWordCountRule(int $minimum): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($minimum): void {
+            $text = trim((string) $value);
+
+            if ($text === '') {
+                return;
+            }
+
+            if ($this->arabicWordCount($text) < $minimum) {
+                $fail(__('validation.min_words', ['min' => $minimum]));
+            }
+        };
+    }
+
+    private function arabicWordCount(string $text): int
+    {
+        preg_match_all('/[\p{Arabic}\p{N}]+/u', $text, $matches);
+
+        return count($matches[0] ?? []);
+    }
+
+    /**
      * @return array<string, array<int, string>>
      */
     private function wrapReportOptions(): array
@@ -993,12 +1062,13 @@ class ApplicationController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function validateApplicationPayload(Request $request, bool $requireComplete = false): array
+    private function validateApplicationPayload(Request $request, bool $requireComplete = false, ?Entity $entity = null, ?User $user = null): array
     {
-        $rules = $this->applicationValidationRules($request);
+        $rules = $this->applicationValidationRules($request, $entity, $user);
 
         if (! $requireComplete) {
             $rules = $this->draftApplicationValidationRules($rules);
+            $rules['work_content_summary_synopsis'] = ['nullable', 'string', 'max:12000'];
         }
 
         return $this->normalizeApplicationPayload($request->validate($rules));
@@ -1006,22 +1076,30 @@ class ApplicationController extends Controller
 
     private function validateApplicationForSubmission(FilmApplication $application): void
     {
+        $application->loadMissing('entity');
+
         $payload = $this->applicationPayloadFromRecord($application);
         $request = Request::create('/', 'POST', $payload);
 
-        Validator::make($payload, $this->applicationValidationRules($request))->validate();
+        Validator::make($payload, $this->applicationValidationRules($request, $application->entity, $application->submittedBy))->validate();
     }
 
     /**
      * @return array<string, array<int, mixed>>
      */
-    private function applicationValidationRules(Request $request): array
+    private function applicationValidationRules(Request $request, ?Entity $entity = null, ?User $user = null): array
     {
         $workCategories = WorkCategory::activeCodes();
         $releaseMethods = ReleaseMethod::activeCodes();
         $governorateCodes = Governorate::activeCodes();
         $locationTypeCodes = FilmingLocationType::activeCodes();
-        $specialRequirementCodes = FormLookupOption::activeCodesForType(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT);
+        $specialRequirementCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT, $request, [
+            'filming_locations.*.special_requirements',
+        ]);
+        $specialRequirementCodes = array_values(array_unique([
+            ...$specialRequirementCodes,
+            ...array_map('strval', array_keys((array) $request->input('special_location_requirements', []))),
+        ]));
         $budgetSpendingCategoryCodes = FormLookupOption::activeCodesForType(FormLookupOption::TYPE_BUDGET_SPENDING_CATEGORY);
         $equipmentCategoryCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_EQUIPMENT_CATEGORY, $request, [
             'imported_equipment.*.classification',
@@ -1040,10 +1118,19 @@ class ApplicationController extends Controller
         $militaryBorderLocationTypeCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_MILITARY_BORDER_LOCATION_TYPE, $request, [
             'military_border_locations.*.location_type',
         ]);
+        $requiresInternationalProject = $this->projectRequiresInternationalSection($request->all(), $entity, $user);
+        $hasInternationalAccount = filter_var($request->input('international_account_exists'), FILTER_VALIDATE_BOOLEAN)
+            || filled($request->input('international_account_user_id'));
+        $requiresInternationalAccountPassword = $requiresInternationalProject && ! $hasInternationalAccount;
+        $requiresBudgetBreakdown = ((float) $request->input('local_spend_estimate', 0)) >= 175000;
 
-        return [
+        $preparationEndDate = $request->input('schedule_phases.preparation.end_date');
+
+        $rules = [
             'project_name' => ['required', 'string', 'max:255'],
-            'project_nationality' => ['required', Rule::in(Nationality::activeCodesFor(Nationality::USAGE_PROJECT))],
+            'project_nationality' => ['nullable', Rule::in(Nationality::activeCodesFor(Nationality::USAGE_PROJECT))],
+            'project_nationalities' => ['required', 'array', 'min:1'],
+            'project_nationalities.*' => ['required', Rule::in(Nationality::activeCodesFor(Nationality::USAGE_PROJECT))],
             'work_category' => ['required', Rule::in($workCategories)],
             'work_categories' => ['nullable', 'array'],
             'work_categories.*' => ['nullable', Rule::in($workCategories)],
@@ -1052,7 +1139,26 @@ class ApplicationController extends Controller
             'release_methods' => ['nullable', 'array'],
             'release_methods.*' => ['nullable', Rule::in($releaseMethods)],
             'release_method_other' => ['nullable', 'string', 'max:255'],
-            'planned_start_date' => ['required', 'date', 'after_or_equal:schedule_phases.preparation.end_date'],
+            'planned_start_date' => [
+                'required',
+                'date',
+                function (string $attribute, mixed $value, \Closure $fail) use ($preparationEndDate): void {
+                    if (blank($value) || blank($preparationEndDate)) {
+                        return;
+                    }
+
+                    $minimumStartDate = strtotime((string) $preparationEndDate.' +2 days');
+                    $shootingStartDate = strtotime((string) $value);
+
+                    if ($minimumStartDate === false || $shootingStartDate === false) {
+                        return;
+                    }
+
+                    if ($shootingStartDate < $minimumStartDate) {
+                        $fail(__('app.applications.schedule_validation.shooting_start_after_preparation_buffer'));
+                    }
+                },
+            ],
             'planned_end_date' => ['required', 'date', 'after_or_equal:planned_start_date'],
             'schedule_phases' => ['required', 'array'],
             'schedule_phases.preparation.start_date' => ['required', 'date'],
@@ -1064,10 +1170,10 @@ class ApplicationController extends Controller
             'estimated_crew_count' => ['required', 'integer', 'min:1', 'max:100000'],
             'estimated_budget' => ['nullable', 'numeric', 'min:0', 'max:999999999.99'],
             'local_spend_estimate' => ['nullable', 'numeric', 'min:0', 'max:999999999.99'],
-            'budget_items' => ['nullable', 'array', $this->lookupArrayKeysRule($budgetSpendingCategoryCodes)],
+            'budget_items' => [Rule::requiredIf($requiresBudgetBreakdown), 'nullable', 'array', $this->lookupArrayKeysRule($budgetSpendingCategoryCodes)],
             'budget_items.*.units' => ['nullable', 'numeric', 'min:0', 'max:1000000'],
             'budget_items.*.total' => ['nullable', 'numeric', 'min:0', 'max:999999999.99'],
-            'project_summary' => ['required', 'string', 'max:5000'],
+            'project_summary' => ['nullable', 'string', 'max:5000'],
             'producer_name' => ['required', 'string', 'max:255'],
             'production_company_name' => ['required', 'string', 'max:255'],
             'contact_address' => ['required', 'string', 'max:255'],
@@ -1081,28 +1187,34 @@ class ApplicationController extends Controller
             'liaison_mobile' => ['required', 'string', 'max:50'],
             'director_name' => ['required', 'string', 'max:255'],
             'director_nationality' => ['required', Rule::in(Nationality::activeCodesFor(Nationality::USAGE_DIRECTOR))],
-            'director_profile_url' => ['nullable', 'url', 'max:500'],
-            'international_producer_name' => ['nullable', 'string', 'max:255'],
-            'international_producer_nationality' => ['nullable', Rule::in(Nationality::activeCodesFor(Nationality::USAGE_INTERNATIONAL_PRODUCER))],
-            'international_producer_company' => ['nullable', 'string', 'max:255'],
-            'international_producer_email' => ['nullable', 'email', 'max:255'],
-            'international_producer_profile_url' => ['nullable', 'url', 'max:500'],
-            'international_producer_address' => ['nullable', 'string', 'max:500'],
-            'international_producer_website' => ['nullable', 'url', 'max:500'],
-            'international_liaison_name' => ['nullable', 'string', 'max:255'],
-            'international_liaison_email' => ['nullable', 'email', 'max:255'],
-            'international_liaison_mobile' => ['nullable', 'string', 'max:50'],
-            'international_account_password' => ['nullable', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
-            'international_account_password_confirmation' => ['nullable', 'string'],
-            'work_content_summary_synopsis' => ['nullable', 'string', 'max:5000'],
-            'work_content_summary_sensitive_notes' => ['nullable', 'string', 'max:3000'],
-            'work_content_summary_confirmed' => ['nullable', 'boolean'],
+            'director_email' => ['required', 'email', 'max:255'],
+            'director_profile_url' => ['required', 'url', 'max:500'],
+            'international_producer_name' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:255'],
+            'international_producer_nationality' => [Rule::requiredIf($requiresInternationalProject), 'nullable', Rule::in(Nationality::activeCodesFor(Nationality::USAGE_INTERNATIONAL_PRODUCER))],
+            'international_producer_company' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:255'],
+            'international_producer_email' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'email', 'max:255'],
+            'international_producer_profile_url' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'url', 'max:500'],
+            'international_producer_address' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:500'],
+            'international_producer_website' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'url', 'max:500'],
+            'international_liaison_name' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:255'],
+            'international_liaison_email' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'email', 'max:255'],
+            'international_liaison_mobile' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:50'],
+            'international_account_exists' => $requiresInternationalProject ? ['required', 'accepted'] : ['nullable', 'boolean'],
+            'international_account_user_id' => ['nullable', 'integer'],
+            'international_account_password' => [Rule::requiredIf($requiresInternationalAccountPassword), 'nullable', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
+            'international_account_password_confirmation' => [Rule::requiredIf($requiresInternationalAccountPassword), 'nullable', 'string'],
+            'work_content_summary_synopsis' => $this->workContentSummarySynopsisRules(),
+            'work_content_summary_confirmed' => ['accepted'],
             'cast_crew' => ['nullable', 'array'],
             'cast_crew.*.name' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.first_name' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.second_name' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.third_name' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.family_name' => ['nullable', 'string', 'max:255'],
             'cast_crew.*.role' => ['nullable', 'string', 'max:255'],
             'cast_crew.*.nationality' => ['nullable', 'string', 'max:255'],
             'cast_crew.*.gender' => ['nullable', Rule::in(['male', 'female'])],
-            'cast_crew.*.birth_date' => ['nullable', 'date', 'before_or_equal:today'],
+            'cast_crew.*.birth_date' => ['nullable', 'date', 'before:today'],
             'cast_crew.*.identity_number' => ['nullable', 'string', 'max:255'],
             'filming_locations' => ['nullable', 'array'],
             'filming_locations.*.governorate' => ['nullable', 'string', Rule::in($governorateCodes)],
@@ -1110,6 +1222,15 @@ class ApplicationController extends Controller
             'filming_locations.*.address' => ['nullable', 'string', 'max:500'],
             'filming_locations.*.nature' => ['nullable', 'string', 'max:255'],
             'filming_locations.*.location_type' => ['nullable', 'string', Rule::in($locationTypeCodes), $this->locationTypeBelongsToGovernorateRule($request, 'filming_locations')],
+            'filming_locations.*.special_requirements' => ['nullable', 'array'],
+            'filming_locations.*.special_requirements.*' => ['nullable', 'string', Rule::in($specialRequirementCodes)],
+            'filming_locations.*.support_requirements' => ['nullable', 'array'],
+            'filming_locations.*.support_requirements.*.authority' => ['nullable', 'string', Rule::in(['public_security', 'military'])],
+            'filming_locations.*.support_requirements.*.requirement' => ['nullable', 'string', 'max:255'],
+            'filming_locations.*.support_requirements.*.date' => ['nullable', 'date'],
+            'filming_locations.*.support_requirements.*.time_from' => ['nullable', 'date_format:H:i'],
+            'filming_locations.*.support_requirements.*.time_to' => ['nullable', 'date_format:H:i'],
+            'filming_locations.*.support_requirements.*.notes' => ['nullable', 'string', 'max:1000'],
             'filming_locations.*.start_date' => ['nullable', 'date'],
             'filming_locations.*.end_date' => ['nullable', 'date'],
             'filming_locations.*.notes' => ['nullable', 'string', 'max:1000'],
@@ -1170,6 +1291,22 @@ class ApplicationController extends Controller
             'military_border_equipment.*.entry_method' => ['nullable', 'string', 'max:255'],
             'military_border_equipment.*.entry_point' => ['nullable', 'string', 'max:255', Rule::in($equipmentEntryPointCodes)],
             'military_border_equipment_acknowledged' => ['nullable', 'boolean'],
+            'public_security_support' => ['nullable', 'array'],
+            'public_security_support.*.day' => ['nullable', 'string', 'max:255'],
+            'public_security_support.*.date' => ['nullable', 'date'],
+            'public_security_support.*.time_from' => ['nullable', 'date_format:H:i'],
+            'public_security_support.*.time_to' => ['nullable', 'date_format:H:i'],
+            'public_security_support.*.location' => ['nullable', 'string', 'max:255'],
+            'public_security_support.*.requirement' => ['nullable', 'string', 'max:1000'],
+            'public_security_support.*.notes' => ['nullable', 'string', 'max:1000'],
+            'military_support' => ['nullable', 'array'],
+            'military_support.*.day' => ['nullable', 'string', 'max:255'],
+            'military_support.*.date' => ['nullable', 'date'],
+            'military_support.*.time_from' => ['nullable', 'date_format:H:i'],
+            'military_support.*.time_to' => ['nullable', 'date_format:H:i'],
+            'military_support.*.location' => ['nullable', 'string', 'max:255'],
+            'military_support.*.requirement' => ['nullable', 'string', 'max:1000'],
+            'military_support.*.notes' => ['nullable', 'string', 'max:1000'],
             'airport_filming_airport_name' => ['nullable', 'string', 'max:255', Rule::in($airportCodes)],
             'airport_filming_area' => ['nullable', 'string', 'max:255'],
             'airport_filming_date' => ['nullable', 'date'],
@@ -1192,6 +1329,15 @@ class ApplicationController extends Controller
             'governmental_scenes_confirmed' => ['nullable', 'boolean'],
             'supporting_notes' => ['nullable', 'string', 'max:3000'],
         ];
+
+        if ($requiresBudgetBreakdown) {
+            foreach ($budgetSpendingCategoryCodes as $code) {
+                $rules["budget_items.{$code}.units"] = ['required', 'numeric', 'min:0', 'max:1000000'];
+                $rules["budget_items.{$code}.total"] = ['required', 'numeric', 'min:0', 'max:999999999.99'];
+            }
+        }
+
+        return $rules;
     }
 
     /**
@@ -1201,7 +1347,13 @@ class ApplicationController extends Controller
     {
         $governorateCodes = Governorate::activeCodes();
         $locationTypeCodes = FilmingLocationType::activeCodes();
-        $specialRequirementCodes = FormLookupOption::activeCodesForType(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT);
+        $specialRequirementCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT, $request, [
+            'filming_locations.*.special_requirements',
+        ]);
+        $specialRequirementCodes = array_values(array_unique([
+            ...$specialRequirementCodes,
+            ...array_map('strval', array_keys((array) $request->input('special_location_requirements', []))),
+        ]));
         $equipmentCategoryCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_EQUIPMENT_CATEGORY, $request, [
             'imported_equipment.*.classification',
             'military_border_equipment.*.classification',
@@ -1221,15 +1373,18 @@ class ApplicationController extends Controller
         ]);
 
         return $request->validate([
-            'work_content_summary_synopsis' => ['nullable', 'string', 'max:5000'],
-            'work_content_summary_sensitive_notes' => ['nullable', 'string', 'max:3000'],
-            'work_content_summary_confirmed' => ['nullable', 'boolean'],
+            'work_content_summary_synopsis' => $this->workContentSummarySynopsisRules(),
+            'work_content_summary_confirmed' => ['accepted'],
             'cast_crew' => ['nullable', 'array'],
             'cast_crew.*.name' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.first_name' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.second_name' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.third_name' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.family_name' => ['nullable', 'string', 'max:255'],
             'cast_crew.*.role' => ['nullable', 'string', 'max:255'],
             'cast_crew.*.nationality' => ['nullable', 'string', 'max:255'],
             'cast_crew.*.gender' => ['nullable', Rule::in(['male', 'female'])],
-            'cast_crew.*.birth_date' => ['nullable', 'date', 'before_or_equal:today'],
+            'cast_crew.*.birth_date' => ['nullable', 'date', 'before:today'],
             'cast_crew.*.identity_number' => ['nullable', 'string', 'max:255'],
             'filming_locations' => ['nullable', 'array'],
             'filming_locations.*.governorate' => ['nullable', 'string', Rule::in($governorateCodes)],
@@ -1237,6 +1392,15 @@ class ApplicationController extends Controller
             'filming_locations.*.address' => ['nullable', 'string', 'max:500'],
             'filming_locations.*.nature' => ['nullable', 'string', 'max:255'],
             'filming_locations.*.location_type' => ['nullable', 'string', Rule::in($locationTypeCodes), $this->locationTypeBelongsToGovernorateRule($request, 'filming_locations')],
+            'filming_locations.*.special_requirements' => ['nullable', 'array'],
+            'filming_locations.*.special_requirements.*' => ['nullable', 'string', Rule::in($specialRequirementCodes)],
+            'filming_locations.*.support_requirements' => ['nullable', 'array'],
+            'filming_locations.*.support_requirements.*.authority' => ['nullable', 'string', Rule::in(['public_security', 'military'])],
+            'filming_locations.*.support_requirements.*.requirement' => ['nullable', 'string', 'max:255'],
+            'filming_locations.*.support_requirements.*.date' => ['nullable', 'date'],
+            'filming_locations.*.support_requirements.*.time_from' => ['nullable', 'date_format:H:i'],
+            'filming_locations.*.support_requirements.*.time_to' => ['nullable', 'date_format:H:i'],
+            'filming_locations.*.support_requirements.*.notes' => ['nullable', 'string', 'max:1000'],
             'filming_locations.*.start_date' => ['nullable', 'date'],
             'filming_locations.*.end_date' => ['nullable', 'date'],
             'filming_locations.*.notes' => ['nullable', 'string', 'max:1000'],
@@ -1297,6 +1461,22 @@ class ApplicationController extends Controller
             'military_border_equipment.*.entry_method' => ['nullable', 'string', 'max:255'],
             'military_border_equipment.*.entry_point' => ['nullable', 'string', 'max:255', Rule::in($equipmentEntryPointCodes)],
             'military_border_equipment_acknowledged' => ['nullable', 'boolean'],
+            'public_security_support' => ['nullable', 'array'],
+            'public_security_support.*.day' => ['nullable', 'string', 'max:255'],
+            'public_security_support.*.date' => ['nullable', 'date'],
+            'public_security_support.*.time_from' => ['nullable', 'date_format:H:i'],
+            'public_security_support.*.time_to' => ['nullable', 'date_format:H:i'],
+            'public_security_support.*.location' => ['nullable', 'string', 'max:255'],
+            'public_security_support.*.requirement' => ['nullable', 'string', 'max:1000'],
+            'public_security_support.*.notes' => ['nullable', 'string', 'max:1000'],
+            'military_support' => ['nullable', 'array'],
+            'military_support.*.day' => ['nullable', 'string', 'max:255'],
+            'military_support.*.date' => ['nullable', 'date'],
+            'military_support.*.time_from' => ['nullable', 'date_format:H:i'],
+            'military_support.*.time_to' => ['nullable', 'date_format:H:i'],
+            'military_support.*.location' => ['nullable', 'string', 'max:255'],
+            'military_support.*.requirement' => ['nullable', 'string', 'max:1000'],
+            'military_support.*.notes' => ['nullable', 'string', 'max:1000'],
             'airport_filming_airport_name' => ['nullable', 'string', 'max:255', Rule::in($airportCodes)],
             'airport_filming_area' => ['nullable', 'string', 'max:255'],
             'airport_filming_date' => ['nullable', 'date'],
@@ -1338,6 +1518,14 @@ class ApplicationController extends Controller
                     continue;
                 }
 
+                if ($rule instanceof RequiredIf) {
+                    if (! in_array('nullable', $relaxedRules, true)) {
+                        $relaxedRules[] = 'nullable';
+                    }
+
+                    continue;
+                }
+
                 if ($rule === 'accepted') {
                     if (! in_array('nullable', $relaxedRules, true)) {
                         $relaxedRules[] = 'nullable';
@@ -1368,6 +1556,7 @@ class ApplicationController extends Controller
         $defaults = [
             'project_name' => '',
             'project_nationality' => '',
+            'project_nationalities' => [],
             'work_category' => '',
             'work_categories' => [],
             'work_category_other' => null,
@@ -1395,6 +1584,7 @@ class ApplicationController extends Controller
             'liaison_mobile' => null,
             'director_name' => null,
             'director_nationality' => null,
+            'director_email' => null,
             'director_profile_url' => null,
             'international_producer_name' => null,
             'international_producer_nationality' => null,
@@ -1406,12 +1596,20 @@ class ApplicationController extends Controller
             'international_liaison_name' => null,
             'international_liaison_email' => null,
             'international_liaison_mobile' => null,
+            'international_account_exists' => false,
+            'international_account_user_id' => null,
             'international_account_password' => null,
             'international_account_password_confirmation' => null,
             'supporting_notes' => null,
         ];
 
         $validated = array_replace($defaults, $validated);
+        $projectNationalities = $this->normalizedProjectNationalities($validated);
+        $validated['project_nationalities'] = $projectNationalities;
+        $validated['project_nationality'] = $projectNationalities[0] ?? (($validated['project_nationality'] ?? null) ?: '');
+        $workCategory = $this->normalizedSingleWorkCategory($validated);
+        $validated['work_category'] = $workCategory ?: '';
+        $validated['work_categories'] = $workCategory ? [$workCategory] : [];
         $validated['schedule_phases'] = array_replace_recursive([
             'preparation' => ['start_date' => null, 'end_date' => null],
             'wrap' => ['start_date' => null, 'end_date' => null],
@@ -1419,6 +1617,62 @@ class ApplicationController extends Controller
         ], (array) ($validated['schedule_phases'] ?? []));
 
         return $validated;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<int, string>
+     */
+    private function normalizedProjectNationalities(array $payload): array
+    {
+        $codes = (array) ($payload['project_nationalities'] ?? []);
+
+        if (blank($codes) && filled($payload['project_nationality'] ?? null)) {
+            $codes = [(string) $payload['project_nationality']];
+        }
+
+        return collect($codes)
+            ->filter(fn ($code): bool => filled($code))
+            ->map(fn ($code): string => (string) $code)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function normalizedSingleWorkCategory(array $payload): ?string
+    {
+        if (filled($payload['work_category'] ?? null)) {
+            return (string) $payload['work_category'];
+        }
+
+        $codes = collect((array) ($payload['work_categories'] ?? []))
+            ->filter(fn ($code): bool => filled($code))
+            ->map(fn ($code): string => (string) $code)
+            ->values();
+
+        return $codes->first(fn (string $code): bool => $code !== 'other') ?: $codes->first();
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function projectRequiresInternationalSection(array $payload, ?Entity $entity = null, ?User $user = null): bool
+    {
+        if (! $this->canUseInternationalProjectSection($user, $entity)) {
+            return false;
+        }
+
+        return collect($this->normalizedProjectNationalities($payload))
+            ->contains(fn (string $code): bool => $code !== 'jordanian');
+    }
+
+    private function canUseInternationalProjectSection(?User $user = null, ?Entity $entity = null): bool
+    {
+        return ($user?->registration_type !== 'student')
+            && ($entity?->registration_type !== 'student');
     }
 
     /**
@@ -1432,6 +1686,7 @@ class ApplicationController extends Controller
         return $this->normalizeApplicationPayload([
             'project_name' => $application->project_name,
             'project_nationality' => $application->project_nationality,
+            'project_nationalities' => $application->projectNationalityCodes(),
             'work_category' => $application->work_category,
             'work_categories' => (array) data_get($metadata, 'project.work_categories', []),
             'work_category_other' => data_get($metadata, 'project.work_category_other'),
@@ -1459,6 +1714,7 @@ class ApplicationController extends Controller
             'liaison_mobile' => data_get($metadata, 'producer.liaison_mobile'),
             'director_name' => data_get($metadata, 'director.director_name'),
             'director_nationality' => data_get($metadata, 'director.director_nationality'),
+            'director_email' => data_get($metadata, 'director.director_email'),
             'director_profile_url' => data_get($metadata, 'director.director_profile_url'),
             'international_producer_name' => data_get($metadata, 'international.international_producer_name'),
             'international_producer_nationality' => data_get($metadata, 'international.international_producer_nationality'),
@@ -1470,8 +1726,9 @@ class ApplicationController extends Controller
             'international_liaison_name' => data_get($metadata, 'international.international_liaison_name'),
             'international_liaison_email' => data_get($metadata, 'international.international_liaison_email'),
             'international_liaison_mobile' => data_get($metadata, 'international.international_liaison_mobile'),
+            'international_account_exists' => filled(data_get($metadata, 'international.account.user_id')) || filled(data_get($metadata, 'international.account.email')),
+            'international_account_user_id' => data_get($metadata, 'international.account.user_id'),
             'work_content_summary_synopsis' => data_get($annex, 'work_content_summary.synopsis'),
-            'work_content_summary_sensitive_notes' => data_get($annex, 'work_content_summary.sensitive_notes'),
             'work_content_summary_confirmed' => data_get($annex, 'work_content_summary.confirmed') ? '1' : '0',
             'cast_crew' => (array) data_get($annex, 'cast_crew', []),
             'filming_locations' => (array) data_get($annex, 'filming_locations', []),
@@ -1485,6 +1742,8 @@ class ApplicationController extends Controller
             'military_border_locations' => (array) data_get($annex, 'military_border_locations', []),
             'military_border_equipment' => (array) data_get($annex, 'military_border_equipment', []),
             'military_border_equipment_acknowledged' => data_get($annex, 'military_border_equipment_acknowledged') ? '1' : '0',
+            'public_security_support' => (array) data_get($annex, 'public_security_support', []),
+            'military_support' => (array) data_get($annex, 'military_support', []),
             'airport_filming_airport_name' => data_get($annex, 'airport_filming.airport_name'),
             'airport_filming_area' => data_get($annex, 'airport_filming.area'),
             'airport_filming_date' => data_get($annex, 'airport_filming.filming_date'),
@@ -1501,13 +1760,28 @@ class ApplicationController extends Controller
      * @param  array<string, mixed>  $validated
      * @return array<string, mixed>
      */
-    private function applicationAttributes(array $validated): array
+    private function applicationAttributes(array $validated, ?Entity $entity = null, ?User $user = null): array
     {
-        $workCategories = array_values(array_filter((array) ($validated['work_categories'] ?? []), fn ($value): bool => filled($value)));
+        $workCategory = $this->normalizedSingleWorkCategory($validated);
+        $workCategories = $workCategory ? [$workCategory] : [];
         $releaseMethods = array_values(array_filter((array) ($validated['release_methods'] ?? []), fn ($value): bool => filled($value)));
-        $workCategory = ($validated['work_category'] ?? null) ?: collect($workCategories)->first(fn ($value) => $value !== 'other');
         $releaseMethod = ($validated['release_method'] ?? null) ?: collect($releaseMethods)->first(fn ($value) => $value !== 'other');
+        $projectNationalities = $this->normalizedProjectNationalities($validated);
+        $requiresInternationalProject = $this->projectRequiresInternationalSection(['project_nationalities' => $projectNationalities], $entity, $user);
         $schedulePhases = (array) ($validated['schedule_phases'] ?? []);
+        $internationalMetadata = $requiresInternationalProject ? [
+            'international_producer_name' => ($validated['international_producer_name'] ?? null) ?: null,
+            'international_producer_nationality' => ($validated['international_producer_nationality'] ?? null) ?: null,
+            'international_producer_company' => ($validated['international_producer_company'] ?? null) ?: null,
+            'international_producer_email' => ($validated['international_producer_email'] ?? null) ?: null,
+            'international_producer_profile_url' => ($validated['international_producer_profile_url'] ?? null) ?: null,
+            'international_producer_address' => ($validated['international_producer_address'] ?? null) ?: null,
+            'international_producer_website' => ($validated['international_producer_website'] ?? null) ?: null,
+            'international_liaison_name' => ($validated['international_liaison_name'] ?? null) ?: null,
+            'international_liaison_email' => ($validated['international_liaison_email'] ?? null) ?: null,
+            'international_liaison_mobile' => ($validated['international_liaison_mobile'] ?? null) ?: null,
+            'account_email' => (($validated['international_liaison_email'] ?? null) ?: ($validated['international_producer_email'] ?? null)) ?: null,
+        ] : [];
 
         $schedulePhases['shooting'] = [
             'start_date' => $validated['planned_start_date'] ?? null,
@@ -1516,7 +1790,8 @@ class ApplicationController extends Controller
 
         return [
             'project_name' => $validated['project_name'] ?? '',
-            'project_nationality' => $validated['project_nationality'] ?? '',
+            'project_nationality' => $projectNationalities[0] ?? '',
+            'project_nationalities' => $projectNationalities,
             'work_category' => $workCategory ?: null,
             'release_method' => $releaseMethod ?: null,
             'planned_start_date' => $validated['planned_start_date'] ?? null,
@@ -1526,6 +1801,7 @@ class ApplicationController extends Controller
             'project_summary' => $validated['project_summary'] ?? null,
             'metadata' => [
                 'project' => [
+                    'nationalities' => $projectNationalities,
                     'work_categories' => $workCategories ?: ($workCategory ? [$workCategory] : []),
                     'work_category_other' => ($validated['work_category_other'] ?? null) ?: null,
                     'release_methods' => $releaseMethods ?: ($releaseMethod ? [$releaseMethod] : []),
@@ -1547,21 +1823,10 @@ class ApplicationController extends Controller
                 'director' => [
                     'director_name' => $validated['director_name'] ?? null,
                     'director_nationality' => $validated['director_nationality'] ?? null,
-                    'director_profile_url' => $validated['director_profile_url'] ?: null,
+                    'director_email' => $validated['director_email'] ?? null,
+                    'director_profile_url' => ($validated['director_profile_url'] ?? null) ?: null,
                 ],
-                'international' => [
-                    'international_producer_name' => $validated['international_producer_name'] ?: null,
-                    'international_producer_nationality' => ($validated['international_producer_nationality'] ?? null) ?: null,
-                    'international_producer_company' => $validated['international_producer_company'] ?: null,
-                    'international_producer_email' => ($validated['international_producer_email'] ?? null) ?: null,
-                    'international_producer_profile_url' => ($validated['international_producer_profile_url'] ?? null) ?: null,
-                    'international_producer_address' => ($validated['international_producer_address'] ?? null) ?: null,
-                    'international_producer_website' => ($validated['international_producer_website'] ?? null) ?: null,
-                    'international_liaison_name' => ($validated['international_liaison_name'] ?? null) ?: null,
-                    'international_liaison_email' => ($validated['international_liaison_email'] ?? null) ?: null,
-                    'international_liaison_mobile' => ($validated['international_liaison_mobile'] ?? null) ?: null,
-                    'account_email' => (($validated['international_liaison_email'] ?? null) ?: ($validated['international_producer_email'] ?? null)) ?: null,
-                ],
+                'international' => $internationalMetadata,
                 'schedule' => [
                     'phases' => $this->filledKeyedRows($schedulePhases, ['start_date', 'end_date']),
                 ],
@@ -1584,15 +1849,25 @@ class ApplicationController extends Controller
      */
     private function annexMetadata(array $validated): array
     {
+        $filmingLocations = $this->filmingLocationRows((array) ($validated['filming_locations'] ?? []));
+        $specialLocationRequirements = $this->specialLocationRequirementRows(
+            (array) ($validated['special_location_requirements'] ?? []),
+            $filmingLocations,
+        );
+        $locationSupportRows = $this->locationSupportRows(
+            $filmingLocations,
+            (array) ($validated['public_security_support'] ?? []),
+            (array) ($validated['military_support'] ?? []),
+        );
+
         return [
             'work_content_summary' => [
                 'synopsis' => ($validated['work_content_summary_synopsis'] ?? null) ?: null,
-                'sensitive_notes' => ($validated['work_content_summary_sensitive_notes'] ?? null) ?: null,
                 'confirmed' => (bool) ($validated['work_content_summary_confirmed'] ?? false),
             ],
-            'cast_crew' => $this->filledRows((array) ($validated['cast_crew'] ?? []), ['name', 'role', 'nationality', 'gender', 'birth_date', 'identity_number']),
-            'filming_locations' => $this->filledRows((array) ($validated['filming_locations'] ?? []), ['governorate', 'location_name', 'address', 'nature', 'location_type', 'start_date', 'end_date', 'notes']),
-            'special_location_requirements' => $this->filledKeyedRows((array) ($validated['special_location_requirements'] ?? []), ['locations', 'notes']),
+            'cast_crew' => $this->castCrewRows((array) ($validated['cast_crew'] ?? [])),
+            'filming_locations' => $filmingLocations,
+            'special_location_requirements' => $specialLocationRequirements,
             'safety_guidelines' => [
                 'acknowledged' => (bool) ($validated['safety_guidelines_acknowledged'] ?? false),
                 'notes' => ($validated['safety_guidelines_notes'] ?? null) ?: null,
@@ -1604,6 +1879,8 @@ class ApplicationController extends Controller
             'military_border_locations' => $this->filledRows((array) ($validated['military_border_locations'] ?? []), ['governorate', 'location_name', 'address', 'nature', 'location_type', 'start_date', 'end_date']),
             'military_border_equipment' => $this->filledRows((array) ($validated['military_border_equipment'] ?? []), ['location_name', 'equipment', 'security_need', 'notes', 'item', 'serial_number', 'location_reference', 'quantity', 'unit_value', 'total_value', 'classification', 'entry_method', 'entry_point']),
             'military_border_equipment_acknowledged' => (bool) ($validated['military_border_equipment_acknowledged'] ?? false),
+            'public_security_support' => $locationSupportRows['public_security_support'],
+            'military_support' => $locationSupportRows['military_support'],
             'airport_filming' => [
                 'airport_name' => ($validated['airport_filming_airport_name'] ?? null) ?: null,
                 'area' => ($validated['airport_filming_area'] ?? null) ?: null,
@@ -1640,6 +1917,139 @@ class ApplicationController extends Controller
                 ->isNotEmpty())
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function filmingLocationRows(array $rows): array
+    {
+        return collect($this->filledRows($rows, ['governorate', 'location_name', 'address', 'nature', 'location_type', 'special_requirements', 'support_requirements', 'start_date', 'end_date', 'notes']))
+            ->map(function (array $row): array {
+                $row['special_requirements'] = collect((array) ($row['special_requirements'] ?? []))
+                    ->map(fn ($value): string => trim((string) $value))
+                    ->filter(fn (string $value): bool => filled($value))
+                    ->unique()
+                    ->values()
+                    ->all();
+                $row['support_requirements'] = $this->filledRows(
+                    (array) ($row['support_requirements'] ?? []),
+                    ['authority', 'requirement', 'date', 'time_from', 'time_to', 'notes'],
+                );
+
+                return $row;
+            })
+            ->all();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $filmingLocations
+     * @param  array<int, array<string, mixed>>  $publicSecurityRows
+     * @param  array<int, array<string, mixed>>  $militaryRows
+     * @return array{public_security_support: array<int, array<string, mixed>>, military_support: array<int, array<string, mixed>>}
+     */
+    private function locationSupportRows(array $filmingLocations, array $publicSecurityRows, array $militaryRows): array
+    {
+        $publicSecurity = $this->filledRows($publicSecurityRows, ['day', 'date', 'time_from', 'time_to', 'location', 'requirement', 'notes']);
+        $military = $this->filledRows($militaryRows, ['day', 'date', 'time_from', 'time_to', 'location', 'requirement', 'notes']);
+
+        foreach ($filmingLocations as $index => $location) {
+            $locationLabel = trim((string) ($location['location_name'] ?? ''));
+            $locationLabel = filled($locationLabel) ? $locationLabel : 'Location '.($index + 1);
+
+            foreach ((array) ($location['support_requirements'] ?? []) as $supportRequirement) {
+                $authority = (string) ($supportRequirement['authority'] ?? '');
+
+                if (! in_array($authority, ['public_security', 'military'], true)) {
+                    continue;
+                }
+
+                $row = [
+                    'day' => null,
+                    'date' => $supportRequirement['date'] ?? null,
+                    'time_from' => $supportRequirement['time_from'] ?? null,
+                    'time_to' => $supportRequirement['time_to'] ?? null,
+                    'location' => $locationLabel,
+                    'requirement' => $supportRequirement['requirement'] ?? null,
+                    'notes' => $supportRequirement['notes'] ?? null,
+                ];
+
+                if ($authority === 'public_security') {
+                    $publicSecurity[] = $row;
+                } else {
+                    $military[] = $row;
+                }
+            }
+        }
+
+        return [
+            'public_security_support' => $this->filledRows($publicSecurity, ['day', 'date', 'time_from', 'time_to', 'location', 'requirement', 'notes']),
+            'military_support' => $this->filledRows($military, ['day', 'date', 'time_from', 'time_to', 'location', 'requirement', 'notes']),
+        ];
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $submittedRows
+     * @param  array<int, array<string, mixed>>  $filmingLocations
+     * @return array<string, array<string, mixed>>
+     */
+    private function specialLocationRequirementRows(array $submittedRows, array $filmingLocations): array
+    {
+        $rows = $this->filledKeyedRows($submittedRows, ['locations', 'notes']);
+
+        foreach ($filmingLocations as $index => $location) {
+            $locationLabel = trim((string) ($location['location_name'] ?? ''));
+            $locationLabel = filled($locationLabel) ? $locationLabel : 'Location '.($index + 1);
+
+            foreach ((array) ($location['special_requirements'] ?? []) as $requirement) {
+                $requirement = trim((string) $requirement);
+
+                if (blank($requirement)) {
+                    continue;
+                }
+
+                $locations = (array) data_get($rows, $requirement.'.locations', []);
+                $locations[] = $locationLabel;
+
+                $rows[$requirement] = [
+                    'locations' => collect($locations)
+                        ->filter(fn ($value): bool => filled($value))
+                        ->map(fn ($value): string => trim((string) $value))
+                        ->unique()
+                        ->values()
+                        ->all(),
+                    'notes' => data_get($rows, $requirement.'.notes'),
+                ];
+            }
+        }
+
+        return $this->filledKeyedRows($rows, ['locations', 'notes']);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function castCrewRows(array $rows): array
+    {
+        $rows = collect($rows)
+            ->map(function (array $row): array {
+                $nameParts = collect(['first_name', 'second_name', 'third_name', 'family_name'])
+                    ->map(fn (string $key): string => trim((string) ($row[$key] ?? '')))
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                if (blank($row['name'] ?? null) && $nameParts !== []) {
+                    $row['name'] = implode(' ', $nameParts);
+                }
+
+                return $row;
+            })
+            ->all();
+
+        return $this->filledRows($rows, ['name', 'first_name', 'second_name', 'third_name', 'family_name', 'role', 'nationality', 'gender', 'birth_date', 'identity_number']);
     }
 
     /**

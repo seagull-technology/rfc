@@ -12,11 +12,13 @@ use App\Models\Group;
 use App\Models\ScoutingRequest;
 use App\Models\User;
 use App\Models\UserRoleAssignmentAudit;
+use App\Notifications\InboxMessageNotification;
 use App\Notifications\RegistrationApprovedNotification;
 use App\Notifications\RegistrationCompletionRequestedNotification;
 use App\Services\AuthorityApprovalNotificationService;
 use App\Services\RoleAssignmentService;
 use App\Support\ApplicationWorkflowRegistry;
+use App\Support\ProfileChangeRequests;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -311,6 +313,9 @@ class EntityManagementController extends Controller
             'reviewHistory' => $reviewHistory,
             'reviewerNames' => $reviewerNames,
             'primaryOwner' => $primaryOwner,
+            'profileOfficialFields' => ProfileChangeRequests::officialFields($entity),
+            'profileChangeRequests' => ProfileChangeRequests::all($entity),
+            'pendingProfileChangeRequest' => ProfileChangeRequests::pending($entity),
             'reviewedByUser' => $reviewedByUserId ? User::query()->withTrashed()->find($reviewedByUserId) : null,
             'groups' => Group::query()->orderBy('id')->get(),
             'users' => User::query()->orderBy('name')->get(),
@@ -433,6 +438,26 @@ class EntityManagementController extends Controller
         );
     }
 
+    public function registrationLogo(string $entity): StreamedResponse|RedirectResponse
+    {
+        $entity = $this->findEntity($entity);
+        $path = data_get($entity->metadata, 'logo_path');
+
+        if (! $path || ! Storage::disk('local')->exists($path)) {
+            return redirect()
+                ->route('admin.entities.show', $entity)
+                ->withErrors([
+                    'entity' => __('app.admin.entities.registration_logo_missing'),
+                ]);
+        }
+
+        return Storage::disk('local')->response(
+            $path,
+            data_get($entity->metadata, 'logo_name', basename($path)),
+            ['Content-Type' => data_get($entity->metadata, 'logo_mime', 'image/png')],
+        );
+    }
+
     public function review(Request $request, string $entity): RedirectResponse
     {
         $entity = $this->findEntity($entity);
@@ -498,6 +523,88 @@ class EntityManagementController extends Controller
         return redirect()
             ->route('admin.entities.show', $entity)
             ->with('status', __('app.admin.entities.review_saved'));
+    }
+
+    public function reviewProfileChangeRequest(Request $request, string $entity, string $requestKey): RedirectResponse
+    {
+        $entity = $this->findEntity($entity);
+        $primaryOwner = $entity->users()
+            ->orderByDesc('entity_user.is_primary')
+            ->orderBy('users.name')
+            ->first();
+        $validated = $request->validate([
+            'decision' => ['required', Rule::in(['approve', 'reject'])],
+            'note' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $metadata = $entity->metadata ?? [];
+        $requests = collect((array) ($metadata['profile_change_requests'] ?? []))->values();
+        $requestIndex = $requests->search(fn (array $item): bool => ($item['id'] ?? null) === $requestKey);
+
+        if ($requestIndex === false || data_get($requests[$requestIndex], 'status') !== 'pending') {
+            return redirect()
+                ->route('admin.entities.show', $entity)
+                ->withErrors(['profile_change_request' => __('app.admin.entities.profile_change_missing')]);
+        }
+
+        $changeRequest = $requests[$requestIndex];
+
+        DB::transaction(function () use ($request, $entity, $validated, $requests, $requestIndex, $changeRequest): void {
+            $metadata = $entity->metadata ?? [];
+            $fields = (array) ($changeRequest['fields'] ?? []);
+
+            if ($validated['decision'] === 'approve') {
+                [$columns, $metadataUpdates] = ProfileChangeRequests::splitApprovedPayload($fields);
+
+                $this->ensureOfficialChangeUniqueness($entity, $columns);
+
+                foreach ($metadataUpdates as $field => $value) {
+                    $metadata[$field] = $value;
+                }
+
+                $entity->forceFill([
+                    ...$columns,
+                    'metadata' => $metadata,
+                ])->save();
+            }
+
+            $updatedRequest = [
+                ...$changeRequest,
+                'status' => $validated['decision'] === 'approve' ? 'approved' : 'rejected',
+                'reviewed_at' => now()->toDateTimeString(),
+                'reviewed_by_user_id' => $request->user()?->getKey(),
+                'reviewed_by_name' => $request->user()?->displayName(),
+                'review_note' => $validated['note'] ?? null,
+            ];
+
+            $freshMetadata = $entity->fresh()->metadata ?? [];
+            $freshRequests = collect((array) ($freshMetadata['profile_change_requests'] ?? $requests->all()))->values();
+            $freshRequests[$requestIndex] = $updatedRequest;
+            $freshMetadata['profile_change_requests'] = $freshRequests->values()->all();
+
+            $entity->forceFill(['metadata' => $freshMetadata])->save();
+        });
+
+        if ($primaryOwner) {
+            $primaryOwner->notify(new InboxMessageNotification(
+                typeKey: $validated['decision'] === 'approve' ? 'profile_change_approved' : 'profile_change_rejected',
+                title: $validated['decision'] === 'approve'
+                    ? __('app.profile.notifications.change_approved_title')
+                    : __('app.profile.notifications.change_rejected_title'),
+                body: $validated['decision'] === 'approve'
+                    ? __('app.profile.notifications.change_approved_body', ['entity' => $entity->displayName()])
+                    : __('app.profile.notifications.change_rejected_body', ['entity' => $entity->displayName()]),
+                routeName: 'profile.show',
+                meta: [
+                    'entity_id' => $entity->getKey(),
+                    'profile_change_request_id' => $requestKey,
+                ],
+            ));
+        }
+
+        return redirect()
+            ->route('admin.entities.show', $entity)
+            ->with('status', __('app.admin.entities.profile_change_review_saved'));
     }
 
     public function destroy(string $entity): RedirectResponse
@@ -869,6 +976,36 @@ class EntityManagementController extends Controller
         abort_unless($record->group?->code === 'authorities', 404);
 
         return $record;
+    }
+
+    /**
+     * @param  array<string, mixed>  $columns
+     */
+    private function ensureOfficialChangeUniqueness(Entity $entity, array $columns): void
+    {
+        foreach (['registration_no', 'national_id'] as $column) {
+            $value = $columns[$column] ?? null;
+
+            if (! filled($value)) {
+                continue;
+            }
+
+            $exists = Entity::query()
+                ->withTrashed()
+                ->where($column, $value)
+                ->whereKeyNot($entity->getKey())
+                ->exists();
+
+            if ($exists) {
+                throw ValidationException::withMessages([
+                    'profile_change_request' => __('app.admin.entities.profile_change_unique_error', [
+                        'field' => $column === 'registration_no'
+                            ? __('app.auth.registration_number')
+                            : __('app.auth.organization_national_id'),
+                    ]),
+                ]);
+            }
+        }
     }
 
     private function ensureRoutingRuleBelongsToEntity(ApprovalRoutingRule $rule, Entity $entity): void

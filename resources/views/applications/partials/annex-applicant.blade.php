@@ -24,6 +24,8 @@
     $importedEquipmentRows = old('imported_equipment', data_get($annex, 'imported_equipment', [['transport_group' => 'shipping', 'item' => '', 'serial_number' => '', 'flight_reference' => '', 'traveler_name' => '', 'quantity' => '', 'unit_value' => '', 'total_value' => '', 'classification' => '', 'shipping_method' => '', 'entry_point' => '', 'arrival_date' => '', 'origin_country' => '']]));
     $militaryBorderLocationRows = old('military_border_locations', data_get($annex, 'military_border_locations', [['governorate' => '', 'location_name' => '', 'address' => '', 'nature' => '', 'location_type' => '', 'start_date' => '', 'end_date' => '']]));
     $militaryBorderEquipmentRows = old('military_border_equipment', data_get($annex, 'military_border_equipment', [['item' => '', 'serial_number' => '', 'location_reference' => '', 'quantity' => '', 'unit_value' => '', 'total_value' => '', 'classification' => '', 'entry_method' => '', 'entry_point' => '', 'location_name' => '', 'equipment' => '', 'security_need' => '', 'notes' => '']]));
+    $publicSecuritySupportRows = old('public_security_support', data_get($annex, 'public_security_support', [['day' => '', 'date' => '', 'time_from' => '', 'time_to' => '', 'location' => '', 'requirement' => '', 'notes' => '']]));
+    $militarySupportRows = old('military_support', data_get($annex, 'military_support', [['day' => '', 'date' => '', 'time_from' => '', 'time_to' => '', 'location' => '', 'requirement' => '', 'notes' => '']]));
     $airportPeopleRows = old('airport_people', data_get($annex, 'airport_people', [['full_name' => '', 'nationality' => '', 'mother_name' => '', 'identity_number' => '', 'profession' => '', 'address_phone' => '', 'entry_reason' => '', 'target_area' => '']]));
     $governmentalSceneRows = old('governmental_scenes', data_get($annex, 'governmental_scenes', [['site_name' => '', 'authority' => '', 'scene_description' => '', 'filming_date' => '']]));
     $rowHasData = static fn ($row): bool => collect((array) $row)->flatten()->contains(fn ($value) => filled($value));
@@ -44,7 +46,7 @@
         [
             'label' => __('app.applications.annex_sections.work_content_summary'),
             'target' => 'WorkContentSummary',
-            'filled' => filled(data_get($workContentSummary, 'synopsis')) || filled(data_get($workContentSummary, 'sensitive_notes')) || (bool) data_get($workContentSummary, 'confirmed'),
+            'filled' => filled(data_get($workContentSummary, 'synopsis')) && (bool) data_get($workContentSummary, 'confirmed'),
         ],
         [
             'label' => __('app.applications.annex_sections.cast_crew'),

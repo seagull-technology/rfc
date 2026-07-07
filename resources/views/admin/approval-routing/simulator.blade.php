@@ -114,7 +114,7 @@
                         </div>
                         <div class="mb-3">
                             <small class="text-muted d-block">{{ __('app.applications.project_nationality') }}</small>
-                            <div>{{ \App\Models\Nationality::labelFor($selectedApplication->project_nationality) }}</div>
+                            <div>{{ $selectedApplication->projectNationalityLabels() }}</div>
                         </div>
                         <div class="mb-3">
                             <small class="text-muted d-block">{{ __('app.applications.work_category') }}</small>

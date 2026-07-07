@@ -11,6 +11,13 @@
     $importedEquipmentRows = collect(data_get($annex, 'imported_equipment', []));
     $militaryBorderLocationRows = collect(data_get($annex, 'military_border_locations', []));
     $militaryBorderEquipmentRows = collect(data_get($annex, 'military_border_equipment', []));
+    $publicSecuritySupportRows = collect(data_get($annex, 'public_security_support', []));
+    $militarySupportRows = collect(data_get($annex, 'military_support', []));
+    $supportAuthorityLabel = static fn ($value): string => match ((string) $value) {
+        'public_security' => __('app.applications.support_authorities.public_security'),
+        'military' => __('app.applications.support_authorities.military'),
+        default => filled($value) ? (string) $value : __('app.dashboard.not_available'),
+    };
     $airportPeopleRows = collect(data_get($annex, 'airport_people', []));
     $governmentalSceneRows = collect(data_get($annex, 'governmental_scenes', []));
     $onlySections = collect($onlySections ?? [])
@@ -40,6 +47,87 @@
     $formLookupLabel = static fn (string $type, $value): string => filled($value)
         ? \App\Models\FormLookupOption::labelFor($type, (string) $value)
         : __('app.dashboard.not_available');
+    $specialLocationRequirementLabelsForRow = static function (array $row) use ($specialLocationRequirementRows, $formLookupLabel): string {
+        $requirements = collect((array) data_get($row, 'special_requirements', []))
+            ->map(fn ($value): string => (string) $value)
+            ->filter(fn (string $value): bool => filled($value))
+            ->values();
+
+        if ($requirements->isEmpty()) {
+            $locationName = trim((string) data_get($row, 'location_name'));
+
+            if (filled($locationName)) {
+                $requirements = $specialLocationRequirementRows
+                    ->filter(fn ($requirementRow): bool => in_array($locationName, (array) data_get($requirementRow, 'locations', []), true))
+                    ->keys()
+                    ->map(fn ($value): string => (string) $value)
+                    ->values();
+            }
+        }
+
+        return $requirements
+            ->map(fn (string $value): string => $formLookupLabel(\App\Models\FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT, $value))
+            ->filter(fn (string $value): bool => filled($value))
+            ->join(', ') ?: __('app.dashboard.not_available');
+    };
+    $supportRequirementLabel = static function ($value) use ($formLookupLabel): string {
+        if (! filled($value)) {
+            return __('app.dashboard.not_available');
+        }
+
+        $label = $formLookupLabel(\App\Models\FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT, $value);
+        $generatedFallback = str((string) $value)->replace('_', ' ')->headline()->toString();
+
+        return $label === $generatedFallback ? (string) $value : $label;
+    };
+    $locationSupportRequirementSummaryForRow = static function (array $row) use ($publicSecuritySupportRows, $militarySupportRows, $supportRequirementLabel, $supportAuthorityLabel): string {
+        $supportRequirements = collect((array) data_get($row, 'support_requirements', []))
+            ->filter(fn ($requirement): bool => collect((array) $requirement)->filter(fn ($value): bool => filled($value))->isNotEmpty())
+            ->values();
+        $locationName = trim((string) data_get($row, 'location_name'));
+
+        if ($supportRequirements->isEmpty() && filled($locationName)) {
+            $publicSecurityLegacyRows = $publicSecuritySupportRows
+                ->filter(fn ($supportRow): bool => trim((string) data_get($supportRow, 'location')) === $locationName)
+                ->map(fn ($supportRow): array => [
+                    'authority' => 'public_security',
+                    'requirement' => data_get($supportRow, 'requirement'),
+                    'date' => data_get($supportRow, 'date'),
+                    'time_from' => data_get($supportRow, 'time_from'),
+                    'time_to' => data_get($supportRow, 'time_to'),
+                    'notes' => data_get($supportRow, 'notes'),
+                ]);
+            $militaryLegacyRows = $militarySupportRows
+                ->filter(fn ($supportRow): bool => trim((string) data_get($supportRow, 'location')) === $locationName)
+                ->map(fn ($supportRow): array => [
+                    'authority' => 'military',
+                    'requirement' => data_get($supportRow, 'requirement'),
+                    'date' => data_get($supportRow, 'date'),
+                    'time_from' => data_get($supportRow, 'time_from'),
+                    'time_to' => data_get($supportRow, 'time_to'),
+                    'notes' => data_get($supportRow, 'notes'),
+                ]);
+
+            $supportRequirements = $publicSecurityLegacyRows->concat($militaryLegacyRows)->values();
+        }
+
+        if ($supportRequirements->isEmpty()) {
+            return __('app.dashboard.not_available');
+        }
+
+        return $supportRequirements
+            ->map(function ($supportRequirement) use ($supportRequirementLabel, $supportAuthorityLabel): string {
+                return collect([
+                    $supportAuthorityLabel(data_get($supportRequirement, 'authority')),
+                    $supportRequirementLabel(data_get($supportRequirement, 'requirement')),
+                    data_get($supportRequirement, 'date'),
+                    trim((string) data_get($supportRequirement, 'time_from').' - '.(string) data_get($supportRequirement, 'time_to')),
+                    data_get($supportRequirement, 'notes'),
+                ])->filter(fn ($value): bool => filled($value) && $value !== __('app.dashboard.not_available'))->join(' | ');
+            })
+            ->filter(fn (string $summary): bool => filled($summary))
+            ->join(' ؛ ') ?: __('app.dashboard.not_available');
+    };
     $hasFilledValuesForAnnex = static fn ($values): bool => collect(\Illuminate\Support\Arr::dot((array) $values))
         ->contains(fn ($value): bool => filled($value));
     $rowsHaveDataForAnnex = static fn ($rows): bool => collect((array) $rows)
@@ -55,12 +143,18 @@
         'imported_equipment' => $rowsHaveDataForAnnex($importedEquipmentRows->all()),
         'military_border_locations' => $rowsHaveDataForAnnex($militaryBorderLocationRows->all()),
         'military_border_equipment' => $rowsHaveDataForAnnex($militaryBorderEquipmentRows->all()),
+        'public_security_support' => $rowsHaveDataForAnnex($publicSecuritySupportRows->all()),
+        'military_support' => $rowsHaveDataForAnnex($militarySupportRows->all()),
         'airport_filming' => $hasFilledValuesForAnnex($airportFilming),
         'airport_people' => $rowsHaveDataForAnnex($airportPeopleRows->all()),
         'governmental_scenes' => $rowsHaveDataForAnnex($governmentalSceneRows->all()),
     ];
     $sectionVisible = static fn (string $section): bool => ($onlySections->isEmpty() || $onlySections->contains($section))
         && (! $hideEmptySections || (bool) ($sectionHasData[$section] ?? false));
+    $filmingLocationsVisible = $sectionVisible('filming_locations')
+        || $sectionVisible('special_location_requirements')
+        || $sectionVisible('public_security_support')
+        || $sectionVisible('military_support');
     $hasAnnexData = collect($sectionHasData)->contains(fn (bool $hasData): bool => $hasData);
     $hasVisibleAnnexData = collect(array_keys($sectionHasData))->contains(fn (string $section): bool => $sectionVisible($section));
 @endphp
@@ -86,6 +180,7 @@
 
             .annex-cast-crew-table,
             .annex-military-border-table,
+            .annex-support-schedule-table,
             .annex-governmental-scenes-table {
                 min-width: 920px;
             }
@@ -107,7 +202,6 @@
         <div>
             <h5 class="mb-3">{{ __('app.applications.annex_sections.work_content_summary') }}</h5>
             <div class="mb-2"><span class="fw-600">{{ __('app.applications.annex_fields.synopsis') }}:</span><span class="ms-2">{{ $fallback(data_get($workContentSummary, 'synopsis')) }}</span></div>
-            <div class="mb-2"><span class="fw-600">{{ __('app.applications.annex_fields.sensitive_content_notes') }}:</span><span class="ms-2">{{ $fallback(data_get($workContentSummary, 'sensitive_notes')) }}</span></div>
             <div class="mb-0"><span class="fw-600">{{ __('app.applications.annex_fields.content_confirmation') }}</span><span class="ms-2 badge bg-{{ data_get($workContentSummary, 'confirmed') ? 'success' : 'secondary' }}">{{ data_get($workContentSummary, 'confirmed') ? __('app.applications.annex_confirmed') : __('app.applications.annex_not_confirmed') }}</span></div>
         </div>
         @endif
@@ -119,9 +213,9 @@
                 <table class="{{ $annexTableClass }} annex-cast-crew-table">
                     <colgroup>
                         <col style="width: 64px">
+	                        <col style="width: 170px">
 	                        <col style="width: 220px">
 	                        <col style="width: 180px">
-	                        <col style="width: 170px">
 	                        <col style="width: 130px">
 	                        <col style="width: 150px">
 	                        <col style="width: 220px">
@@ -129,9 +223,9 @@
                     <thead>
                         <tr>
                             <th>#</th>
+	                            <th>{{ __('app.applications.annex_fields.nationality') }}</th>
                             <th>{{ __('app.applications.annex_fields.person_name') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.role') }}</th>
-	                            <th>{{ __('app.applications.annex_fields.nationality') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.gender') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.birth_date') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.identity_number') }}</th>
@@ -141,9 +235,9 @@
                         @forelse ($castCrewRows as $row)
                             <tr>
                                 <td>{{ $loop->iteration }}</td>
+	                                <td>{{ $nationalityLabel(data_get($row, 'nationality')) }}</td>
                                 <td>{{ $fallback(data_get($row, 'name')) }}</td>
 	                                <td>{{ $fallback(data_get($row, 'role')) }}</td>
-	                                <td>{{ $nationalityLabel(data_get($row, 'nationality')) }}</td>
 	                                <td>{{ $genderLabel(data_get($row, 'gender')) }}</td>
 	                                <td>{{ $fallback(data_get($row, 'birth_date')) }}</td>
 	                                <td>{{ $fallback(data_get($row, 'identity_number')) }}</td>
@@ -157,7 +251,7 @@
         </div>
         @endif
 
-        @if ($sectionVisible('filming_locations'))
+        @if ($filmingLocationsVisible)
         <div>
             <h5 class="mb-3">{{ __('app.applications.annex_sections.filming_locations') }}</h5>
             <div class="table-responsive rounded py-4 annex-summary-table-scroll">
@@ -169,6 +263,8 @@
                         <col style="width: 220px">
                         <col style="width: 180px">
                         <col style="width: 170px">
+                        <col style="width: 240px">
+                        <col style="width: 300px">
                         <col style="width: 140px">
                         <col style="width: 140px">
                         <col style="width: 220px">
@@ -181,6 +277,8 @@
                             <th>{{ __('app.applications.annex_fields.location_address') }}</th>
                             <th>{{ __('app.applications.annex_fields.location_nature') }}</th>
                             <th>{{ __('app.applications.annex_fields.location_type') }}</th>
+                            <th>{{ __('app.applications.special_requirement') }}</th>
+                            <th>{{ __('app.applications.location_support_requirements_title') }}</th>
                             <th>{{ __('app.scouting.start_date') }}</th>
                             <th>{{ __('app.scouting.end_date') }}</th>
                             <th>{{ __('app.applications.annex_fields.notes') }}</th>
@@ -195,45 +293,14 @@
                                 <td>{{ $fallback(data_get($row, 'address')) }}</td>
                                 <td>{{ $fallback(data_get($row, 'nature')) }}</td>
                                 <td>{{ $translatedLocationType(data_get($row, 'location_type')) }}</td>
+                                <td>{{ $specialLocationRequirementLabelsForRow((array) $row) }}</td>
+                                <td>{{ $locationSupportRequirementSummaryForRow((array) $row) }}</td>
                                 <td>{{ $fallback(data_get($row, 'start_date')) }}</td>
                                 <td>{{ $fallback(data_get($row, 'end_date')) }}</td>
                                 <td>{{ $fallback(data_get($row, 'notes')) }}</td>
                             </tr>
                         @empty
-                            <tr><td colspan="9">{{ __('app.applications.annex_form_empty_state') }}</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        @endif
-
-        @if ($sectionVisible('special_location_requirements'))
-        <div>
-            <h5 class="mb-3">{{ __('app.applications.special_location_requirements_title') }}</h5>
-            <div class="table-responsive rounded py-4 annex-summary-table-scroll">
-                <table class="{{ $annexTableClass }} annex-military-border-table">
-                    <colgroup>
-                        <col style="width: 260px">
-                        <col style="width: 320px">
-                        <col style="width: 320px">
-                    </colgroup>
-                    <thead>
-                        <tr>
-                            <th>{{ __('app.applications.special_requirement') }}</th>
-                            <th>{{ __('app.applications.locations') }}</th>
-                            <th>{{ __('app.applications.annex_fields.notes') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse ($specialLocationRequirementRows as $key => $row)
-                            <tr>
-                                <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT, $key) }}</td>
-                                <td>{{ collect((array) data_get($row, 'locations', []))->filter()->join(', ') ?: __('app.dashboard.not_available') }}</td>
-                                <td>{{ $fallback(data_get($row, 'notes')) }}</td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="3">{{ __('app.applications.annex_form_empty_state') }}</td></tr>
+                            <tr><td colspan="11">{{ __('app.applications.annex_form_empty_state') }}</td></tr>
                         @endforelse
                     </tbody>
                 </table>

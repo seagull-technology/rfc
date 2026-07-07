@@ -32,6 +32,7 @@ class FilmingLocationLookupSeeder extends Seeder
                     'name_ar' => $definition['name_ar'],
                     'is_active' => $definition['is_active'] ?? true,
                     'sort_order' => $definition['sort_order'] ?? (($index + 1) * 10),
+                    'approval_days' => $definition['approval_days'] ?? null,
                 ],
             );
 
@@ -100,6 +101,7 @@ class FilmingLocationLookupSeeder extends Seeder
                 'code' => 'religious_sites',
                 'name_en' => 'Religious sites',
                 'name_ar' => 'مواقع دينية',
+                'approval_days' => 14,
                 'governorates' => $allGovernorates,
             ],
             [

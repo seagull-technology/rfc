@@ -10,8 +10,87 @@
     $equipmentShippingMethodOptions = $equipmentShippingMethodOptions ?? collect(data_get($formLookupOptions, 'equipment_shipping_methods', []));
     $equipmentEntryPointOptions = $equipmentEntryPointOptions ?? collect(data_get($formLookupOptions, 'equipment_entry_points', []));
     $airportOptions = $airportOptions ?? collect(data_get($formLookupOptions, 'airports', []));
+    $specialLocationRequirementOptions = $specialLocationRequirementOptions ?? collect(data_get($formLookupOptions, 'special_location_requirements', []));
+    $locationRequirementOptions = $locationRequirementOptions ?? ($specialLocationRequirementOptions->pluck('code')->all() ?: ['road_closures', 'police_presence', 'armed_forces', 'regular_aerial_filming', 'drone_filming', 'special_effects', 'construction_work', 'animals', 'weapons', 'other']);
+    $locationRequirementLabels = $locationRequirementLabels ?? $specialLocationRequirementOptions->mapWithKeys(fn ($option) => [$option->code => $option->displayName()])->all();
     $militaryBorderLocationTypeOptions = $militaryBorderLocationTypeOptions ?? collect(data_get($formLookupOptions, 'military_border_location_types', []));
     $militaryLocationTypeLabels = $militaryLocationTypeLabels ?? $militaryBorderLocationTypeOptions->mapWithKeys(fn ($option) => [$option->code => $option->displayName()])->all();
+    $maxCrewBirthDate = $maxCrewBirthDate ?? now()->subDay()->toDateString();
+    $specialLocationRequirementRows = $specialLocationRequirementRows ?? old('special_location_requirements', data_get($annex ?? [], 'special_location_requirements', collect($locationRequirementOptions)->mapWithKeys(fn ($option) => [$option => ['locations' => [], 'notes' => '']])->all()));
+    $locationRequirementSelectionForRow = $locationRequirementSelectionForRow ?? static function (array $row) use ($specialLocationRequirementRows): array {
+        $selected = collect((array) data_get($row, 'special_requirements', []))
+            ->map(fn ($value): string => (string) $value)
+            ->filter(fn (string $value): bool => filled($value))
+            ->values()
+            ->all();
+
+        if ($selected !== []) {
+            return $selected;
+        }
+
+        $locationName = trim((string) data_get($row, 'location_name'));
+
+        if (blank($locationName)) {
+            return [];
+        }
+
+        return collect((array) $specialLocationRequirementRows)
+            ->filter(fn ($requirementRow): bool => in_array($locationName, (array) data_get($requirementRow, 'locations', []), true))
+            ->keys()
+            ->map(fn ($value): string => (string) $value)
+            ->values()
+            ->all();
+    };
+    $publicSecuritySupportRows = $publicSecuritySupportRows ?? old('public_security_support', data_get($annex ?? [], 'public_security_support', [['day' => '', 'date' => '', 'time_from' => '', 'time_to' => '', 'location' => '', 'requirement' => '', 'notes' => '']]));
+    $militarySupportRows = $militarySupportRows ?? old('military_support', data_get($annex ?? [], 'military_support', [['day' => '', 'date' => '', 'time_from' => '', 'time_to' => '', 'location' => '', 'requirement' => '', 'notes' => '']]));
+    $supportAuthorityOptions = $supportAuthorityOptions ?? [
+        'public_security' => __('app.applications.support_authorities.public_security'),
+        'military' => __('app.applications.support_authorities.military'),
+    ];
+    $emptyLocationSupportRequirement = ['authority' => '', 'requirement' => '', 'date' => '', 'time_from' => '', 'time_to' => '', 'notes' => ''];
+    $locationSupportRequirementsForRow = $locationSupportRequirementsForRow ?? static function (array $row, int $index = 0) use ($publicSecuritySupportRows, $militarySupportRows, $emptyLocationSupportRequirement): array {
+        $current = collect((array) data_get($row, 'support_requirements', []))
+            ->filter(fn ($requirement): bool => collect((array) $requirement)->filter(fn ($value): bool => filled($value))->isNotEmpty())
+            ->map(fn ($requirement): array => array_merge($emptyLocationSupportRequirement, (array) $requirement))
+            ->values();
+
+        if ($current->isNotEmpty()) {
+            return $current->all();
+        }
+
+        $locationName = trim((string) data_get($row, 'location_name'));
+
+        if (blank($locationName)) {
+            return [$emptyLocationSupportRequirement];
+        }
+
+        $legacyRows = collect();
+
+        collect((array) $publicSecuritySupportRows)
+            ->filter(fn ($supportRow): bool => trim((string) data_get($supportRow, 'location')) === $locationName)
+            ->each(fn ($supportRow) => $legacyRows->push(array_merge($emptyLocationSupportRequirement, [
+                'authority' => 'public_security',
+                'requirement' => data_get($supportRow, 'requirement'),
+                'date' => data_get($supportRow, 'date'),
+                'time_from' => data_get($supportRow, 'time_from'),
+                'time_to' => data_get($supportRow, 'time_to'),
+                'notes' => data_get($supportRow, 'notes'),
+            ])));
+
+        collect((array) $militarySupportRows)
+            ->filter(fn ($supportRow): bool => trim((string) data_get($supportRow, 'location')) === $locationName)
+            ->each(fn ($supportRow) => $legacyRows->push(array_merge($emptyLocationSupportRequirement, [
+                'authority' => 'military',
+                'requirement' => data_get($supportRow, 'requirement'),
+                'date' => data_get($supportRow, 'date'),
+                'time_from' => data_get($supportRow, 'time_from'),
+                'time_to' => data_get($supportRow, 'time_to'),
+                'notes' => data_get($supportRow, 'notes'),
+            ])));
+
+        return $legacyRows->isNotEmpty() ? $legacyRows->values()->all() : [$emptyLocationSupportRequirement];
+    };
+    $locationSupportRequirementForRow = $locationSupportRequirementForRow ?? static fn (array $row, int $index = 0): array => $locationSupportRequirementsForRow($row, $index)[0] ?? $emptyLocationSupportRequirement;
     $shippingEquipmentRows = collect($importedEquipmentRows)
         ->filter(fn ($row) => data_get($row, 'transport_group', 'shipping') !== 'traveler')
         ->values()
@@ -24,7 +103,195 @@
     $airportPeopleNationalityOptions = $castCrewNationalityOptions;
 @endphp
 
-<div class="offcanvas offcanvas-end offcanvas-width-80" tabindex="-1" id="WorkContentSummary">
+@once
+    <style>
+        .offcanvas.application-annex-offcanvas {
+            --bs-offcanvas-width: 100vw;
+            border: 0 !important;
+            border-radius: 0 !important;
+            bottom: 0 !important;
+            box-shadow: none;
+            display: flex;
+            flex-direction: column;
+            height: 100vh !important;
+            height: 100dvh !important;
+            inset: 0 !important;
+            left: 0 !important;
+            margin: 0 !important;
+            max-height: 100vh !important;
+            max-height: 100dvh !important;
+            max-width: none;
+            min-height: 100vh;
+            min-height: 100dvh;
+            padding: 0;
+            position: fixed !important;
+            right: 0 !important;
+            top: 0 !important;
+            width: 100vw !important;
+            z-index: 20000 !important;
+        }
+
+        .offcanvas.application-annex-offcanvas.show,
+        .offcanvas.application-annex-offcanvas.showing {
+            transform: none !important;
+        }
+
+        .offcanvas.application-annex-offcanvas .offcanvas-header {
+            flex: 0 0 auto;
+        }
+
+        .offcanvas.application-annex-offcanvas .offcanvas-body {
+            background: #fff;
+            flex: 1 1 auto;
+            overflow-y: auto;
+        }
+
+        .offcanvas.application-annex-offcanvas .offcanvas-footer {
+            background: #fff;
+            bottom: 0;
+            flex: 0 0 auto;
+            position: sticky;
+            z-index: 2;
+        }
+
+        .offcanvas.application-annex-offcanvas .table-responsive {
+            overflow-x: auto;
+            padding-bottom: .25rem;
+        }
+
+        .offcanvas.application-annex-offcanvas .table {
+            min-width: 1120px;
+            table-layout: auto;
+        }
+
+        .offcanvas.application-annex-offcanvas .table th,
+        .offcanvas.application-annex-offcanvas .table td {
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+
+        .offcanvas.application-annex-offcanvas .table textarea,
+        .offcanvas.application-annex-offcanvas .table .select2-container {
+            white-space: normal;
+        }
+
+        .offcanvas.application-annex-offcanvas .table .form-control,
+        .offcanvas.application-annex-offcanvas .table .form-select {
+            min-width: 11rem;
+        }
+
+        .offcanvas.application-annex-offcanvas .table .btn-icon {
+            min-width: 2.5rem;
+        }
+
+        .offcanvas.application-annex-offcanvas .table .row-number {
+            min-width: 3rem;
+            width: 3rem;
+        }
+
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable {
+            min-width: 1480px;
+        }
+
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(1),
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(1) {
+            min-width: 3.5rem;
+            width: 3.5rem;
+        }
+
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(2),
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(2) {
+            min-width: 12rem;
+            width: 12rem;
+        }
+
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(3),
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(3) {
+            min-width: 34rem;
+        }
+
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(4),
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(4) {
+            min-width: 14rem;
+        }
+
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(5),
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(5) {
+            min-width: 12rem;
+            width: 12rem;
+        }
+
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(6),
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(6) {
+            min-width: 13rem;
+            width: 13rem;
+        }
+
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(7),
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(7) {
+            min-width: 16rem;
+        }
+
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(8),
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(8) {
+            min-width: 7rem;
+            width: 7rem;
+        }
+
+        .offcanvas.application-annex-offcanvas #filmingLocationsRequestTable {
+            min-width: 0;
+        }
+
+        .application-location-card-table {
+            min-width: 0 !important;
+        }
+
+        .application-location-card-table > tbody > tr > td {
+            border: 0;
+            padding: 0 0 1rem;
+            white-space: normal !important;
+        }
+
+        .application-location-card {
+            background: #fff;
+            border: 1px solid #dfe3ea;
+            border-radius: 6px;
+            box-shadow: 0 8px 24px rgba(17, 24, 39, .05);
+            padding: 1rem;
+        }
+
+        .application-location-card__header {
+            align-items: center;
+            border-bottom: 1px solid #edf0f4;
+            display: flex;
+            gap: 1rem;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            padding-bottom: .85rem;
+        }
+
+        .application-location-card__section + .application-location-card__section {
+            border-top: 1px solid #edf0f4;
+            margin-top: 1rem;
+            padding-top: 1rem;
+        }
+
+        .application-location-support-row {
+            background: #f8fafc;
+            border: 1px solid #e3e7ee;
+            border-radius: 6px;
+            padding: 1rem;
+        }
+
+        .application-location-card .form-control,
+        .application-location-card .form-select,
+        .application-location-card .select2-container {
+            min-width: 0 !important;
+        }
+    </style>
+@endonce
+
+<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="WorkContentSummary">
     <div class="offcanvas-header">
         <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.work_content_summary') }}</span></h2>
         <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
@@ -36,15 +303,15 @@
                     <i class="ph ph-info fa-xl me-2 lh-lg"></i>
                     <span>{{ __('app.applications.work_summary_instruction') }}</span>
                 </p>
-                <textarea class="form-control" name="work_content_summary_synopsis" rows="15">{{ old('work_content_summary_synopsis', data_get($workContentSummary, 'synopsis')) }}</textarea>
-            </div>
-            <div class="form-group">
-                <label class="form-label">{{ __('app.applications.annex_fields.sensitive_content_notes') }}</label>
-                <textarea class="form-control" name="work_content_summary_sensitive_notes" rows="4">{{ old('work_content_summary_sensitive_notes', data_get($workContentSummary, 'sensitive_notes')) }}</textarea>
+                <textarea class="form-control" name="work_content_summary_synopsis" rows="15" required data-work-summary-input data-work-summary-min-words="500" data-work-summary-counter="#work_content_summary_word_count_drawer">{{ old('work_content_summary_synopsis', data_get($workContentSummary, 'synopsis')) }}</textarea>
+                <div class="d-flex justify-content-between gap-3 flex-wrap small mt-2">
+                    <span class="text-muted">{{ __('app.applications.work_summary_arabic_only_hint') }}</span>
+                    <span id="work_content_summary_word_count_drawer" class="text-muted" aria-live="polite"></span>
+                </div>
             </div>
             <div class="form-check form-group">
                 <input type="hidden" name="work_content_summary_confirmed" value="0">
-                <input type="checkbox" class="form-check-input" id="work_content_summary_confirmed_drawer" name="work_content_summary_confirmed" value="1" @checked(old('work_content_summary_confirmed', data_get($workContentSummary, 'confirmed', false)))>
+                <input type="checkbox" class="form-check-input" id="work_content_summary_confirmed_drawer" name="work_content_summary_confirmed" value="1" required @checked(old('work_content_summary_confirmed', data_get($workContentSummary, 'confirmed', false)))>
                 <label class="form-label" for="work_content_summary_confirmed_drawer">{{ __('app.applications.annex_fields.content_confirmation') }}</label>
             </div>
         </div>
@@ -57,7 +324,7 @@
     </div>
 </div>
 
-<div class="offcanvas offcanvas-end offcanvas-width-80" tabindex="-1" id="CastCrewList">
+<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="CastCrewList">
     <div class="offcanvas-header">
         <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.cast_crew') }}</span></h2>
         <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
@@ -76,9 +343,9 @@
                     <thead class="table-light">
                         <tr>
                             <th>#</th>
+	                            <th>{{ __('app.applications.annex_fields.nationality') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.person_name') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.role') }}</th>
-	                            <th>{{ __('app.applications.annex_fields.nationality') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.gender') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.birth_date') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.identity_number') }}</th>
@@ -87,12 +354,17 @@
                     </thead>
                     <tbody>
                         @foreach ($castCrewRows as $index => $row)
+                            @php
+                                $castCrewNameParts = preg_split('/\s+/', trim((string) ($row['name'] ?? '')), 4) ?: [];
+                                $castCrewFirstName = $row['first_name'] ?? ($castCrewNameParts[0] ?? '');
+                                $castCrewSecondName = $row['second_name'] ?? ($castCrewNameParts[1] ?? '');
+                                $castCrewThirdName = $row['third_name'] ?? ($castCrewNameParts[2] ?? '');
+                                $castCrewFamilyName = $row['family_name'] ?? ($castCrewNameParts[3] ?? '');
+                            @endphp
                             <tr>
                                 <td class="row-number">{{ $loop->iteration }}</td>
-                                <td><input type="text" class="form-control" name="cast_crew[{{ $index }}][name]" value="{{ $row['name'] ?? '' }}"></td>
-                                <td><input type="text" class="form-control" name="cast_crew[{{ $index }}][role]" value="{{ $row['role'] ?? '' }}"></td>
                                 <td>
-                                    <select class="form-select" name="cast_crew[{{ $index }}][nationality]">
+                                    <select class="form-select" name="cast_crew[{{ $index }}][nationality]" data-cast-crew-nationality>
                                         <option value="">{{ __('app.admin.select_placeholder') }}</option>
                                         @if (filled($row['nationality'] ?? null) && ! $castCrewNationalityOptions->contains('code', $row['nationality']))
                                             <option value="{{ $row['nationality'] }}" selected>{{ \App\Models\Nationality::labelFor($row['nationality']) }}</option>
@@ -102,6 +374,17 @@
 	                                        @endforeach
 	                                    </select>
 	                                </td>
+                                <td class="cast-crew-name-cell">
+                                    <input type="hidden" name="cast_crew[{{ $index }}][name]" value="{{ $row['name'] ?? '' }}" data-cast-crew-name-output>
+                                    <div class="row g-2 cast-crew-jordanian-name d-none" data-cast-crew-jordanian-name>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][first_name]" value="{{ $castCrewFirstName }}" placeholder="{{ __('app.applications.annex_fields.first_name') }}" data-cast-crew-name-part></div>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][second_name]" value="{{ $castCrewSecondName }}" placeholder="{{ __('app.applications.annex_fields.second_name') }}" data-cast-crew-name-part></div>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][third_name]" value="{{ $castCrewThirdName }}" placeholder="{{ __('app.applications.annex_fields.third_name') }}" data-cast-crew-name-part></div>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][family_name]" value="{{ $castCrewFamilyName }}" placeholder="{{ __('app.applications.annex_fields.family_name') }}" data-cast-crew-name-part></div>
+                                    </div>
+                                    <input type="text" class="form-control" value="{{ $row['name'] ?? '' }}" data-cast-crew-full-name-input>
+                                </td>
+                                <td><input type="text" class="form-control" name="cast_crew[{{ $index }}][role]" value="{{ $row['role'] ?? '' }}"></td>
 	                                <td>
 	                                    <select class="form-select" name="cast_crew[{{ $index }}][gender]">
 	                                        <option value="">{{ __('app.admin.select_placeholder') }}</option>
@@ -110,7 +393,7 @@
 	                                        @endforeach
 	                                    </select>
 	                                </td>
-	                                <td><input type="date" class="form-control" name="cast_crew[{{ $index }}][birth_date]" value="{{ $row['birth_date'] ?? '' }}"></td>
+	                                <td><input type="date" class="form-control" name="cast_crew[{{ $index }}][birth_date]" value="{{ $row['birth_date'] ?? '' }}" max="{{ $maxCrewBirthDate }}"></td>
 	                                <td><input type="text" class="form-control" name="cast_crew[{{ $index }}][identity_number]" value="{{ $row['identity_number'] ?? '' }}"></td>
                                 <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeApplicationAnnexRow(this, '#castCrewRequestTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
                             </tr>
@@ -128,7 +411,7 @@
     </div>
 </div>
 
-<div class="offcanvas offcanvas-end offcanvas-width-80" tabindex="-1" id="LocationList">
+<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="LocationList">
     <div class="offcanvas-header">
         <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.filming_locations') }}</span></h2>
         <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
@@ -143,94 +426,10 @@
                 <button type="button" class="btn btn-success" onclick="addApplicationAnnexRow('filmingLocationsRequestTable', 'filming_locations')"><i class="fa-solid fa-plus me-2"></i>{{ __('app.add') }}</button>
             </div>
             <div class="table-responsive">
-                <table class="table align-middle" id="filmingLocationsRequestTable">
-                    <thead class="table-light">
-                        <tr>
-                            <th>#</th>
-                            <th>{{ __('app.scouting.governorate') }}</th>
-                            <th>{{ __('app.applications.annex_fields.location_type') }}</th>
-                            <th>{{ __('app.applications.annex_fields.location_exact_name') }}</th>
-                            <th>{{ __('app.applications.annex_fields.location_nature') }}</th>
-                            <th>{{ __('app.applications.annex_fields.location_address') }}</th>
-                            <th>{{ __('app.scouting.start_date') }}</th>
-                            <th>{{ __('app.scouting.end_date') }}</th>
-                            <th>{{ __('app.applications.actions') }}</th>
-                        </tr>
-                    </thead>
+                <table class="table application-location-card-table" id="filmingLocationsRequestTable">
                     <tbody>
                         @foreach ($filmingLocationRows as $index => $row)
-                            @php
-                                $selectedGovernorate = (string) ($row['governorate'] ?? '');
-                                $selectedLocationType = (string) ($row['location_type'] ?? '');
-                                $rowLocationTypeOptions = $locationTypeOptionsForGovernorate($selectedGovernorate);
-                            @endphp
-                            <tr>
-                                <td class="row-number">{{ $loop->iteration }}</td>
-                                <td>
-                                    <select class="form-select" name="filming_locations[{{ $index }}][governorate]" data-location-governorate>
-                                        <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                        @if (filled($selectedGovernorate) && ! $governorateOptions->contains('code', $selectedGovernorate))
-                                            <option value="{{ $selectedGovernorate }}" selected>{{ \App\Models\Governorate::labelFor($selectedGovernorate) }}</option>
-                                        @endif
-                                        @foreach ($governorateOptions as $governorate)
-                                            <option value="{{ $governorate->code }}" @selected($selectedGovernorate === $governorate->code)>{{ $governorate->displayName() }}</option>
-                                        @endforeach
-                                    </select>
-                                </td>
-                                <td>
-                                    <select class="form-select" name="filming_locations[{{ $index }}][location_type]" data-location-type-select data-selected-type="{{ $selectedLocationType }}">
-                                        <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                        @if (filled($selectedLocationType) && ! $rowLocationTypeOptions->contains('code', $selectedLocationType))
-                                            <option value="{{ $selectedLocationType }}" selected>{{ \App\Models\FilmingLocationType::labelFor($selectedLocationType) }}</option>
-                                        @endif
-                                        @foreach ($rowLocationTypeOptions as $locationType)
-                                            <option value="{{ $locationType->code }}" @selected($selectedLocationType === $locationType->code)>{{ $locationType->displayName() }}</option>
-                                        @endforeach
-                                    </select>
-                                </td>
-                                <td><input type="text" class="form-control" name="filming_locations[{{ $index }}][location_name]" value="{{ $row['location_name'] ?? '' }}"></td>
-                                <td><textarea class="form-control" name="filming_locations[{{ $index }}][nature]" rows="2">{{ $row['nature'] ?? '' }}</textarea></td>
-                                <td><input type="text" class="form-control" name="filming_locations[{{ $index }}][address]" value="{{ $row['address'] ?? '' }}"></td>
-                                <td><input type="date" class="form-control" name="filming_locations[{{ $index }}][start_date]" value="{{ $row['start_date'] ?? '' }}"></td>
-                                <td><input type="date" class="form-control" name="filming_locations[{{ $index }}][end_date]" value="{{ $row['end_date'] ?? '' }}"></td>
-                                <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeApplicationAnnexRow(this, '#filmingLocationsRequestTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-
-            <h2 class="episode-playlist-title wp-heading-inline py-5"><span class="position-relative">{{ __('app.applications.special_location_requirements_title') }}</span></h2>
-            <div class="table-responsive">
-                <table class="table align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>{{ __('app.applications.special_requirement') }}</th>
-                            <th>{{ __('app.applications.locations') }}</th>
-                            <th>{{ __('app.applications.annex_fields.notes') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($locationRequirementOptions as $option)
-                            @php
-                                $row = $specialLocationRequirementRows[$option] ?? [];
-                            @endphp
-                            <tr>
-                                <td class="fw-600">{{ $locationRequirementLabels[$option] ?? __('app.applications.special_location_requirements.'.$option) }}</td>
-                                <td>
-                                    <select class="form-select select2-basic-multiple" name="special_location_requirements[{{ $option }}][locations][]" multiple data-special-location-select>
-                                        @foreach ($filmingLocationRows as $locationIndex => $locationRow)
-                                            @php
-                                                $locationLabel = filled($locationRow['location_name'] ?? null)
-                                                    ? $locationRow['location_name']
-                                                    : __('app.applications.location_number', ['number' => $loop->iteration]);
-                                            @endphp
-                                            <option value="{{ $locationLabel }}" data-location-key="{{ $locationIndex }}" @selected(in_array($locationLabel, (array) data_get($row, 'locations', []), true))>{{ $locationLabel }}</option>
-                                        @endforeach
-                                    </select>
-                                </td>
-                                <td><input class="form-control" type="text" name="special_location_requirements[{{ $option }}][notes]" value="{{ data_get($row, 'notes') }}" @if ($option === 'other') placeholder="{{ __('app.applications.please_specify') }}" @endif></td>
-                            </tr>
+                            @include('applications.partials.filming-location-card', ['tableId' => 'filmingLocationsRequestTable', 'index' => $index, 'row' => (array) $row, 'rowNumber' => $loop->iteration])
                         @endforeach
                     </tbody>
                 </table>
@@ -245,7 +444,7 @@
     </div>
 </div>
 
-<div class="offcanvas offcanvas-end offcanvas-width-80" tabindex="-1" id="RFCGuidelines">
+<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="RFCGuidelines">
     <div class="offcanvas-header">
         <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.safety_guidelines_full_title') }}</span></h2>
         <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
@@ -289,7 +488,7 @@
     </div>
 </div>
 
-<div class="offcanvas offcanvas-end offcanvas-width-80" tabindex="-1" id="EquipmentList">
+<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="EquipmentList">
     <div class="offcanvas-header">
         <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.imported_equipment') }}</span></h2>
         <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
@@ -595,7 +794,7 @@
     </div>
 </div>
 
-<div class="offcanvas offcanvas-end offcanvas-width-80" tabindex="-1" id="EquipmentMilitaryBorder">
+<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="EquipmentMilitaryBorder">
     <div class="offcanvas-header">
         <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.military_border_equipment') }}</span></h2>
         <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
@@ -740,7 +939,7 @@
     </div>
 </div>
 
-<div class="offcanvas offcanvas-end offcanvas-width-80" tabindex="-1" id="FilmingAirports">
+<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="FilmingAirports">
     <div class="offcanvas-header">
         <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.airport_filming') }}</span></h2>
         <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
@@ -837,7 +1036,7 @@
     </div>
 </div>
 
-<div class="offcanvas offcanvas-end offcanvas-width-80" tabindex="-1" id="FilmingGovernmental">
+<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="FilmingGovernmental">
     <div class="offcanvas-header">
         <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.governmental_scenes') }}</span></h2>
         <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>

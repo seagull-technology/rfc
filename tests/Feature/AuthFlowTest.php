@@ -36,6 +36,7 @@ class AuthFlowTest extends TestCase
             'email' => 'ali@example.com',
             'national_id' => '9876543210',
             'phone' => '0791234567',
+            'address' => 'Student address, Amman',
             'student_lookup_verified' => '1',
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
@@ -59,6 +60,7 @@ class AuthFlowTest extends TestCase
         $this->assertSame($studentData['nationality'], data_get($entity->metadata, 'nationality'));
         $this->assertSame($studentData['university_name'], data_get($entity->metadata, 'university_name'));
         $this->assertSame($studentData['major'], data_get($entity->metadata, 'major'));
+        $this->assertSame('Student address, Amman', data_get($entity->metadata, 'address'));
 
         $this->assertDatabaseHas('entity_user', [
             'entity_id' => $entity->getKey(),
@@ -80,6 +82,7 @@ class AuthFlowTest extends TestCase
             'email' => 'unchecked@example.com',
             'national_id' => '9876543211',
             'phone' => '0791234568',
+            'address' => 'Unchecked student address',
             'student_lookup_verified' => '1',
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
@@ -150,6 +153,7 @@ class AuthFlowTest extends TestCase
             'email' => 'pending-student@example.com',
             'national_id' => '9876543212',
             'phone' => '0791234569',
+            'address' => 'Pending student address',
             'student_lookup_verified' => '1',
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
@@ -189,6 +193,7 @@ class AuthFlowTest extends TestCase
             'address' => 'Amman, Jordan',
             'description' => 'Production house',
             'registration_document' => UploadedFile::fake()->create('license.pdf', 250, 'application/pdf'),
+            'logo' => UploadedFile::fake()->image('company-logo.png')->size(100),
             'company_lookup_verified' => '1',
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
@@ -211,9 +216,12 @@ class AuthFlowTest extends TestCase
         $this->assertSame('Amman, Jordan', data_get($entity->metadata, 'address'));
         $this->assertSame('Production house', data_get($entity->metadata, 'description'));
         Storage::disk('local')->assertExists((string) data_get($entity->metadata, 'registration_document_path'));
+        Storage::disk('local')->assertExists((string) data_get($entity->metadata, 'logo_path'));
+        $this->assertSame('company-logo.png', data_get($entity->metadata, 'logo_name'));
+        $this->assertSame('image/png', data_get($entity->metadata, 'logo_mime'));
     }
 
-    public function test_registration_page_exposes_company_address_field(): void
+    public function test_registration_page_exposes_registration_address_fields(): void
     {
         $this->refreshApplicationWithLocale('en');
 
@@ -221,6 +229,8 @@ class AuthFlowTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSeeText('Student address')
+            ->assertSee('id="student-address"', false)
             ->assertSeeText('Company address')
             ->assertSee('id="company-address"', false)
             ->assertSee('autocomplete="street-address"', false);
@@ -607,7 +617,8 @@ class AuthFlowTest extends TestCase
             ->assertOk()
             ->assertSeeText('حقل البريد الإلكتروني مطلوب.')
             ->assertSeeText('حقل الرقم الوطني مطلوب.')
-            ->assertSeeText('حقل رقم الهاتف مطلوب.');
+            ->assertSeeText('حقل رقم الهاتف مطلوب.')
+            ->assertSeeText('حقل العنوان مطلوب.');
     }
 
     private function assertOrganizationRegistrationCreatesPendingAccount(
@@ -629,6 +640,7 @@ class AuthFlowTest extends TestCase
             'address' => $address,
             'description' => ucfirst($registrationType).' registration test',
             'registration_document' => UploadedFile::fake()->create($registrationType.'-license.pdf', 250, 'application/pdf'),
+            'logo' => UploadedFile::fake()->image($registrationType.'-logo.png')->size(100),
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
         ]);
@@ -646,5 +658,7 @@ class AuthFlowTest extends TestCase
         $this->assertSame('pending_review', $user->status);
         $this->assertSame($address, data_get($entity->metadata, 'address'));
         Storage::disk('local')->assertExists((string) data_get($entity->metadata, 'registration_document_path'));
+        Storage::disk('local')->assertExists((string) data_get($entity->metadata, 'logo_path'));
+        $this->assertSame($registrationType.'-logo.png', data_get($entity->metadata, 'logo_name'));
     }
 }

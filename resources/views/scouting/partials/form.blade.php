@@ -9,6 +9,7 @@
     $locationTypeOptions = collect(data_get($lookupOptions ?? [], 'locations.location_types', []));
     $locationTypesByGovernorate = (array) data_get($lookupOptions ?? [], 'locations.location_types_by_governorate', []);
     $locationTypeLabels = (array) data_get($lookupOptions ?? [], 'locations.location_type_labels', []);
+    $locationTypeApprovalDays = (array) data_get($lookupOptions ?? [], 'locations.location_type_approval_days', []);
     $legacyLocationTypeMap = [
         'public_site' => 'public_locations',
         'border_area' => 'border_areas',
@@ -253,6 +254,7 @@
                                                                         <option value="{{ $option->code }}" @selected($selectedLocationType === $option->code)>{{ $option->displayName() }}</option>
                                                                     @endforeach
                                                                 </select>
+                                                                <div class="form-text text-warning fw-semibold d-none" data-scout-location-type-approval-note></div>
                                                             </td>
                                                             <td><input type="text" class="form-control" name="locations[{{ $index }}][location_name]" value="{{ $location['location_name'] ?? '' }}"></td>
                                                             <td><input type="text" class="form-control" name="locations[{{ $index }}][google_map_url]" value="{{ $location['google_map_url'] ?? '' }}"></td>
@@ -335,6 +337,8 @@
         const scoutLocationTypeOptions = @json($locationTypeOptions->map(fn ($option) => ['value' => $option->code, 'label' => $option->displayName()])->values());
         const scoutLocationTypesByGovernorate = @json($locationTypesByGovernorate);
         const scoutLocationTypeLabels = @json($locationTypeLabels);
+        const scoutLocationTypeApprovalDays = @json($locationTypeApprovalDays);
+        const scoutLocationTypeApprovalDaysNotice = @js(__('app.applications.location_type_approval_days_notice'));
         const scoutPersonNationalityOptions = @json($personNationalityOptions->map(fn ($option) => ['value' => $option->code, 'label' => $option->displayName()])->values());
 
         function escapeScoutHtml(value) {
@@ -383,6 +387,32 @@
             }
 
             locationTypeSelect.dataset.selectedType = locationTypeSelect.value;
+            refreshScoutLocationApprovalNote(row);
+        }
+
+        function refreshScoutLocationApprovalNote(row) {
+            if (!row) {
+                return;
+            }
+
+            const locationTypeSelect = row.querySelector('[data-scout-location-type-select]');
+            const note = row.querySelector('[data-scout-location-type-approval-note]');
+
+            if (!locationTypeSelect || !note) {
+                return;
+            }
+
+            const days = parseInt(scoutLocationTypeApprovalDays[locationTypeSelect.value] || '0', 10);
+
+            if (days > 0) {
+                note.textContent = scoutLocationTypeApprovalDaysNotice.replace(':days', String(days));
+                note.classList.remove('d-none');
+
+                return;
+            }
+
+            note.textContent = '';
+            note.classList.add('d-none');
         }
 
         function renumberRows(selector) {
@@ -420,6 +450,7 @@
                     <select class="form-select" name="locations[${index}][location_type]" data-scout-location-type-select>
                         ${scoutLocationTypeOptionsHtml(scoutGovernorateOptions[0]?.value || '', scoutLocationTypeOptions[0]?.value || '')}
                     </select>
+                    <div class="form-text text-warning fw-semibold d-none" data-scout-location-type-approval-note></div>
                 </td>
                 <td><input type="text" class="form-control" name="locations[${index}][location_name]"></td>
                 <td><input type="text" class="form-control" name="locations[${index}][google_map_url]"></td>
@@ -431,6 +462,7 @@
 
             table.appendChild(row);
             renumberRows('#scoutLocationTable');
+            syncScoutLocationTypeSelect(row);
         }
 
         function addScoutCrewRow() {
@@ -617,7 +649,10 @@
 
             if (event.target.matches('[data-scout-location-type-select]')) {
                 event.target.dataset.selectedType = event.target.value;
+                refreshScoutLocationApprovalNote(event.target.closest('tr'));
             }
         });
+
+        document.querySelectorAll('#scoutLocationTable tbody tr').forEach(syncScoutLocationTypeSelect);
     </script>
 @endpush

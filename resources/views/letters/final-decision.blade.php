@@ -75,7 +75,7 @@
             <div class="grid">
                 <div>
                     <div class="field-label">{{ __('app.applications.project_nationality') }}</div>
-                    <div class="field-value">{{ \App\Models\Nationality::labelFor($application->project_nationality) }}</div>
+                    <div class="field-value">{{ $application->projectNationalityLabels() }}</div>
                 </div>
                 <div>
                     <div class="field-label">{{ __('app.applications.work_category') }}</div>

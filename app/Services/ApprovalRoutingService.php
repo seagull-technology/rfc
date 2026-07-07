@@ -145,7 +145,7 @@ class ApprovalRoutingService
         return $this->matchesConditionList(
             $conditions,
             'project_nationalities',
-            $this->projectNationalityConditionValues((string) $application->project_nationality),
+            $this->projectNationalityConditionValues($application->projectNationalityCodes()),
         ) && $this->matchesConditionList(
             $conditions,
             'work_categories',
@@ -183,16 +183,23 @@ class ApprovalRoutingService
     /**
      * @return array<int, string>
      */
-    private function projectNationalityConditionValues(?string $value): array
+    private function projectNationalityConditionValues(string|array|null $value): array
     {
-        if (! filled($value)) {
+        $codes = collect((array) $value)
+            ->filter(fn ($code): bool => filled($code))
+            ->map(fn ($code): string => (string) $code)
+            ->values();
+
+        if ($codes->isEmpty()) {
             return [];
         }
 
-        $values = [(string) $value];
+        $values = $codes->all();
 
-        if (! in_array((string) $value, ['jordanian', 'international'], true)) {
-            $values[] = 'international';
+        foreach ($codes as $code) {
+            if (! in_array($code, ['jordanian', 'international'], true)) {
+                $values[] = 'international';
+            }
         }
 
         return array_values(array_unique($values));
@@ -249,14 +256,22 @@ class ApprovalRoutingService
         }
 
         $specialLocationRequirements = (array) data_get($annex, 'special_location_requirements', []);
+        $locationRowSpecialRequirements = collect((array) data_get($annex, 'filming_locations', []))
+            ->flatMap(fn ($row): array => (array) data_get($row, 'special_requirements', []))
+            ->filter(fn ($value): bool => filled($value))
+            ->map(fn ($value): string => (string) $value)
+            ->unique()
+            ->values();
 
-        if ($this->hasFilledRows($specialLocationRequirements)) {
+        if ($this->hasFilledRows($specialLocationRequirements) || $locationRowSpecialRequirements->isNotEmpty()) {
             $flags[] = 'special_location_requirements';
 
             $flags = array_merge($flags, collect($specialLocationRequirements)
                 ->filter(fn ($row): bool => is_array($row) && $this->hasFilledValues($row))
                 ->keys()
+                ->merge($locationRowSpecialRequirements)
                 ->filter(fn ($value): bool => filled($value))
+                ->unique()
                 ->map(fn ($value): string => 'special_requirement_'.((string) $value))
                 ->all());
         }
@@ -316,6 +331,14 @@ class ApprovalRoutingService
                 'military_equipment_entry_point_',
                 FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT,
             ));
+        }
+
+        if ($this->hasFilledRows(data_get($annex, 'public_security_support', []))) {
+            $flags[] = 'public_security_support';
+        }
+
+        if ($this->hasFilledRows(data_get($annex, 'military_support', []))) {
+            $flags[] = 'military_support';
         }
 
         if ($this->hasFilledValues((array) data_get($annex, 'airport_filming', []))) {

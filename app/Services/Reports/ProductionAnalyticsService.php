@@ -1613,9 +1613,19 @@ class ProductionAnalyticsService
 
     private function productionScope(Application $application): string
     {
-        $nationality = Str::lower((string) $application->project_nationality);
+        $nationalities = collect($application->projectNationalityCodes())
+            ->map(fn (string $nationality): string => Str::lower($nationality))
+            ->filter()
+            ->values();
 
-        return in_array($nationality, ['jordanian', 'jordan', 'jo', 'local'], true) ? 'local' : 'foreign';
+        if ($nationalities->isEmpty()) {
+            return 'foreign';
+        }
+
+        return $nationalities
+            ->every(fn (string $nationality): bool => in_array($nationality, ['jordanian', 'jordan', 'jo', 'local'], true))
+            ? 'local'
+            : 'foreign';
     }
 
     private function productionScopeLabel(Application $application): string

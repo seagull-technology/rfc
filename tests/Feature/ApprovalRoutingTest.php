@@ -101,6 +101,11 @@ class ApprovalRoutingTest extends TestCase
             ->assertSee('value="imported_equipment_entry_point_queen_alia_international_airport"', false)
             ->assertSeeText('Military/border location types')
             ->assertSee('value="military_location_type_border_area"', false)
+            ->assertSeeText('Support authority')
+            ->assertSeeText('Public Security')
+            ->assertSee('value="public_security_support"', false)
+            ->assertSeeText('Army')
+            ->assertSee('value="military_support"', false)
             ->assertSeeText('Airports')
             ->assertSee('value="airport_filming_airport_queen_alia_international_airport"', false);
     }
@@ -161,7 +166,7 @@ class ApprovalRoutingTest extends TestCase
         $this->assertNotContains('filming_locations', data_get($conditions, 'annex_flags'));
     }
 
-    public function test_specific_non_jordanian_project_nationality_matches_international_routing_rules(): void
+    public function test_mixed_project_nationalities_match_international_routing_rules(): void
     {
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
@@ -190,8 +195,18 @@ class ApprovalRoutingTest extends TestCase
         ]);
 
         $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
-            'project_nationality' => 'egyptian',
+            'project_nationalities' => ['jordanian', 'egyptian'],
             'director_nationality' => 'egyptian',
+            'international_producer_email' => 'international-routing@example.com',
+            'international_producer_profile_url' => 'https://example.com/international-routing',
+            'international_producer_address' => 'Cairo',
+            'international_producer_website' => 'https://international-routing.example.com',
+            'international_liaison_name' => 'International Routing Liaison',
+            'international_liaison_email' => 'international-routing-liaison@example.com',
+            'international_liaison_mobile' => '+962799111111',
+            'international_account_exists' => '1',
+            'international_account_password' => 'International@12345',
+            'international_account_password_confirmation' => 'International@12345',
         ]));
 
         $application = Application::query()->firstOrFail();
@@ -362,6 +377,82 @@ class ApprovalRoutingTest extends TestCase
         $this->assertSame([], data_get($nonMatchingApplication->fresh()->metadata, 'requirements.required_approvals'));
     }
 
+    public function test_application_submission_can_route_from_security_support_annex_forms(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$applicant] = $this->createApplicantContext();
+        $publicSecurityEntity = Entity::query()->where('code', 'public-security-directorate')->firstOrFail();
+        $militaryEntity = Entity::query()->where('code', 'military-media-directorate')->firstOrFail();
+
+        ApprovalRoutingRule::query()
+            ->where('request_type', 'application')
+            ->update(['is_active' => false]);
+
+        $publicSecurityRule = ApprovalRoutingRule::query()->create([
+            'name' => 'Public security support schedule route',
+            'request_type' => 'application',
+            'approval_code' => 'public_security',
+            'target_entity_id' => $publicSecurityEntity->getKey(),
+            'conditions' => ['annex_flags' => ['public_security_support']],
+            'priority' => 10,
+            'is_active' => true,
+        ]);
+
+        $militaryRule = ApprovalRoutingRule::query()->create([
+            'name' => 'Military support schedule route',
+            'request_type' => 'application',
+            'approval_code' => 'military_border',
+            'target_entity_id' => $militaryEntity->getKey(),
+            'conditions' => ['annex_flags' => ['military_support']],
+            'priority' => 20,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
+            'project_name' => 'Security Schedule Shoot',
+            'filming_locations' => [
+                [
+                    'governorate' => 'amman',
+                    'location_name' => 'Downtown Amman',
+                    'location_type' => 'public_locations',
+                    'support_requirements' => [
+                        ['authority' => 'public_security', 'date' => '2026-05-04', 'time_from' => '08:00', 'time_to' => '12:00', 'requirement' => 'Traffic escort', 'notes' => 'Lockup support'],
+                        ['authority' => 'military', 'date' => '2026-05-05', 'time_from' => '09:00', 'time_to' => '11:00', 'requirement' => 'Military escort', 'notes' => 'Controlled access'],
+                    ],
+                ],
+            ],
+        ]));
+
+        $application = Application::query()->where('project_name', 'Security Schedule Shoot')->firstOrFail();
+
+        $this->actingAs($applicant)
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application));
+
+        $this->syncAuthorityApprovals($application);
+
+        $this->assertDatabaseHas('application_authority_approvals', [
+            'application_id' => $application->getKey(),
+            'authority_code' => 'public_security',
+            'entity_id' => $publicSecurityEntity->getKey(),
+            'approval_routing_rule_id' => $publicSecurityRule->getKey(),
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseHas('application_authority_approvals', [
+            'application_id' => $application->getKey(),
+            'authority_code' => 'military_border',
+            'entity_id' => $militaryEntity->getKey(),
+            'approval_routing_rule_id' => $militaryRule->getKey(),
+            'status' => 'pending',
+        ]);
+        $this->assertSame(
+            ['public_security', 'military_border'],
+            data_get($application->fresh()->metadata, 'requirements.required_approvals')
+        );
+    }
+
     public function test_access_control_seed_creates_default_annex_conditional_routing_rules(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -385,6 +476,7 @@ class ApprovalRoutingTest extends TestCase
         $this->assertSame([
             'annex_flags' => [
                 'military_border_equipment',
+                'military_support',
                 'location_type_border_areas',
                 'special_requirement_armed_forces',
             ],
@@ -1806,9 +1898,10 @@ class ApprovalRoutingTest extends TestCase
         return array_merge([
             'project_name' => 'Desert Dreams',
             'project_nationality' => 'jordanian',
+            'project_nationalities' => ['jordanian'],
             'work_category' => 'feature_film',
 	            'release_method' => 'cinema',
-	            'planned_start_date' => '2026-05-01',
+	            'planned_start_date' => '2026-05-02',
 	            'planned_end_date' => '2026-05-10',
 	            'schedule_phases' => [
 	                'preparation' => ['start_date' => '2026-04-20', 'end_date' => '2026-04-30'],
@@ -1831,13 +1924,21 @@ class ApprovalRoutingTest extends TestCase
             'liaison_mobile' => '0792222222',
             'director_name' => 'Director Name',
             'director_nationality' => 'jordanian',
+            'director_email' => 'director@example.com',
             'director_profile_url' => 'https://example.com/director',
             'international_producer_name' => 'Global Partner',
             'international_producer_nationality' => 'non_jordanian',
             'international_producer_company' => 'Global Films',
             'required_approvals' => ['public_security'],
             'safety_guidelines_acknowledged' => '1',
+            'work_content_summary_synopsis' => $this->arabicWorkContentSummary(),
+            'work_content_summary_confirmed' => '1',
             'supporting_notes' => 'Need desert location and crowd management support.',
         ], $overrides);
+    }
+
+    private function arabicWorkContentSummary(): string
+    {
+        return trim(str_repeat('هذا ملخص عربي طويل يصف محتوى العمل والإنتاج والمشاهد المطلوبة بطريقة واضحة ومباشرة. ', 65));
     }
 }

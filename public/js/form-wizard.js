@@ -23,16 +23,56 @@
             const nextButtons = Array.from(form.querySelectorAll(".request-wizard-next"));
             const previousButtons = Array.from(form.querySelectorAll(".request-wizard-previous"));
 
+            const innerTabIsAvailable = function (index) {
+                const button = innerTabButtons[index];
+                const pane = innerTabPanes[index];
+
+                return button
+                    && pane
+                    && ! button.classList.contains("d-none")
+                    && ! pane.classList.contains("d-none");
+            };
+
+            const availableInnerTabIndexes = function () {
+                return innerTabButtons
+                    .map(function (_button, index) {
+                        return index;
+                    })
+                    .filter(innerTabIsAvailable);
+            };
+
+            const nearestAvailableInnerTabIndex = function (index, direction) {
+                const availableIndexes = availableInnerTabIndexes();
+
+                if (availableIndexes.length === 0) {
+                    return -1;
+                }
+
+                if (direction < 0) {
+                    return availableIndexes
+                        .slice()
+                        .reverse()
+                        .find(function (availableIndex) {
+                            return availableIndex <= index;
+                        }) ?? availableIndexes[0];
+                }
+
+                return availableIndexes.find(function (availableIndex) {
+                    return availableIndex >= index;
+                }) ?? availableIndexes[availableIndexes.length - 1];
+            };
+
             const activeInnerTabIndex = function () {
                 const activeIndex = innerTabButtons.findIndex(function (button) {
-                    return button.classList.contains("active");
+                    return button.classList.contains("active")
+                        && innerTabIsAvailable(innerTabButtons.indexOf(button));
                 });
 
-                return activeIndex >= 0 ? activeIndex : 0;
+                return activeIndex >= 0 ? activeIndex : nearestAvailableInnerTabIndex(0, 1);
             };
 
             const updateNavigationState = function () {
-                const isAtFirstTab = currentFieldset === 0 && activeInnerTabIndex() === 0;
+                const isAtFirstTab = currentFieldset === 0 && activeInnerTabIndex() === nearestAvailableInnerTabIndex(0, 1);
 
                 previousButtons.forEach(function (button) {
                     button.disabled = isAtFirstTab;
@@ -45,7 +85,12 @@
                     return;
                 }
 
-                const safeIndex = Math.max(0, Math.min(index, innerTabButtons.length - 1));
+                const direction = index < activeInnerTabIndex() ? -1 : 1;
+                const safeIndex = nearestAvailableInnerTabIndex(index, direction);
+
+                if (safeIndex < 0) {
+                    return;
+                }
 
                 innerTabButtons.forEach(function (button, buttonIndex) {
                     const isActive = buttonIndex === safeIndex;
@@ -177,9 +222,12 @@
                 }
 
                 if (currentFieldset === 0 && innerTabButtons.length > 0) {
-                    const nextInnerTab = activeInnerTabIndex() + 1;
+                    const activeIndex = activeInnerTabIndex();
+                    const nextInnerTab = availableInnerTabIndexes().find(function (index) {
+                        return index > activeIndex;
+                    });
 
-                    if (nextInnerTab < innerTabButtons.length) {
+                    if (typeof nextInnerTab === "number") {
                         activateInnerTab(nextInnerTab);
 
                         return;
@@ -192,9 +240,15 @@
 
             const goPrevious = function () {
                 if (currentFieldset === 0 && innerTabButtons.length > 0) {
-                    const previousInnerTab = activeInnerTabIndex() - 1;
+                    const activeIndex = activeInnerTabIndex();
+                    const previousInnerTab = availableInnerTabIndexes()
+                        .slice()
+                        .reverse()
+                        .find(function (index) {
+                            return index < activeIndex;
+                        });
 
-                    if (previousInnerTab >= 0) {
+                    if (typeof previousInnerTab === "number") {
                         activateInnerTab(previousInnerTab);
                     }
 
@@ -202,7 +256,9 @@
                 }
 
                 if (currentFieldset === 1 && innerTabButtons.length > 0) {
-                    showFieldset(0, innerTabButtons.length - 1);
+                    const availableIndexes = availableInnerTabIndexes();
+
+                    showFieldset(0, availableIndexes[availableIndexes.length - 1]);
 
                     return;
                 }
@@ -230,6 +286,14 @@
 
             innerTabButtons.forEach(function (button, buttonIndex) {
                 button.addEventListener("click", function (event) {
+                    if (! innerTabIsAvailable(buttonIndex)) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        event.stopImmediatePropagation();
+
+                        return;
+                    }
+
                     if (buttonIndex > activeInnerTabIndex() && ! validateCurrentStep()) {
                         event.preventDefault();
                         event.stopPropagation();

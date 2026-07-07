@@ -102,6 +102,17 @@
                                                     <div class="form-text">{{ data_get($entity->metadata, 'registration_document_name', __('app.dashboard.not_available')) }}</div>
                                                 </div>
                                             </div>
+
+                                            <div class="col-md-12">
+                                                <div class="mb-3">
+                                                    <label for="registration-logo" class="form-label custom-file-input">{{ __('app.dashboard.replace_registration_logo') }}</label>
+                                                    <input class="form-control @error('logo') is-invalid @enderror" type="file" id="registration-logo" name="logo" accept="image/png">
+                                                    @error('logo')
+                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                    @enderror
+                                                    <div class="form-text">{{ data_get($entity->metadata, 'logo_name', __('app.auth.logo_help')) }}</div>
+                                                </div>
+                                            </div>
                                         </div>
 
                                         <div class="registration-actions">

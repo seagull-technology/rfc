@@ -43,9 +43,10 @@
             'url' => $currentPortalProfileUrl,
         ]);
     } else {
+        $currentPortalProfileUrl = route('profile.show');
         $portalProfileLinks->push([
             'label' => __('app.portal.profile_links.applicant'),
-            'url' => route('dashboard'),
+            'url' => $currentPortalProfileUrl,
         ]);
     }
 @endphp

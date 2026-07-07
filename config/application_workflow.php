@@ -12,6 +12,7 @@ return [
                         'special_requirement_police_presence',
                         'special_requirement_special_effects',
                         'special_requirement_weapons',
+                        'public_security_support',
                     ],
                 ],
                 'priority' => 80,
@@ -124,6 +125,7 @@ return [
                 'conditions' => [
                     'annex_flags' => [
                         'military_border_equipment',
+                        'military_support',
                         'location_type_border_areas',
                         'special_requirement_armed_forces',
                     ],

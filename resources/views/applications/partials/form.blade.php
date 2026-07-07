@@ -32,6 +32,7 @@
     $locationTypeOptions = collect(data_get($locationLookupOptions ?? [], 'location_types', []));
     $locationTypesByGovernorate = (array) data_get($locationLookupOptions ?? [], 'location_types_by_governorate', []);
     $locationTypeLabels = (array) data_get($locationLookupOptions ?? [], 'location_type_labels', []);
+    $locationTypeApprovalDays = (array) data_get($locationLookupOptions ?? [], 'location_type_approval_days', []);
     $militaryLocationTypeOptions = $militaryBorderLocationTypeOptions->pluck('code')->all() ?: ['military_area', 'border_area'];
     $militaryLocationTypeLabels = $militaryBorderLocationTypeOptions->mapWithKeys(fn ($option) => [$option->code => $option->displayName()])->all();
     $flightTypeOptions = ['arrival', 'departure'];
@@ -42,31 +43,113 @@
     $defaultReleaseMethod = \App\Models\ReleaseMethod::defaultCode();
     $workCategoryOptionCodes = $workCategoryOptions->pluck('code')->map(fn ($code): string => (string) $code)->all();
     $releaseMethodOptionCodes = $releaseMethodOptions->pluck('code')->map(fn ($code): string => (string) $code)->all();
-    $selectedWorkCategories = array_values(array_filter(
-        (array) old('work_categories', data_get($projectMeta, 'work_categories', [$application->work_category ?: $defaultWorkCategory])),
-        fn ($code): bool => filled($code) && in_array((string) $code, $workCategoryOptionCodes, true),
-    ));
+    $selectedWorkCategory = old('work_category', $application->work_category ?: data_get($projectMeta, 'work_categories.0', $defaultWorkCategory));
     $selectedReleaseMethods = array_values(array_filter(
         (array) old('release_methods', data_get($projectMeta, 'release_methods', [$application->release_method ?: $defaultReleaseMethod])),
         fn ($code): bool => filled($code) && in_array((string) $code, $releaseMethodOptionCodes, true),
     ));
-    $selectedWorkCategories = $selectedWorkCategories ?: (in_array($defaultWorkCategory, $workCategoryOptionCodes, true) ? [$defaultWorkCategory] : []);
+    $selectedWorkCategory = filled($selectedWorkCategory) ? (string) $selectedWorkCategory : (in_array($defaultWorkCategory, $workCategoryOptionCodes, true) ? $defaultWorkCategory : '');
     $selectedReleaseMethods = $selectedReleaseMethods ?: (in_array($defaultReleaseMethod, $releaseMethodOptionCodes, true) ? [$defaultReleaseMethod] : []);
     $schedulePhases = old('schedule_phases', data_get($scheduleMeta, 'phases', []));
     $budgetItems = old('budget_items', data_get($budgetMeta, 'items', []));
     $castCrewRows = old('cast_crew', data_get($annex, 'cast_crew', [['name' => '', 'role' => '', 'nationality' => '', 'gender' => '', 'birth_date' => '', 'identity_number' => '']]));
+    $maxCrewBirthDate = now()->subDay()->toDateString();
     $filmingLocationRows = old('filming_locations', data_get($annex, 'filming_locations', [['governorate' => '', 'location_name' => '', 'address' => '', 'nature' => '', 'location_type' => '', 'start_date' => '', 'end_date' => '']]));
     $specialLocationRequirementRows = old('special_location_requirements', data_get($annex, 'special_location_requirements', collect($locationRequirementOptions)->mapWithKeys(fn ($option) => [$option => ['locations' => [], 'notes' => '']])->all()));
+    $locationRequirementSelectionForRow = static function (array $row) use ($specialLocationRequirementRows): array {
+        $selected = collect((array) data_get($row, 'special_requirements', []))
+            ->map(fn ($value): string => (string) $value)
+            ->filter(fn (string $value): bool => filled($value))
+            ->values()
+            ->all();
+
+        if ($selected !== []) {
+            return $selected;
+        }
+
+        $locationName = trim((string) data_get($row, 'location_name'));
+
+        if (blank($locationName)) {
+            return [];
+        }
+
+        return collect((array) $specialLocationRequirementRows)
+            ->filter(fn ($requirementRow): bool => in_array($locationName, (array) data_get($requirementRow, 'locations', []), true))
+            ->keys()
+            ->map(fn ($value): string => (string) $value)
+            ->values()
+            ->all();
+    };
     $equipmentFlightRows = old('equipment_flights', data_get($annex, 'equipment_flights', [['flight_type' => '', 'flight_number' => '', 'flight_date' => '', 'flight_time' => '', 'departure_city' => '', 'arrival_city' => '']]));
     $equipmentTravelerRows = old('equipment_travelers', data_get($annex, 'equipment_travelers', [['traveler_name' => '', 'arrival_date' => '', 'arrival_flight_number' => '', 'departure_date' => '', 'departure_flight_number' => '']]));
     $importedEquipmentRows = old('imported_equipment', data_get($annex, 'imported_equipment', [['transport_group' => 'shipping', 'item' => '', 'serial_number' => '', 'flight_reference' => '', 'traveler_name' => '', 'quantity' => '', 'unit_value' => '', 'total_value' => '', 'classification' => '', 'shipping_method' => '', 'entry_point' => '', 'arrival_date' => '', 'origin_country' => '']]));
     $militaryBorderLocationRows = old('military_border_locations', data_get($annex, 'military_border_locations', [['governorate' => '', 'location_name' => '', 'address' => '', 'nature' => '', 'location_type' => '', 'start_date' => '', 'end_date' => '']]));
     $militaryBorderEquipmentRows = old('military_border_equipment', data_get($annex, 'military_border_equipment', [['item' => '', 'serial_number' => '', 'location_reference' => '', 'quantity' => '', 'unit_value' => '', 'total_value' => '', 'classification' => '', 'entry_method' => '', 'entry_point' => '', 'location_name' => '', 'equipment' => '', 'security_need' => '', 'notes' => '']]));
+    $publicSecuritySupportRows = old('public_security_support', data_get($annex, 'public_security_support', [['day' => '', 'date' => '', 'time_from' => '', 'time_to' => '', 'location' => '', 'requirement' => '', 'notes' => '']]));
+    $militarySupportRows = old('military_support', data_get($annex, 'military_support', [['day' => '', 'date' => '', 'time_from' => '', 'time_to' => '', 'location' => '', 'requirement' => '', 'notes' => '']]));
+    $supportAuthorityOptions = [
+        'public_security' => __('app.applications.support_authorities.public_security'),
+        'military' => __('app.applications.support_authorities.military'),
+    ];
+    $emptyLocationSupportRequirement = ['authority' => '', 'requirement' => '', 'date' => '', 'time_from' => '', 'time_to' => '', 'notes' => ''];
+    $locationSupportRequirementsForRow = static function (array $row, int $index = 0) use ($publicSecuritySupportRows, $militarySupportRows, $emptyLocationSupportRequirement): array {
+        $current = collect((array) data_get($row, 'support_requirements', []))
+            ->filter(fn ($requirement): bool => collect((array) $requirement)->filter(fn ($value): bool => filled($value))->isNotEmpty())
+            ->map(fn ($requirement): array => array_merge($emptyLocationSupportRequirement, (array) $requirement))
+            ->values();
+
+        if ($current->isNotEmpty()) {
+            return $current->all();
+        }
+
+        $locationName = trim((string) data_get($row, 'location_name'));
+
+        if (blank($locationName)) {
+            return [$emptyLocationSupportRequirement];
+        }
+
+        $legacyRows = collect();
+
+        collect((array) $publicSecuritySupportRows)
+            ->filter(fn ($supportRow): bool => trim((string) data_get($supportRow, 'location')) === $locationName)
+            ->each(fn ($supportRow) => $legacyRows->push(array_merge($emptyLocationSupportRequirement, [
+                'authority' => 'public_security',
+                'requirement' => data_get($supportRow, 'requirement'),
+                'date' => data_get($supportRow, 'date'),
+                'time_from' => data_get($supportRow, 'time_from'),
+                'time_to' => data_get($supportRow, 'time_to'),
+                'notes' => data_get($supportRow, 'notes'),
+            ])));
+
+        collect((array) $militarySupportRows)
+            ->filter(fn ($supportRow): bool => trim((string) data_get($supportRow, 'location')) === $locationName)
+            ->each(fn ($supportRow) => $legacyRows->push(array_merge($emptyLocationSupportRequirement, [
+                'authority' => 'military',
+                'requirement' => data_get($supportRow, 'requirement'),
+                'date' => data_get($supportRow, 'date'),
+                'time_from' => data_get($supportRow, 'time_from'),
+                'time_to' => data_get($supportRow, 'time_to'),
+                'notes' => data_get($supportRow, 'notes'),
+            ])));
+
+        return $legacyRows->isNotEmpty() ? $legacyRows->values()->all() : [$emptyLocationSupportRequirement];
+    };
+    $locationSupportRequirementForRow = static fn (array $row, int $index = 0): array => $locationSupportRequirementsForRow($row, $index)[0] ?? $emptyLocationSupportRequirement;
     $airportPeopleRows = old('airport_people', data_get($annex, 'airport_people', [['full_name' => '', 'nationality' => '', 'mother_name' => '', 'identity_number' => '', 'profession' => '', 'address_phone' => '', 'entry_reason' => '', 'target_area' => '']]));
     $governmentalSceneRows = old('governmental_scenes', data_get($annex, 'governmental_scenes', [['site_name' => '', 'authority' => '', 'scene_description' => '', 'filming_date' => '']]));
-    $selectedProjectNationality = old('project_nationality', $application->project_nationality);
+    $selectedProjectNationalities = array_values(array_filter(
+        (array) old('project_nationalities', $application->projectNationalityCodes()),
+        fn ($code): bool => filled($code),
+    ));
+    $legacySelectedProjectNationality = old('project_nationality', $application->project_nationality);
+    if (blank($selectedProjectNationalities) && filled($legacySelectedProjectNationality)) {
+        $selectedProjectNationalities = [(string) $legacySelectedProjectNationality];
+    }
+    $canUseInternationalProjectSection = $canUseInternationalProjectSection ?? true;
+    $requiresInternationalProjectSection = $canUseInternationalProjectSection && collect($selectedProjectNationalities)->contains(fn ($code): bool => $code !== 'jordanian');
     $selectedDirectorNationality = old('director_nationality', data_get($director, 'director_nationality'));
     $selectedInternationalProducerNationality = old('international_producer_nationality', data_get($international, 'international_producer_nationality'));
+    $internationalAccountExists = filled(data_get($international, 'account.user_id')) || filled(data_get($international, 'account.email'));
     $locationTypeOptionsForGovernorate = static function ($governorateCode) use ($locationTypeOptions, $locationTypesByGovernorate) {
         $governorateCode = filled($governorateCode) ? (string) $governorateCode : null;
 
@@ -112,14 +195,27 @@
                             <div class="form-group">
                                 <label class="form-label">{{ __('app.applications.project_nationality') }}</label>
                                 <span class="text-danger">*</span>
-                                <select name="project_nationality" class="form-control select2-basic-single" required>
-                                    @if (filled($selectedProjectNationality) && ! $projectNationalityOptions->contains('code', $selectedProjectNationality))
-                                        <option value="{{ $selectedProjectNationality }}" selected>{{ \App\Models\Nationality::labelFor($selectedProjectNationality) }}</option>
-                                    @endif
+                                <select name="project_nationalities[]" class="form-select select2-basic-multiple" multiple required>
+                                    @foreach ($selectedProjectNationalities as $selectedProjectNationality)
+                                        @if (! $projectNationalityOptions->contains('code', $selectedProjectNationality))
+                                            <option value="{{ $selectedProjectNationality }}" selected>{{ \App\Models\Nationality::labelFor($selectedProjectNationality) }}</option>
+                                        @endif
+                                    @endforeach
                                     @foreach ($projectNationalityOptions as $nationality)
-                                        <option value="{{ $nationality->code }}" @selected($selectedProjectNationality === $nationality->code)>{{ $nationality->displayName() }}</option>
+                                        <option value="{{ $nationality->code }}" @selected(in_array($nationality->code, $selectedProjectNationalities, true))>{{ $nationality->displayName() }}</option>
                                     @endforeach
                                 </select>
+                                @error('project_nationalities')
+                                    <div class="invalid-feedback d-block">{{ $message }}</div>
+                                @enderror
+                                @error('project_nationalities.*')
+                                    <div class="invalid-feedback d-block">{{ $message }}</div>
+                                @enderror
+                                @if ($errors->has('project_nationality'))
+                                    <div class="invalid-feedback d-block">{{ $errors->first('project_nationality') }}</div>
+                                @endif
+                                <input type="hidden" name="international_account_exists" value="{{ $internationalAccountExists ? '1' : '0' }}">
+                                <input type="hidden" name="international_account_user_id" value="{{ data_get($international, 'account.user_id') }}">
                             </div>
                         </div>
                     </div>
@@ -138,10 +234,13 @@
                                                 'release_method' => __('app.applications.release_method'),
                                                 'schedule' => __('app.applications.schedule_title'),
                                                 'crew_count' => __('app.applications.estimated_crew_count'),
-                                                'summary' => __('app.applications.project_summary'),
                                                 'budget' => __('app.applications.estimated_budget'),
                                             ] as $tabKey => $tabLabel)
-                                                <button class="nav-link {{ $loop->first ? 'active' : '' }}" data-bs-toggle="pill" type="button" data-bs-target="#{{ $tabKey }}_tab" role="tab" aria-selected="{{ $loop->first ? 'true' : 'false' }}">
+                                                @php
+                                                    $isInternationalProjectTab = $tabKey === 'international_projects';
+                                                @endphp
+                                                @continue($isInternationalProjectTab && ! $canUseInternationalProjectSection)
+                                                <button class="nav-link {{ $loop->first ? 'active' : '' }} {{ $isInternationalProjectTab && ! $requiresInternationalProjectSection ? 'd-none' : '' }}" data-bs-toggle="pill" type="button" data-bs-target="#{{ $tabKey }}_tab" role="tab" aria-selected="{{ $loop->first ? 'true' : 'false' }}" @if($isInternationalProjectTab) data-international-project-tab @endif>
                                                     <span>{{ $tabLabel }}</span>
                                                 </button>
                                             @endforeach
@@ -208,25 +307,36 @@
                                                 </div>
                                                 <div class="col-lg-6">
                                                     <div class="form-group">
+                                                        <label class="form-label">{{ __('app.applications.director_email') }}</label>
+                                                        <span class="text-danger">*</span>
+                                                        <input class="form-control" type="email" name="director_email" value="{{ old('director_email', data_get($director, 'director_email')) }}" required>
+                                                    </div>
+                                                </div>
+                                                <div class="col-lg-6">
+                                                    <div class="form-group">
                                                         <label class="form-label">{{ __('app.applications.director_profile_url') }}</label>
-                                                        <input class="form-control" type="url" name="director_profile_url" value="{{ old('director_profile_url', data_get($director, 'director_profile_url')) }}">
+                                                        <span class="text-danger">*</span>
+                                                        <input class="form-control" type="url" name="director_profile_url" value="{{ old('director_profile_url', data_get($director, 'director_profile_url')) }}" required>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        <div class="tab-pane fade" id="international_projects_tab" role="tabpanel">
+                                        @if ($canUseInternationalProjectSection)
+                                        <div class="tab-pane fade {{ ! $requiresInternationalProjectSection ? 'd-none' : '' }}" id="international_projects_tab" role="tabpanel" data-international-project-section>
                                             <div class="row g-3">
                                                 <div class="col-lg-12">
                                                     <div class="form-group">
                                                         <label class="form-label">{{ __('app.applications.international_producer_name') }}</label>
-                                                        <input class="form-control" type="text" name="international_producer_name" value="{{ old('international_producer_name', data_get($international, 'international_producer_name')) }}">
+                                                        <span class="text-danger {{ ! $requiresInternationalProjectSection ? 'd-none' : '' }}" data-international-required-marker>*</span>
+                                                        <input class="form-control" type="text" name="international_producer_name" value="{{ old('international_producer_name', data_get($international, 'international_producer_name')) }}" data-international-project-field @required($requiresInternationalProjectSection) @disabled(! $requiresInternationalProjectSection)>
                                                     </div>
                                                 </div>
                                                 <div class="col-lg-12">
                                                     <div class="form-group">
                                                         <label class="form-label">{{ __('app.applications.international_producer_nationality') }}</label>
-                                                        <select class="form-select select2-basic-single" name="international_producer_nationality">
+                                                        <span class="text-danger {{ ! $requiresInternationalProjectSection ? 'd-none' : '' }}" data-international-required-marker>*</span>
+                                                        <select class="form-select select2-basic-single" name="international_producer_nationality" data-international-project-field @required($requiresInternationalProjectSection) @disabled(! $requiresInternationalProjectSection)>
                                                             <option value="">{{ __('app.admin.select_placeholder') }}</option>
                                                             @if (filled($selectedInternationalProducerNationality) && ! $internationalProducerNationalityOptions->contains('code', $selectedInternationalProducerNationality))
                                                                 <option value="{{ $selectedInternationalProducerNationality }}" selected>{{ \App\Models\Nationality::labelFor($selectedInternationalProducerNationality) }}</option>
@@ -240,31 +350,36 @@
                                                 <div class="col-lg-12">
                                                     <div class="form-group">
                                                         <label class="form-label">{{ __('app.applications.international_producer_company') }}</label>
-                                                        <input class="form-control" type="text" name="international_producer_company" value="{{ old('international_producer_company', data_get($international, 'international_producer_company')) }}">
+                                                        <span class="text-danger {{ ! $requiresInternationalProjectSection ? 'd-none' : '' }}" data-international-required-marker>*</span>
+                                                        <input class="form-control" type="text" name="international_producer_company" value="{{ old('international_producer_company', data_get($international, 'international_producer_company')) }}" data-international-project-field @required($requiresInternationalProjectSection) @disabled(! $requiresInternationalProjectSection)>
                                                     </div>
                                                 </div>
                                                 <div class="col-lg-6">
                                                     <div class="form-group">
                                                         <label class="form-label">{{ __('app.applications.international_producer_email') }}</label>
-                                                        <input class="form-control" type="email" name="international_producer_email" value="{{ old('international_producer_email', data_get($international, 'international_producer_email')) }}">
+                                                        <span class="text-danger {{ ! $requiresInternationalProjectSection ? 'd-none' : '' }}" data-international-required-marker>*</span>
+                                                        <input class="form-control" type="email" name="international_producer_email" value="{{ old('international_producer_email', data_get($international, 'international_producer_email')) }}" data-international-project-field @required($requiresInternationalProjectSection) @disabled(! $requiresInternationalProjectSection)>
                                                     </div>
                                                 </div>
                                                 <div class="col-lg-6">
                                                     <div class="form-group">
                                                         <label class="form-label">{{ __('app.applications.international_producer_profile_url') }}</label>
-                                                        <input class="form-control" type="url" name="international_producer_profile_url" value="{{ old('international_producer_profile_url', data_get($international, 'international_producer_profile_url')) }}">
+                                                        <span class="text-danger {{ ! $requiresInternationalProjectSection ? 'd-none' : '' }}" data-international-required-marker>*</span>
+                                                        <input class="form-control" type="url" name="international_producer_profile_url" value="{{ old('international_producer_profile_url', data_get($international, 'international_producer_profile_url')) }}" data-international-project-field @required($requiresInternationalProjectSection) @disabled(! $requiresInternationalProjectSection)>
                                                     </div>
                                                 </div>
                                                 <div class="col-lg-6">
                                                     <div class="form-group">
                                                         <label class="form-label">{{ __('app.applications.international_producer_address') }}</label>
-                                                        <input class="form-control" type="text" name="international_producer_address" value="{{ old('international_producer_address', data_get($international, 'international_producer_address')) }}">
+                                                        <span class="text-danger {{ ! $requiresInternationalProjectSection ? 'd-none' : '' }}" data-international-required-marker>*</span>
+                                                        <input class="form-control" type="text" name="international_producer_address" value="{{ old('international_producer_address', data_get($international, 'international_producer_address')) }}" data-international-project-field @required($requiresInternationalProjectSection) @disabled(! $requiresInternationalProjectSection)>
                                                     </div>
                                                 </div>
                                                 <div class="col-lg-6">
                                                     <div class="form-group">
                                                         <label class="form-label">{{ __('app.applications.international_producer_website') }}</label>
-                                                        <input class="form-control" type="url" name="international_producer_website" value="{{ old('international_producer_website', data_get($international, 'international_producer_website')) }}">
+                                                        <span class="text-danger {{ ! $requiresInternationalProjectSection ? 'd-none' : '' }}" data-international-required-marker>*</span>
+                                                        <input class="form-control" type="url" name="international_producer_website" value="{{ old('international_producer_website', data_get($international, 'international_producer_website')) }}" data-international-project-field @required($requiresInternationalProjectSection) @disabled(! $requiresInternationalProjectSection)>
                                                     </div>
                                                 </div>
                                                 <div class="col-12">
@@ -273,26 +388,30 @@
                                                                 <div class="col-lg-12">
                                                                     <div class="form-group">
                                                                         <label class="form-label">{{ __('app.applications.international_liaison_name') }}</label>
-                                                                        <input class="form-control" type="text" name="international_liaison_name" value="{{ old('international_liaison_name', data_get($international, 'international_liaison_name')) }}">
+                                                                        <span class="text-danger {{ ! $requiresInternationalProjectSection ? 'd-none' : '' }}" data-international-required-marker>*</span>
+                                                                        <input class="form-control" type="text" name="international_liaison_name" value="{{ old('international_liaison_name', data_get($international, 'international_liaison_name')) }}" data-international-project-field @required($requiresInternationalProjectSection) @disabled(! $requiresInternationalProjectSection)>
                                                                     </div>
                                                                 </div>
                                                                 <div class="col-lg-6">
                                                                     <div class="form-group">
                                                                         <label class="form-label">{{ __('app.applications.international_liaison_email') }}</label>
-                                                                        <input class="form-control" type="email" name="international_liaison_email" value="{{ old('international_liaison_email', data_get($international, 'international_liaison_email')) }}">
+                                                                        <span class="text-danger {{ ! $requiresInternationalProjectSection ? 'd-none' : '' }}" data-international-required-marker>*</span>
+                                                                        <input class="form-control" type="email" name="international_liaison_email" value="{{ old('international_liaison_email', data_get($international, 'international_liaison_email')) }}" data-international-project-field @required($requiresInternationalProjectSection) @disabled(! $requiresInternationalProjectSection)>
                                                                     </div>
                                                                 </div>
                                                                 <div class="col-lg-6">
                                                                     <div class="form-group">
                                                                         <label class="form-label">{{ __('app.applications.international_liaison_mobile') }}</label>
-                                                                        <input class="form-control" type="text" name="international_liaison_mobile" value="{{ old('international_liaison_mobile', data_get($international, 'international_liaison_mobile')) }}">
+                                                                        <span class="text-danger {{ ! $requiresInternationalProjectSection ? 'd-none' : '' }}" data-international-required-marker>*</span>
+                                                                        <input class="form-control" type="text" name="international_liaison_mobile" value="{{ old('international_liaison_mobile', data_get($international, 'international_liaison_mobile')) }}" data-international-project-field @required($requiresInternationalProjectSection) @disabled(! $requiresInternationalProjectSection)>
                                                                     </div>
                                                                 </div>
                                                                 <div class="col-lg-6">
                                                                     <div class="form-group" data-application-password-wrapper>
                                                                         <label class="form-label">{{ __('app.auth.password') }}</label>
+                                                                        <span class="text-danger {{ ! $requiresInternationalProjectSection || $internationalAccountExists ? 'd-none' : '' }}" data-international-account-required-marker>*</span>
                                                                         <div class="application-password-control">
-                                                                            <input class="form-control" type="password" name="international_account_password" autocomplete="new-password" data-application-password-strength aria-describedby="international-account-password-rules">
+                                                                            <input class="form-control" type="password" name="international_account_password" autocomplete="new-password" data-application-password-strength data-international-project-field data-international-account-field aria-describedby="international-account-password-rules" @required($requiresInternationalProjectSection && ! $internationalAccountExists) @disabled(! $requiresInternationalProjectSection)>
                                                                             <button type="button" class="application-password-toggle" data-application-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
                                                                                 <i class="ph ph-eye-slash"></i>
                                                                             </button>
@@ -308,8 +427,9 @@
                                                                 <div class="col-lg-6">
                                                                     <div class="form-group">
                                                                         <label class="form-label">{{ __('app.auth.confirm_password') }}</label>
+                                                                        <span class="text-danger {{ ! $requiresInternationalProjectSection || $internationalAccountExists ? 'd-none' : '' }}" data-international-account-required-marker>*</span>
                                                                         <div class="application-password-control">
-                                                                            <input class="form-control" type="password" name="international_account_password_confirmation" autocomplete="new-password">
+                                                                            <input class="form-control" type="password" name="international_account_password_confirmation" autocomplete="new-password" data-international-project-field data-international-account-field @required($requiresInternationalProjectSection && ! $internationalAccountExists) @disabled(! $requiresInternationalProjectSection)>
                                                                             <button type="button" class="application-password-toggle" data-application-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
                                                                                 <i class="ph ph-eye-slash"></i>
                                                                             </button>
@@ -321,15 +441,19 @@
                                                 </div>
                                             </div>
                                         </div>
+                                        @endif
 
                                         <div class="tab-pane fade" id="work_category_tab" role="tabpanel">
                                             <div class="form-group">
                                                 <label class="form-label">{{ __('app.applications.work_type') }}</label>
                                                 <span class="text-danger">*</span>
-                                                <input type="hidden" name="work_category" data-routing-field="work_category" value="{{ data_get($selectedWorkCategories, '0', $application->work_category ?: $defaultWorkCategory) }}">
-                                                <select name="work_categories[]" class="form-select select2-basic-multiple" multiple required data-routing-multiple="work_category">
+                                                <select name="work_category" class="form-select select2-basic-single" required data-routing-field="work_category">
+                                                    <option value="">{{ __('app.admin.select_placeholder') }}</option>
+                                                    @if (filled($selectedWorkCategory) && ! in_array($selectedWorkCategory, $workCategoryOptionCodes, true))
+                                                        <option value="{{ $selectedWorkCategory }}" selected>{{ \App\Models\WorkCategory::labelFor($selectedWorkCategory) }}</option>
+                                                    @endif
                                                     @foreach ($workCategoryOptions as $option)
-                                                        <option value="{{ $option->code }}" @selected(in_array($option->code, $selectedWorkCategories, true))>{{ $option->displayName() }}</option>
+                                                        <option value="{{ $option->code }}" @selected($selectedWorkCategory === $option->code)>{{ $option->displayName() }}</option>
                                                     @endforeach
                                                 </select>
                                             </div>
@@ -391,18 +515,6 @@
                                             </div>
                                         </div>
 
-                                        <div class="tab-pane fade" id="summary_tab" role="tabpanel">
-                                            <div class="form-group">
-                                                <label class="form-label">{{ __('app.applications.project_summary') }}</label>
-                                                <span class="text-danger">*</span>
-                                                <p class="text-danger fontSize13 fw-600">
-                                                    <i class="ph ph-info fa-xl me-2 lh-lg"></i>
-                                                    <span>{{ __('app.applications.project_summary_instruction') }}</span>
-                                                </p>
-                                                <textarea class="form-control" name="project_summary" rows="7" required>{{ old('project_summary', $application->project_summary) }}</textarea>
-                                            </div>
-                                        </div>
-
                                         <div class="tab-pane fade" id="budget_tab" role="tabpanel">
                                             <div class="row g-3">
                                                 <div class="col-lg-12">
@@ -416,7 +528,7 @@
                                                     <div class="form-group">
                                                         <label class="form-label">{{ __('app.applications.local_spend_estimate') }}</label>
                                                         <span class="text-danger">*</span>
-                                                        <input class="form-control" type="number" step="0.01" min="0" name="local_spend_estimate" value="{{ old('local_spend_estimate', data_get($budgetMeta, 'local_spend_estimate')) }}" required>
+                                                        <input class="form-control" type="number" step="0.01" min="0" name="local_spend_estimate" value="{{ old('local_spend_estimate', data_get($budgetMeta, 'local_spend_estimate')) }}" required data-local-spend-estimate data-budget-breakdown-threshold="175000">
                                                     </div>
                                                 </div>
                                                 <div class="col-12">
@@ -426,8 +538,8 @@
                                                                 <tr>
                                                                     <th>#</th>
                                                                     <th>{{ __('app.applications.budget_item') }}</th>
-                                                                    <th>{{ __('app.applications.units_count') }}</th>
-                                                                    <th>{{ __('app.applications.total_jod') }}</th>
+                                                                    <th>{{ __('app.applications.units_count') }} <span class="text-danger d-none" data-budget-required-marker>*</span></th>
+                                                                    <th>{{ __('app.applications.total_jod') }} <span class="text-danger d-none" data-budget-required-marker>*</span></th>
                                                                 </tr>
                                                             </thead>
                                                             <tbody>
@@ -435,8 +547,8 @@
                                                                     <tr>
                                                                         <td>{{ $loop->iteration }}</td>
                                                                         <td class="fw-600">{{ $budgetItemLabels[$item] ?? __('app.applications.budget_items.'.$item) }}</td>
-                                                                        <td><input type="number" min="0" class="form-control" name="budget_items[{{ $item }}][units]" value="{{ data_get($budgetItems, $item.'.units') }}" placeholder="{{ __('app.applications.enter_count') }}"></td>
-                                                                        <td><input type="number" step="0.01" min="0" class="form-control" name="budget_items[{{ $item }}][total]" value="{{ data_get($budgetItems, $item.'.total') }}" placeholder="{{ __('app.applications.enter_value') }}"></td>
+                                                                        <td><input type="number" min="0" class="form-control" name="budget_items[{{ $item }}][units]" value="{{ data_get($budgetItems, $item.'.units') }}" placeholder="{{ __('app.applications.enter_count') }}" data-budget-breakdown-field></td>
+                                                                        <td><input type="number" step="0.01" min="0" class="form-control" name="budget_items[{{ $item }}][total]" value="{{ data_get($budgetItems, $item.'.total') }}" placeholder="{{ __('app.applications.enter_value') }}" data-budget-breakdown-field></td>
                                                                     </tr>
                                                                 @endforeach
                                                             </tbody>
@@ -496,7 +608,7 @@
                                     </thead>
                                     <tbody>
                                         @foreach ([
-                                            ['target' => 'WorkContentSummary', 'label' => __('app.applications.annex_sections.work_content_summary'), 'filled' => filled(data_get($workContentSummary, 'synopsis')) || data_get($workContentSummary, 'confirmed')],
+                                            ['target' => 'WorkContentSummary', 'label' => __('app.applications.annex_sections.work_content_summary'), 'filled' => filled(data_get($workContentSummary, 'synopsis')) && data_get($workContentSummary, 'confirmed')],
                                             ['target' => 'CastCrewList', 'label' => __('app.applications.annex_sections.cast_crew'), 'filled' => collect($castCrewRows)->filter(fn ($row) => collect($row)->filter(fn ($value) => filled($value))->isNotEmpty())->isNotEmpty()],
                                             ['target' => 'LocationList', 'label' => __('app.applications.annex_sections.filming_locations'), 'filled' => collect($filmingLocationRows)->filter(fn ($row) => collect($row)->filter(fn ($value) => filled($value))->isNotEmpty())->isNotEmpty()],
                                             ['target' => 'RFCGuidelines', 'label' => __('app.applications.annex_sections.safety_guidelines'), 'filled' => data_get($safetyGuidelines, 'acknowledged') || filled(data_get($safetyGuidelines, 'notes'))],
@@ -577,13 +689,13 @@
                                         <div class="col-12">
                                             <h5 class="mb-3">{{ __('app.applications.annex_sections.work_content_summary') }}</h5>
                                         </div>
-                                        <div class="col-lg-6">
+                                        <div class="col-lg-12">
                                             <label class="form-label">{{ __('app.applications.annex_fields.synopsis') }}</label>
-                                            <textarea class="form-control" name="work_content_summary_synopsis" rows="5">{{ old('work_content_summary_synopsis', data_get($workContentSummary, 'synopsis')) }}</textarea>
-                                        </div>
-                                        <div class="col-lg-6">
-                                            <label class="form-label">{{ __('app.applications.annex_fields.sensitive_content_notes') }}</label>
-                                            <textarea class="form-control" name="work_content_summary_sensitive_notes" rows="5">{{ old('work_content_summary_sensitive_notes', data_get($workContentSummary, 'sensitive_notes')) }}</textarea>
+                                            <textarea class="form-control" name="work_content_summary_synopsis" rows="5" data-work-summary-input data-work-summary-min-words="500" data-work-summary-counter="#work_content_summary_word_count_inline">{{ old('work_content_summary_synopsis', data_get($workContentSummary, 'synopsis')) }}</textarea>
+                                            <div class="d-flex justify-content-between gap-3 flex-wrap small mt-2">
+                                                <span class="text-muted">{{ __('app.applications.work_summary_arabic_only_hint') }}</span>
+                                                <span id="work_content_summary_word_count_inline" class="text-muted" aria-live="polite"></span>
+                                            </div>
                                         </div>
                                         <div class="col-12">
                                             <div class="form-check">
@@ -629,7 +741,7 @@
 	                                                                        @endforeach
 	                                                                    </select>
 	                                                                </td>
-	                                                                <td><input type="date" class="form-control" name="cast_crew[{{ $index }}][birth_date]" value="{{ $row['birth_date'] ?? '' }}"></td>
+	                                                                <td><input type="date" class="form-control" name="cast_crew[{{ $index }}][birth_date]" value="{{ $row['birth_date'] ?? '' }}" max="{{ $maxCrewBirthDate }}"></td>
 	                                                                <td><input type="text" class="form-control" name="cast_crew[{{ $index }}][identity_number]" value="{{ $row['identity_number'] ?? '' }}"></td>
                                                                 <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeApplicationAnnexRow(this, '#castCrewTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
                                                             </tr>
@@ -647,58 +759,10 @@
                                                 </button>
                                             </div>
                                             <div class="table-responsive">
-                                                <table class="table align-middle" id="filmingLocationsTable">
-                                                    <thead class="table-light">
-                                                        <tr>
-                                                            <th>#</th>
-                                                            <th>{{ __('app.scouting.governorate') }}</th>
-                                                            <th>{{ __('app.applications.annex_fields.location_type') }}</th>
-                                                            <th>{{ __('app.applications.annex_fields.location_exact_name') }}</th>
-                                                            <th>{{ __('app.applications.annex_fields.location_nature') }}</th>
-                                                            <th>{{ __('app.applications.annex_fields.location_address') }}</th>
-                                                            <th>{{ __('app.scouting.start_date') }}</th>
-                                                            <th>{{ __('app.scouting.end_date') }}</th>
-                                                            <th>{{ __('app.applications.actions') }}</th>
-                                                        </tr>
-                                                    </thead>
+                                                <table class="table application-location-card-table" id="filmingLocationsTable">
                                                     <tbody>
                                                         @foreach ($filmingLocationRows as $index => $row)
-                                                            @php
-                                                                $selectedGovernorate = (string) ($row['governorate'] ?? '');
-                                                                $selectedLocationType = (string) ($row['location_type'] ?? '');
-                                                                $rowLocationTypeOptions = $locationTypeOptionsForGovernorate($selectedGovernorate);
-                                                            @endphp
-                                                            <tr>
-                                                                <td class="row-number">{{ $loop->iteration }}</td>
-                                                                <td>
-                                                                    <select class="form-select" name="filming_locations[{{ $index }}][governorate]" data-location-governorate>
-                                                                        <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                                                        @if (filled($selectedGovernorate) && ! $governorateOptions->contains('code', $selectedGovernorate))
-                                                                            <option value="{{ $selectedGovernorate }}" selected>{{ \App\Models\Governorate::labelFor($selectedGovernorate) }}</option>
-                                                                        @endif
-                                                                        @foreach ($governorateOptions as $governorate)
-                                                                            <option value="{{ $governorate->code }}" @selected($selectedGovernorate === $governorate->code)>{{ $governorate->displayName() }}</option>
-                                                                        @endforeach
-                                                                    </select>
-                                                                </td>
-                                                                <td>
-                                                                    <select class="form-select" name="filming_locations[{{ $index }}][location_type]" data-location-type-select data-selected-type="{{ $selectedLocationType }}">
-                                                                        <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                                                        @if (filled($selectedLocationType) && ! $rowLocationTypeOptions->contains('code', $selectedLocationType))
-                                                                            <option value="{{ $selectedLocationType }}" selected>{{ \App\Models\FilmingLocationType::labelFor($selectedLocationType) }}</option>
-                                                                        @endif
-                                                                        @foreach ($rowLocationTypeOptions as $locationType)
-                                                                            <option value="{{ $locationType->code }}" @selected($selectedLocationType === $locationType->code)>{{ $locationType->displayName() }}</option>
-                                                                        @endforeach
-                                                                    </select>
-                                                                </td>
-                                                                <td><input type="text" class="form-control" name="filming_locations[{{ $index }}][location_name]" value="{{ $row['location_name'] ?? '' }}"></td>
-                                                                <td><textarea class="form-control" name="filming_locations[{{ $index }}][nature]" rows="2">{{ $row['nature'] ?? '' }}</textarea></td>
-                                                                <td><input type="text" class="form-control" name="filming_locations[{{ $index }}][address]" value="{{ $row['address'] ?? '' }}"></td>
-                                                                <td><input type="date" class="form-control" name="filming_locations[{{ $index }}][start_date]" value="{{ $row['start_date'] ?? '' }}"></td>
-                                                                <td><input type="date" class="form-control" name="filming_locations[{{ $index }}][end_date]" value="{{ $row['end_date'] ?? '' }}"></td>
-                                                                <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeApplicationAnnexRow(this, '#filmingLocationsTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
-                                                            </tr>
+                                                            @include('applications.partials.filming-location-card', ['tableId' => 'filmingLocationsTable', 'index' => $index, 'row' => (array) $row, 'rowNumber' => $loop->iteration])
                                                         @endforeach
                                                     </tbody>
                                                 </table>
@@ -983,6 +1047,50 @@
                 color: var(--bs-danger, #721d18);
                 outline: none;
             }
+
+            .offcanvas.application-annex-offcanvas {
+                --bs-offcanvas-width: 100vw;
+                border: 0 !important;
+                border-radius: 0 !important;
+                bottom: 0 !important;
+                box-shadow: none;
+                display: flex;
+                flex-direction: column;
+                height: 100vh !important;
+                height: 100dvh !important;
+                inset: 0 !important;
+                left: 0 !important;
+                margin: 0 !important;
+                max-height: 100vh !important;
+                max-height: 100dvh !important;
+                max-width: none;
+                min-height: 100vh;
+                min-height: 100dvh;
+                padding: 0;
+                position: fixed !important;
+                right: 0 !important;
+                top: 0 !important;
+                width: 100vw !important;
+                z-index: 20000 !important;
+            }
+
+            .offcanvas.application-annex-offcanvas.show,
+            .offcanvas.application-annex-offcanvas.showing {
+                transform: none !important;
+            }
+
+            .cast-crew-name-cell {
+                min-width: 520px;
+            }
+
+            #filmingLocationsTable {
+                min-width: 1680px;
+            }
+
+            .application-repeatable-footer {
+                border-top: 1px solid var(--bs-border-color, #dee2e6);
+                margin-top: .75rem;
+            }
         </style>
     @endpush
 @endonce
@@ -1001,15 +1109,46 @@
 	            collect(['male', 'female'])
 	                ->map(fn ($gender): string => '<option value="'.e($gender).'">'.e(__('app.auth.gender_options.'.$gender)).'</option>')
 	                ->implode('');
+        $applicationSpecialLocationRequirementOptions = collect($locationRequirementOptions)
+            ->map(fn ($code): array => ['code' => $code, 'label' => $locationRequirementLabels[$code] ?? __('app.applications.special_location_requirements.'.$code)])
+            ->values();
+        $applicationSupportAuthorityOptions = collect($supportAuthorityOptions)
+            ->map(fn ($label, $code): array => ['code' => $code, 'label' => $label])
+            ->values();
     @endphp
     <script src="{{ asset('js/form-wizard.js') }}?v={{ filemtime(public_path('js/form-wizard.js')) }}"></script>
     <script>
 	        const applicationNationalityOptionsHtml = @js($applicationNationalityOptionsHtml);
 	        const applicationGovernorateOptionsHtml = @js($applicationGovernorateOptionsHtml);
 	        const applicationGenderOptionsHtml = @js($applicationGenderOptionsHtml);
+        const applicationCrewBirthDateMax = @js($maxCrewBirthDate);
         const applicationLocationTypesByGovernorate = @json($locationTypesByGovernorate);
         const applicationLocationTypeLabels = @json($locationTypeLabels);
+        const applicationLocationTypeApprovalDays = @json($locationTypeApprovalDays);
         const applicationLocationTypePlaceholder = @js(__('app.admin.select_placeholder'));
+        const applicationSpecialLocationRequirementOptions = @json($applicationSpecialLocationRequirementOptions);
+        const applicationSupportAuthorityOptions = @json($applicationSupportAuthorityOptions);
+        const applicationLocationCardLabels = {
+            locationNumber: @js(__('app.applications.location_number', ['number' => '__NUMBER__'])),
+            governorate: @js(__('app.scouting.governorate')),
+            locationType: @js(__('app.applications.annex_fields.location_type')),
+            specialRequirement: @js(__('app.applications.special_requirement')),
+            locationName: @js(__('app.applications.annex_fields.location_exact_name')),
+            locationAddress: @js(__('app.applications.annex_fields.location_address')),
+            locationNature: @js(__('app.applications.annex_fields.location_nature')),
+            startDate: @js(__('app.scouting.start_date')),
+            endDate: @js(__('app.scouting.end_date')),
+            notes: @js(__('app.applications.annex_fields.notes')),
+            supportTitle: @js(__('app.applications.location_support_requirements_title')),
+            authority: @js(__('app.applications.annex_fields.authority_name')),
+            requirement: @js(__('app.applications.annex_fields.requirement')),
+            date: @js(__('app.applications.annex_fields.date')),
+            timeFrom: @js(__('app.applications.annex_fields.time_from')),
+            timeTo: @js(__('app.applications.annex_fields.time_to')),
+            deleteLabel: @js(__('app.delete')),
+            addLabel: @js(__('app.add')),
+            approvalDaysNotice: @js(__('app.applications.location_type_approval_days_notice')),
+        };
         const applicationEquipmentCategoryOptions = @json($equipmentClassificationOptions->map(fn ($option) => ['code' => $option->code, 'label' => $option->displayName()])->values());
         const applicationEquipmentShippingMethodOptions = @json($equipmentShippingMethodOptions->map(fn ($option) => ['code' => $option->code, 'label' => $option->displayName()])->values());
         const applicationEquipmentEntryPointOptions = @json($equipmentEntryPointOptions->map(fn ($option) => ['code' => $option->code, 'label' => $option->displayName()])->values());
@@ -1018,6 +1157,19 @@
         const applicationPasswordToggleMessages = {
             show: @js(__('app.auth.show_password')),
             hide: @js(__('app.auth.hide_password')),
+        };
+        const applicationWorkSummaryMessages = {
+            counter: @js(__('app.applications.work_summary_word_counter')),
+            minWords: @js(__('app.applications.work_summary_min_words_validation', ['min' => 500])),
+            arabicOnly: @js(__('app.applications.work_summary_arabic_only_validation')),
+        };
+        const applicationRepeatableMessages = {
+            add: @js(__('app.add')),
+            rowCount: @js(__('app.applications.repeatable_row_count')),
+            firstName: @js(__('app.applications.annex_fields.first_name')),
+            secondName: @js(__('app.applications.annex_fields.second_name')),
+            thirdName: @js(__('app.applications.annex_fields.third_name')),
+            familyName: @js(__('app.applications.annex_fields.family_name')),
         };
 
         function applicationLookupOptionsHtml(options, selectedValue) {
@@ -1043,7 +1195,166 @@
                     const selectedAttribute = selected === String(code) ? ' selected' : '';
 
                     return '<option value="' + safeCode + '"' + selectedAttribute + '>' + safeLabel + '</option>';
+                    }).join('');
+        }
+
+        function applicationSpecialLocationRequirementOptionsHtml(selectedValues) {
+            const selected = new Set((selectedValues || []).map(function (value) {
+                return String(value || '');
+            }));
+
+            return applicationSpecialLocationRequirementOptions.map(function (option) {
+                const code = String(option.code || '');
+                const selectedAttribute = selected.has(code) ? ' selected' : '';
+
+                return '<option value="' + applicationEscapeHtml(code) + '"' + selectedAttribute + '>'
+                    + applicationEscapeHtml(option.label || code)
+                + '</option>';
+            }).join('');
+        }
+
+        function applicationSupportAuthorityOptionsHtml(selectedValue) {
+            const selected = String(selectedValue || '');
+
+            return '<option value="">' + applicationLocationTypePlaceholder + '</option>'
+                + applicationSupportAuthorityOptions.map(function (option) {
+                    const code = String(option.code || '');
+                    const selectedAttribute = selected === code ? ' selected' : '';
+
+                    return '<option value="' + applicationEscapeHtml(code) + '"' + selectedAttribute + '>'
+                        + applicationEscapeHtml(option.label || code)
+                        + '</option>';
                 }).join('');
+        }
+
+        function initializeApplicationEnhancedSelects(root) {
+            if (!window.jQuery || !window.jQuery.fn || !window.jQuery.fn.select2) {
+                return;
+            }
+
+            const $root = window.jQuery(root || document);
+
+            $root.find('select.select2-basic-single, select.select2-basic-multiple')
+                .add($root.filter('select.select2-basic-single, select.select2-basic-multiple'))
+                .each(function () {
+                    const $select = window.jQuery(this);
+                    const $offcanvas = $select.closest('.offcanvas');
+                    const options = { width: '100%' };
+
+                    if ($select.data('select2')) {
+                        $select.select2('destroy');
+                    }
+
+                    if ($offcanvas.length) {
+                        options.dropdownParent = $offcanvas;
+                    }
+
+                    $select.select2(options);
+                });
+        }
+
+        function filmingLocationSupportRequirementHtml(locationIndex, supportIndex) {
+            return '<div class="application-location-support-row" data-location-support-requirement-row>'
+                + '<div class="d-flex justify-content-between align-items-center gap-2 mb-3">'
+                + '<span class="badge bg-light text-dark border">#' + (supportIndex + 1) + '</span>'
+                + '<button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeFilmingLocationSupportRequirement(this)" aria-label="' + applicationEscapeHtml(applicationLocationCardLabels.deleteLabel) + '"><i class="ph-fill ph ph-trash-simple fs-6"></i></button>'
+                + '</div>'
+                + '<div class="row g-3">'
+                + '<div class="col-md-6 col-xl-2"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.authority) + '</label><select class="form-select select2-basic-single" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][authority]">' + applicationSupportAuthorityOptionsHtml('') + '</select></div>'
+                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.requirement) + '</label><select class="form-select select2-basic-single" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][requirement]"><option value="">' + applicationLocationTypePlaceholder + '</option>' + applicationSpecialLocationRequirementOptionsHtml([]) + '</select></div>'
+                + '<div class="col-md-6 col-xl-2"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.date) + '</label><input type="date" class="form-control" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][date]"></div>'
+                + '<div class="col-md-6 col-xl-2"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.timeFrom) + '</label><input type="time" class="form-control" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][time_from]"></div>'
+                + '<div class="col-md-6 col-xl-2"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.timeTo) + '</label><input type="time" class="form-control" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][time_to]"></div>'
+                + '<div class="col-md-6 col-xl-12"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.notes) + '</label><textarea class="form-control" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][notes]" rows="2"></textarea></div>'
+                + '</div>'
+                + '</div>';
+        }
+
+        function filmingLocationCardHtml(tableId, index) {
+            const displayNumber = index + 1;
+
+            return '<td>'
+                + '<div class="application-location-card">'
+                + '<div class="application-location-card__header">'
+                + '<h5 class="mb-0">' + applicationEscapeHtml(applicationLocationCardLabels.locationNumber.replace('__NUMBER__', '')) + '<span class="row-number">' + displayNumber + '</span></h5>'
+                + "<button type=\"button\" class=\"btn btn-sm btn-icon btn-danger-subtle rounded\" onclick=\"removeApplicationAnnexRow(this, '#" + tableId + "')\" aria-label=\"" + applicationEscapeHtml(applicationLocationCardLabels.deleteLabel) + "\"><i class=\"ph-fill ph ph-trash-simple fs-6\"></i></button>"
+                + '</div>'
+                + '<div class="application-location-card__section"><div class="row g-3">'
+                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.governorate) + '</label><select class="form-select" name="filming_locations[' + index + '][governorate]" data-location-governorate>' + applicationGovernorateOptionsHtml + '</select></div>'
+                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationType) + '</label><select class="form-select" name="filming_locations[' + index + '][location_type]" data-location-type-select>' + applicationLocationTypeOptionsHtml('', '') + '</select><div class="form-text text-warning fw-semibold d-none" data-location-type-approval-note></div></div>'
+                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationName) + '</label><input type="text" class="form-control" name="filming_locations[' + index + '][location_name]"></div>'
+                + '<div class="col-md-6"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationAddress) + '</label><input type="text" class="form-control" name="filming_locations[' + index + '][address]"></div>'
+                + '<div class="col-md-6"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationNature) + '</label><textarea class="form-control" name="filming_locations[' + index + '][nature]" rows="2"></textarea></div>'
+                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.startDate) + '</label><input type="date" class="form-control" name="filming_locations[' + index + '][start_date]"></div>'
+                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.endDate) + '</label><input type="date" class="form-control" name="filming_locations[' + index + '][end_date]"></div>'
+                + '<div class="col-xl-6"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.notes) + '</label><input type="text" class="form-control" name="filming_locations[' + index + '][notes]"></div>'
+                + '</div></div>'
+                + '<div class="application-location-card__section application-location-card__section--requirements">'
+                + '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><h6 class="mb-0">' + applicationEscapeHtml(applicationLocationCardLabels.supportTitle) + '</h6><button type="button" class="btn btn-sm btn-success" onclick="addFilmingLocationSupportRequirement(this)"><i class="fa-solid fa-plus me-1"></i>' + applicationEscapeHtml(applicationLocationCardLabels.addLabel) + '</button></div>'
+                + '<div class="d-grid gap-3" data-location-support-requirements>' + filmingLocationSupportRequirementHtml(index, 0) + '</div>'
+                + '</div>'
+                + '</div>'
+                + '</td>';
+        }
+
+        function filmingLocationIndexForCard(card) {
+            const field = card ? card.querySelector('[name^="filming_locations["]') : null;
+            const match = field && field.name ? field.name.match(/^filming_locations\[([^\]]+)\]/) : null;
+
+            return match ? match[1] : '0';
+        }
+
+        function renumberFilmingLocationSupportRequirements(card) {
+            const locationIndex = filmingLocationIndexForCard(card);
+
+            card.querySelectorAll('[data-location-support-requirement-row]').forEach(function (row, supportIndex) {
+                const badge = row.querySelector('.badge');
+
+                if (badge) {
+                    badge.textContent = '#' + (supportIndex + 1);
+                }
+
+                row.querySelectorAll('[name]').forEach(function (field) {
+                    field.name = field.name.replace(
+                        /^filming_locations\[[^\]]+\]\[support_requirements\]\[[^\]]+\]/,
+                        'filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + ']'
+                    );
+                });
+            });
+        }
+
+        function addFilmingLocationSupportRequirement(button) {
+            const card = button.closest('.application-location-card');
+            const container = card ? card.querySelector('[data-location-support-requirements]') : null;
+
+            if (!card || !container) {
+                return;
+            }
+
+            const locationIndex = filmingLocationIndexForCard(card);
+            const supportIndex = container.querySelectorAll('[data-location-support-requirement-row]').length;
+
+            container.insertAdjacentHTML('beforeend', filmingLocationSupportRequirementHtml(locationIndex, supportIndex));
+            renumberFilmingLocationSupportRequirements(card);
+            initializeApplicationEnhancedSelects(container.lastElementChild);
+        }
+
+        function removeFilmingLocationSupportRequirement(button) {
+            const card = button.closest('.application-location-card');
+            const container = card ? card.querySelector('[data-location-support-requirements]') : null;
+            const row = button.closest('[data-location-support-requirement-row]');
+
+            if (!card || !container || !row) {
+                return;
+            }
+
+            row.remove();
+
+            if (!container.querySelector('[data-location-support-requirement-row]')) {
+                container.insertAdjacentHTML('beforeend', filmingLocationSupportRequirementHtml(filmingLocationIndexForCard(card), 0));
+            }
+
+            renumberFilmingLocationSupportRequirements(card);
         }
 
         function refreshApplicationLocationTypeSelect(row) {
@@ -1068,6 +1379,32 @@
             }
 
             locationType.dataset.selectedType = locationType.value;
+            refreshApplicationLocationApprovalNote(row);
+        }
+
+        function refreshApplicationLocationApprovalNote(row) {
+            if (!row) {
+                return;
+            }
+
+            const locationType = row.querySelector('[data-location-type-select]');
+            const note = row.querySelector('[data-location-type-approval-note]');
+
+            if (!locationType || !note) {
+                return;
+            }
+
+            const days = parseInt(applicationLocationTypeApprovalDays[locationType.value] || '0', 10);
+
+            if (days > 0) {
+                note.textContent = applicationLocationCardLabels.approvalDaysNotice.replace(':days', String(days));
+                note.classList.remove('d-none');
+
+                return;
+            }
+
+            note.textContent = '';
+            note.classList.add('d-none');
         }
 
         function refreshApplicationLocationTypeSelects(root) {
@@ -1083,6 +1420,98 @@
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
+        }
+
+        function castCrewJordanianNameInputsHtml(index) {
+            const firstName = applicationEscapeHtml(applicationRepeatableMessages.firstName);
+            const secondName = applicationEscapeHtml(applicationRepeatableMessages.secondName);
+            const thirdName = applicationEscapeHtml(applicationRepeatableMessages.thirdName);
+            const familyName = applicationEscapeHtml(applicationRepeatableMessages.familyName);
+
+            return '<input type="hidden" name="cast_crew[' + index + '][name]" data-cast-crew-name-output>'
+                + '<div class="row g-2 cast-crew-jordanian-name d-none" data-cast-crew-jordanian-name>'
+                + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][first_name]" placeholder="' + firstName + '" data-cast-crew-name-part></div>'
+                + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][second_name]" placeholder="' + secondName + '" data-cast-crew-name-part></div>'
+                + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][third_name]" placeholder="' + thirdName + '" data-cast-crew-name-part></div>'
+                + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][family_name]" placeholder="' + familyName + '" data-cast-crew-name-part></div>'
+                + '</div>'
+                + '<input type="text" class="form-control" data-cast-crew-full-name-input>';
+        }
+
+        function updateCastCrewNameMode(row) {
+            if (!row) {
+                return;
+            }
+
+            const nationality = row.querySelector('[data-cast-crew-nationality]');
+            const jordanianName = row.querySelector('[data-cast-crew-jordanian-name]');
+            const fullName = row.querySelector('[data-cast-crew-full-name-input]');
+            const nameOutput = row.querySelector('[data-cast-crew-name-output]');
+            const isJordanian = String(nationality?.value || '').toLowerCase() === 'jordanian';
+
+            if (jordanianName) {
+                jordanianName.classList.toggle('d-none', !isJordanian);
+                jordanianName.querySelectorAll('[data-cast-crew-name-part]').forEach(function (input) {
+                    input.disabled = !isJordanian;
+                });
+            }
+
+            if (fullName) {
+                fullName.classList.toggle('d-none', isJordanian);
+            }
+
+            if (nameOutput) {
+                const name = isJordanian
+                    ? Array.from(row.querySelectorAll('[data-cast-crew-name-part]')).map(function (input) {
+                        return String(input.value || '').trim();
+                    }).filter(Boolean).join(' ')
+                    : String(fullName?.value || '').trim();
+
+                nameOutput.value = name;
+            }
+        }
+
+        function refreshCastCrewNameModes(root) {
+            (root || document).querySelectorAll('[data-cast-crew-nationality]').forEach(function (field) {
+                updateCastCrewNameMode(field.closest('tr'));
+            });
+        }
+
+        function updateApplicationAnnexRowCounters() {
+            document.querySelectorAll('[data-row-count-for]').forEach(function (counter) {
+                const selector = counter.dataset.rowCountFor;
+                const tableBody = selector ? document.querySelector(selector + ' tbody') : null;
+                const count = tableBody ? tableBody.querySelectorAll('tr').length : 0;
+
+                counter.textContent = applicationRepeatableMessages.rowCount.replace(':count', String(count));
+            });
+        }
+
+        function setupApplicationRepeatableTableFooters() {
+            document.querySelectorAll('button[onclick^="addApplicationAnnexRow"]').forEach(function (button) {
+                const match = button.getAttribute('onclick')?.match(/addApplicationAnnexRow\('([^']+)',\s*'([^']+)'\)/);
+
+                if (!match) {
+                    return;
+                }
+
+                const tableId = match[1];
+                const fieldName = match[2];
+                const table = document.getElementById(tableId);
+
+                if (!table || table.dataset.repeatableFooterReady === '1') {
+                    return;
+                }
+
+                table.dataset.repeatableFooterReady = '1';
+
+                const footer = document.createElement('div');
+                footer.className = 'application-repeatable-footer d-flex justify-content-between align-items-center gap-3 flex-wrap py-3';
+                footer.innerHTML = '<span class="fw-600 text-muted" data-row-count-for="#' + applicationEscapeHtml(tableId) + '"></span>'
+                    + '<button type="button" class="btn btn-success" onclick="addApplicationAnnexRow(\'' + applicationEscapeHtml(tableId) + '\', \'' + applicationEscapeHtml(fieldName) + '\')"><i class="fa-solid fa-plus me-2"></i>' + applicationEscapeHtml(applicationRepeatableMessages.add) + '</button>';
+
+                table.closest('.table-responsive')?.insertAdjacentElement('afterend', footer);
+            });
         }
 
         function filmingLocationRowKey(row, fallbackIndex) {
@@ -1228,8 +1657,21 @@
             renumberApplicationAnnexRows(selector);
             refreshSpecialLocationRequirementSelects();
             refreshEquipmentTravelerSelects();
+            updateApplicationAnnexRowCounters();
             updateRequirementStatuses();
             updateEquipmentTotals();
+        }
+
+        function supportScheduleRowHtml(fieldName, index, deleteCell) {
+            return '<td class="row-number"></td>'
+                + '<td><input type="text" class="form-control" name="' + fieldName + '[' + index + '][day]"></td>'
+                + '<td><input type="date" class="form-control" name="' + fieldName + '[' + index + '][date]"></td>'
+                + '<td><input type="time" class="form-control" name="' + fieldName + '[' + index + '][time_from]"></td>'
+                + '<td><input type="time" class="form-control" name="' + fieldName + '[' + index + '][time_to]"></td>'
+                + '<td><input type="text" class="form-control" name="' + fieldName + '[' + index + '][location]"></td>'
+                + '<td><input type="text" class="form-control" name="' + fieldName + '[' + index + '][requirement]"></td>'
+                + '<td><textarea class="form-control" name="' + fieldName + '[' + index + '][notes]" rows="2"></textarea></td>'
+                + deleteCell;
         }
 
         function addApplicationAnnexRow(tableId, fieldName) {
@@ -1245,23 +1687,17 @@
 
             if (fieldName === 'cast_crew') {
 	                row.innerHTML = '<td class="row-number"></td>'
-	                    + '<td><input type="text" class="form-control" name="cast_crew[' + index + '][name]"></td>'
+	                    + '<td><select class="form-select" name="cast_crew[' + index + '][nationality]" data-cast-crew-nationality>' + applicationNationalityOptionsHtml + '</select></td>'
+	                    + '<td class="cast-crew-name-cell">' + castCrewJordanianNameInputsHtml(index) + '</td>'
 	                    + '<td><input type="text" class="form-control" name="cast_crew[' + index + '][role]"></td>'
-	                    + '<td><select class="form-select" name="cast_crew[' + index + '][nationality]">' + applicationNationalityOptionsHtml + '</select></td>'
 	                    + '<td><select class="form-select" name="cast_crew[' + index + '][gender]">' + applicationGenderOptionsHtml + '</select></td>'
-	                    + '<td><input type="date" class="form-control" name="cast_crew[' + index + '][birth_date]"></td>'
+	                    + '<td><input type="date" class="form-control" name="cast_crew[' + index + '][birth_date]" max="' + applicationCrewBirthDateMax + '"></td>'
 	                    + '<td><input type="text" class="form-control" name="cast_crew[' + index + '][identity_number]"></td>'
                     + deleteCell;
 	            } else if (fieldName === 'filming_locations') {
-	                row.innerHTML = '<td class="row-number"></td>'
-	                    + '<td><select class="form-select" name="filming_locations[' + index + '][governorate]" data-location-governorate>' + applicationGovernorateOptionsHtml + '</select></td>'
-	                    + '<td><select class="form-select" name="filming_locations[' + index + '][location_type]" data-location-type-select>' + applicationLocationTypeOptionsHtml('', '') + '</select></td>'
-	                    + '<td><input type="text" class="form-control" name="filming_locations[' + index + '][location_name]"></td>'
-	                    + '<td><textarea class="form-control" name="filming_locations[' + index + '][nature]" rows="2"></textarea></td>'
-	                    + '<td><input type="text" class="form-control" name="filming_locations[' + index + '][address]"></td>'
-	                    + '<td><input type="date" class="form-control" name="filming_locations[' + index + '][start_date]"></td>'
-	                    + '<td><input type="date" class="form-control" name="filming_locations[' + index + '][end_date]"></td>'
-	                    + deleteCell;
+	                row.innerHTML = filmingLocationCardHtml(tableId, index);
+            } else if (fieldName === 'public_security_support' || fieldName === 'military_support') {
+                row.innerHTML = supportScheduleRowHtml(fieldName, index, deleteCell);
             } else if (fieldName === 'imported_equipment') {
                 row.innerHTML = '<td class="row-number"></td>'
                     + '<td><input type="text" class="form-control" name="imported_equipment[' + index + '][item]"></td>'
@@ -1351,9 +1787,12 @@
 
             table.appendChild(row);
             renumberApplicationAnnexRows('#' + tableId);
+            refreshCastCrewNameModes(row);
+            row.querySelectorAll('.select2-basic-multiple, .select2-basic-single').forEach(refreshSelect2Control);
             refreshApplicationLocationTypeSelect(row);
             refreshSpecialLocationRequirementSelects();
             refreshEquipmentTravelerSelects();
+            updateApplicationAnnexRowCounters();
             updateRequirementStatuses();
             updateEquipmentTotals();
         }
@@ -1463,7 +1902,8 @@
                 {
                     field: 'shooting_start',
                     min: 'preparation_end',
-                    message: @json(__('app.applications.schedule_validation.start_after_previous_end', ['current' => __('app.applications.schedule_phases.shooting'), 'previous' => __('app.applications.schedule_phases.preparation')])),
+                    offsetDays: 2,
+                    message: @json(__('app.applications.schedule_validation.shooting_start_after_preparation_buffer')),
                 },
                 {
                     field: 'shooting_end',
@@ -1492,6 +1932,25 @@
                 },
             ];
 
+            const addDaysToDateValue = function (value, days) {
+                const parts = (value || '').split('-').map(function (part) {
+                    return Number(part);
+                });
+
+                if (parts.length !== 3 || parts.some(function (part) { return Number.isNaN(part); })) {
+                    return value;
+                }
+
+                const date = new Date(parts[0], parts[1] - 1, parts[2]);
+                date.setDate(date.getDate() + days);
+
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+
+                return year + '-' + month + '-' + day;
+            };
+
             const validateScheduleDates = function () {
                 Object.values(fields).forEach(function (field) {
                     field.setCustomValidity('');
@@ -1505,13 +1964,17 @@
                         return;
                     }
 
-                    if (minField.value) {
-                        field.min = minField.value;
+                    const minimumValue = minField.value
+                        ? addDaysToDateValue(minField.value, Number(rule.offsetDays || 0))
+                        : '';
+
+                    if (minimumValue) {
+                        field.min = minimumValue;
                     } else {
                         field.removeAttribute('min');
                     }
 
-                    if (field.value && minField.value && field.value < minField.value) {
+                    if (field.value && minimumValue && field.value < minimumValue) {
                         field.setCustomValidity(rule.message);
                     }
                 });
@@ -1585,6 +2048,209 @@
             });
         }
 
+        function selectedProjectNationalityCodes(form) {
+            const select = form.querySelector('select[name="project_nationalities[]"]');
+
+            if (!select) {
+                return [];
+            }
+
+            return Array.from(select.selectedOptions || [])
+                .map(function (option) {
+                    return String(option.value || '').trim();
+                })
+                .filter(Boolean);
+        }
+
+        function projectRequiresInternationalSection(form) {
+            const canUseInternationalProjectSection = @json($canUseInternationalProjectSection);
+
+            if (!canUseInternationalProjectSection) {
+                return false;
+            }
+
+            return selectedProjectNationalityCodes(form).some(function (code) {
+                return code !== 'jordanian';
+            });
+        }
+
+        function updateInternationalProjectSection(form) {
+            const requiresInternational = projectRequiresInternationalSection(form);
+            const accountExists = @json($internationalAccountExists);
+            const tab = form.querySelector('[data-international-project-tab]');
+            const section = form.querySelector('[data-international-project-section]');
+
+            tab?.classList.toggle('d-none', !requiresInternational);
+            section?.classList.toggle('d-none', !requiresInternational);
+
+            form.querySelectorAll('[data-international-required-marker]').forEach(function (marker) {
+                marker.classList.toggle('d-none', !requiresInternational);
+            });
+
+            form.querySelectorAll('[data-international-account-required-marker]').forEach(function (marker) {
+                marker.classList.toggle('d-none', !requiresInternational || accountExists);
+            });
+
+            form.querySelectorAll('[data-international-project-field]').forEach(function (field) {
+                field.disabled = !requiresInternational;
+                field.required = requiresInternational && (!field.matches('[data-international-account-field]') || !accountExists);
+
+                if (!field.required) {
+                    field.setCustomValidity('');
+                }
+
+                if (field.tagName === 'SELECT' && window.jQuery && window.jQuery.fn && window.jQuery.fn.select2) {
+                    window.jQuery(field).prop('disabled', field.disabled).trigger('change.select2');
+                }
+            });
+
+            if (!requiresInternational && tab?.classList.contains('active')) {
+                const fallbackTab = form.querySelector('.streamit-tabs .nav-link:not(.d-none)');
+                fallbackTab?.click();
+            }
+        }
+
+        function scheduleInternationalProjectSectionUpdate(form) {
+            window.setTimeout(function () {
+                updateInternationalProjectSection(form);
+            }, 0);
+        }
+
+        function updateBudgetBreakdownRequirements(form) {
+            const spendField = form.querySelector('[data-local-spend-estimate]');
+
+            if (!spendField) {
+                return;
+            }
+
+            const threshold = Number.parseFloat(spendField.dataset.budgetBreakdownThreshold || '175000');
+            const spendValue = Number.parseFloat(spendField.value || '0');
+            const requiresBreakdown = Number.isFinite(spendValue) && Number.isFinite(threshold) && spendValue >= threshold;
+
+            form.querySelectorAll('[data-budget-breakdown-field]').forEach(function (field) {
+                field.required = requiresBreakdown;
+
+                if (!requiresBreakdown) {
+                    field.setCustomValidity('');
+                }
+            });
+
+            form.querySelectorAll('[data-budget-required-marker]').forEach(function (marker) {
+                marker.classList.toggle('d-none', !requiresBreakdown);
+            });
+        }
+
+        function countApplicationArabicWords(value) {
+            const matches = String(value || '').match(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF0-9٠-٩]+/g);
+
+            return matches ? matches.length : 0;
+        }
+
+        function hasInvalidApplicationArabicCharacters(value) {
+            return /[^\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF0-9٠-٩\s.,،؛;:!؟?\-()[\]"'\/%&]/u.test(String(value || ''));
+        }
+
+        function sanitizeApplicationArabicText(value) {
+            return String(value || '').replace(/[^\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF0-9٠-٩\s.,،؛;:!؟?\-()[\]"'\/%&]/gu, '');
+        }
+
+        function sanitizeApplicationWorkSummaryInput(field) {
+            const original = String(field.value || '');
+            const sanitized = sanitizeApplicationArabicText(original);
+
+            if (original === sanitized) {
+                return false;
+            }
+
+            const start = field.selectionStart;
+            const removedCount = original.length - sanitized.length;
+
+            field.value = sanitized;
+
+            if (typeof start === 'number') {
+                const caret = Math.max(0, start - removedCount);
+                field.setSelectionRange(caret, caret);
+            }
+
+            return true;
+        }
+
+        function insertApplicationWorkSummaryText(field, text) {
+            const sanitized = sanitizeApplicationArabicText(text);
+
+            if (!sanitized) {
+                return;
+            }
+
+            const start = field.selectionStart ?? field.value.length;
+            const end = field.selectionEnd ?? start;
+
+            field.setRangeText(sanitized, start, end, 'end');
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        function validateApplicationWorkSummary(field) {
+            if (!field) {
+                return;
+            }
+
+            sanitizeApplicationWorkSummaryInput(field);
+
+            const value = String(field.value || '');
+            const minWords = Number.parseInt(field.dataset.workSummaryMinWords || '500', 10);
+            const wordCount = countApplicationArabicWords(value);
+            const hasValue = value.trim() !== '';
+            const invalidArabic = hasValue && hasInvalidApplicationArabicCharacters(value);
+            const belowMinimum = hasValue && Number.isFinite(minWords) && wordCount < minWords;
+            const counter = field.dataset.workSummaryCounter ? document.querySelector(field.dataset.workSummaryCounter) : null;
+
+            if (invalidArabic) {
+                field.setCustomValidity(applicationWorkSummaryMessages.arabicOnly);
+            } else if (belowMinimum) {
+                field.setCustomValidity(applicationWorkSummaryMessages.minWords);
+            } else {
+                field.setCustomValidity('');
+            }
+
+            if (counter) {
+                counter.textContent = applicationWorkSummaryMessages.counter
+                    .replace(':count', String(wordCount))
+                    .replace(':min', String(minWords));
+                counter.classList.toggle('text-success', hasValue && !invalidArabic && !belowMinimum);
+                counter.classList.toggle('text-danger', hasValue && (invalidArabic || belowMinimum));
+                counter.classList.toggle('text-muted', !hasValue);
+            }
+        }
+
+        function bindApplicationWorkSummaryValidation(field) {
+            if (field.dataset.workSummaryBound === '1') {
+                return;
+            }
+
+            field.dataset.workSummaryBound = '1';
+            validateApplicationWorkSummary(field);
+
+            field.addEventListener('beforeinput', function (event) {
+                if (event.inputType !== 'insertText' || !event.data || !hasInvalidApplicationArabicCharacters(event.data)) {
+                    return;
+                }
+
+                event.preventDefault();
+            });
+
+            field.addEventListener('paste', function (event) {
+                event.preventDefault();
+
+                const text = event.clipboardData ? event.clipboardData.getData('text') : '';
+                insertApplicationWorkSummaryText(field, text);
+            });
+
+            field.addEventListener('input', function () {
+                sanitizeApplicationWorkSummaryInput(field);
+                validateApplicationWorkSummary(field);
+            });
+        }
+
         const requestForm = document.getElementById('form-wizard1');
 
         if (requestForm) {
@@ -1611,11 +2277,43 @@
             initializeScheduleDateValidation(requestForm);
             requestForm.querySelectorAll('[data-application-password-strength]').forEach(bindApplicationPasswordStrength);
             requestForm.querySelectorAll('[data-application-password-toggle]').forEach(bindApplicationPasswordToggle);
+            requestForm.querySelectorAll('[data-work-summary-input]').forEach(bindApplicationWorkSummaryValidation);
+            setupApplicationRepeatableTableFooters();
+            refreshCastCrewNameModes(requestForm);
+            updateInternationalProjectSection(requestForm);
+            updateBudgetBreakdownRequirements(requestForm);
+
+            const projectNationalitySelect = requestForm.querySelector('select[name="project_nationalities[]"]');
+
+            if (projectNationalitySelect) {
+                projectNationalitySelect.addEventListener('change', function () {
+                    scheduleInternationalProjectSectionUpdate(requestForm);
+                });
+
+                if (window.jQuery) {
+                    window.jQuery(projectNationalitySelect).on('change select2:select select2:unselect select2:close', function () {
+                        scheduleInternationalProjectSectionUpdate(requestForm);
+                    });
+                }
+
+                document.addEventListener('click', function (event) {
+                    if (!event.target.closest('.select2-container') && !event.target.closest('.select2-results')) {
+                        return;
+                    }
+
+                    scheduleInternationalProjectSectionUpdate(requestForm);
+                }, true);
+            }
 
             ['input', 'change'].forEach(function (eventName) {
                 requestForm.addEventListener(eventName, function (event) {
                     if (event.target.matches('[data-location-governorate]')) {
                         refreshApplicationLocationTypeSelect(event.target.closest('tr'));
+                    }
+
+                    if (event.target.matches('[data-location-type-select]')) {
+                        event.target.dataset.selectedType = event.target.value;
+                        refreshApplicationLocationApprovalNote(event.target.closest('tr'));
                     }
 
                     if (event.target.matches('input[name^="filming_locations"][name$="[location_name]"]')) {
@@ -1624,6 +2322,18 @@
 
                     if (event.target.matches('input[name^="equipment_travelers"][name$="[traveler_name]"]')) {
                         refreshEquipmentTravelerSelects();
+                    }
+
+                    if (event.target.matches('[data-local-spend-estimate]')) {
+                        updateBudgetBreakdownRequirements(requestForm);
+                    }
+
+                    if (event.target.matches('[data-work-summary-input]')) {
+                        validateApplicationWorkSummary(event.target);
+                    }
+
+                    if (event.target.matches('[data-cast-crew-nationality], [data-cast-crew-name-part], [data-cast-crew-full-name-input]')) {
+                        updateCastCrewNameMode(event.target.closest('tr'));
                     }
 
                     if (!event.target.closest('.offcanvas')) {
@@ -1655,8 +2365,10 @@
         ].forEach(renumberApplicationAnnexRows);
 
         updateRequirementStatuses();
+        updateApplicationAnnexRowCounters();
         updateEquipmentTotals();
         refreshApplicationLocationTypeSelects(document);
+        refreshCastCrewNameModes(document);
         refreshSpecialLocationRequirementSelects();
         refreshEquipmentTravelerSelects();
 

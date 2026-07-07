@@ -6,10 +6,16 @@
         'pending_review' => 'warning',
         'needs_completion' => 'info',
         'rejected' => 'danger',
+        'pending' => 'warning',
+        'approved' => 'success',
         default => 'secondary',
     };
     $registrationDocumentName = data_get($entity->metadata, 'registration_document_name');
     $registrationDocumentMime = data_get($entity->metadata, 'registration_document_mime');
+    $registrationLogoName = data_get($entity->metadata, 'logo_name');
+    $registrationLogoMime = data_get($entity->metadata, 'logo_mime');
+    $hasRegistrationLogo = filled(data_get($entity->metadata, 'logo_path'));
+    $entityLogoUrl = $hasRegistrationLogo ? route('admin.entities.registration-logo', $entity->getKey()) : asset('images/OIP.jpeg');
     $studentGender = data_get($entity->metadata, 'gender');
     $profileStats = $entityAnalytics['stats'];
     $chartData = $entityAnalytics['charts'];
@@ -108,6 +114,10 @@
             min-width: 760px;
         }
 
+        .admin-entity-show-layout .admin-entity-profile-change-table {
+            min-width: 980px;
+        }
+
         .admin-entity-show-layout .admin-entity-members-table {
             min-width: 980px;
         }
@@ -133,7 +143,7 @@
     <div class="card entity-profile-card">
         <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
             <div class="d-flex align-items-center gap-3">
-                <img src="{{ asset('images/OIP.jpeg') }}" class="rounded-circle" width="70" alt="entity">
+                <img src="{{ $entityLogoUrl }}" class="rounded-circle" width="70" alt="entity">
                 <div>
                     <h4 class="mb-0">{{ $entity->displayName() }}</h4>
                     <small class="text-muted">{{ data_get($entity->metadata, 'description', __('app.admin.entities.show_intro', ['group' => $entity->group?->displayName() ?? __('app.dashboard.not_available')])) }}</small>
@@ -377,6 +387,9 @@
                         @if (data_get($entity->metadata, 'registration_document_path'))
                             <a class="btn btn-outline-primary" href="{{ route('admin.entities.registration-document', $entity->getKey()) }}">{{ __('app.admin.entities.download_registration_document') }}</a>
                         @endif
+                        @if ($hasRegistrationLogo)
+                            <a class="btn btn-outline-primary" href="{{ route('admin.entities.registration-logo', $entity->getKey()) }}" target="_blank" rel="noopener">{{ __('app.admin.entities.view_registration_logo') }}</a>
+                        @endif
                         @if ($entity->trashed())
                             <form method="POST" action="{{ route('admin.entities.restore', $entity->getKey()) }}">
                                 @csrf
@@ -479,6 +492,20 @@
                                 <small class="text-muted d-block">{{ __('app.admin.entities.registration_document_type') }}</small>
                                 <div>{{ $registrationDocumentMime ?: __('app.dashboard.not_available') }}</div>
                             </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.admin.entities.registration_logo_name') }}</small>
+                                <div>{{ $registrationLogoName ?: __('app.dashboard.not_available') }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">{{ __('app.admin.entities.registration_logo_type') }}</small>
+                                <div>{{ $registrationLogoMime ?: __('app.dashboard.not_available') }}</div>
+                            </div>
+                            @if ($hasRegistrationLogo)
+                                <div class="col-12">
+                                    <small class="text-muted d-block mb-2">{{ __('app.admin.entities.registration_logo_preview') }}</small>
+                                    <img src="{{ route('admin.entities.registration-logo', $entity->getKey()) }}" alt="{{ __('app.admin.entities.registration_logo_preview') }}" class="img-fluid border bg-white p-2" style="max-width: 180px; max-height: 120px; object-fit: contain;">
+                                </div>
+                            @endif
                         </div>
 
                         <hr class="my-4">
@@ -536,6 +563,110 @@
         </div>
 
         <div class="col-xl-7">
+            @if ($entity->isRegistrationReviewable())
+                <div class="card">
+                    <div class="card-header">
+                        <div class="iq-header-title">
+                            <h3 class="card-title">{{ __('app.admin.entities.profile_change_title') }}</h3>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        @if ($pendingProfileChangeRequest)
+                            <div class="alert alert-warning">
+                                {{ __('app.admin.entities.profile_change_pending_intro', ['name' => $pendingProfileChangeRequest['requested_by_name'] ?? __('app.dashboard.not_available'), 'date' => $pendingProfileChangeRequest['requested_at'] ?? __('app.dashboard.not_available')]) }}
+                            </div>
+
+                            <div class="table-responsive border rounded py-3 admin-entity-table-scroll mb-3">
+                                <table class="table mb-0 admin-entity-table admin-entity-profile-change-table">
+                                    <colgroup>
+                                        <col style="width: 220px">
+                                        <col style="width: 300px">
+                                        <col style="width: 300px">
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <th>{{ __('app.admin.entities.profile_change_field') }}</th>
+                                            <th>{{ __('app.admin.entities.profile_change_current') }}</th>
+                                            <th>{{ __('app.admin.entities.profile_change_requested') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach ((array) ($pendingProfileChangeRequest['fields'] ?? []) as $change)
+                                            <tr>
+                                                <td>{{ $change['label'] ?? __('app.dashboard.not_available') }}</td>
+                                                <td>{{ $change['current'] ?: __('app.dashboard.not_available') }}</td>
+                                                <td>{{ $change['requested'] ?: __('app.dashboard.not_available') }}</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <form method="POST" action="{{ route('admin.entities.profile-change-requests.review', [$entity->getKey(), $pendingProfileChangeRequest['id']]) }}" class="row g-3">
+                                @csrf
+                                <div class="col-md-4">
+                                    <label for="profile_change_decision" class="form-label">{{ __('app.admin.entities.review_decision') }}</label>
+                                    <select id="profile_change_decision" name="decision" class="form-select" required>
+                                        <option value="approve">{{ __('app.admin.entities.profile_change_approve') }}</option>
+                                        <option value="reject">{{ __('app.admin.entities.profile_change_reject') }}</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-8">
+                                    <label for="profile_change_note" class="form-label">{{ __('app.admin.entities.review_note') }}</label>
+                                    <input id="profile_change_note" name="note" type="text" class="form-control" value="{{ old('note') }}">
+                                </div>
+                                <div class="col-12">
+                                    <button class="btn btn-danger" type="submit">{{ __('app.admin.entities.profile_change_save_review') }}</button>
+                                </div>
+                            </form>
+                        @else
+                            <div class="text-muted">{{ __('app.admin.entities.profile_change_empty') }}</div>
+                        @endif
+
+                        @if ($profileChangeRequests->isNotEmpty())
+                            <hr class="my-4">
+                            <div class="table-responsive border rounded py-3 admin-entity-table-scroll">
+                                <table class="table mb-0 admin-entity-table admin-entity-profile-change-table">
+                                    <colgroup>
+                                        <col style="width: 120px">
+                                        <col style="width: 180px">
+                                        <col style="width: 360px">
+                                        <col style="width: 240px">
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <th>{{ __('app.applications.status') }}</th>
+                                            <th>{{ __('app.profile.requested_at') }}</th>
+                                            <th>{{ __('app.profile.changed_fields') }}</th>
+                                            <th>{{ __('app.profile.review_note') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach ($profileChangeRequests as $changeRequest)
+                                            <tr>
+                                                <td><span class="badge bg-{{ $statusClass($changeRequest['status'] ?? null) }}">{{ __('app.profile.change_statuses.'.($changeRequest['status'] ?? 'pending')) }}</span></td>
+                                                <td>{{ $changeRequest['requested_at'] ?? __('app.dashboard.not_available') }}</td>
+                                                <td>
+                                                    @foreach ((array) ($changeRequest['fields'] ?? []) as $change)
+                                                        <div class="mb-1">
+                                                            <strong>{{ $change['label'] ?? '' }}:</strong>
+                                                            {{ $change['current'] ?: __('app.dashboard.not_available') }}
+                                                            <span class="text-muted">&rarr;</span>
+                                                            {{ $change['requested'] ?: __('app.dashboard.not_available') }}
+                                                        </div>
+                                                    @endforeach
+                                                </td>
+                                                <td>{{ $changeRequest['review_note'] ?? $changeRequest['note'] ?? __('app.dashboard.not_available') }}</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            @endif
+
             <div class="card">
                 <div class="card-header">
                     <div class="iq-header-title">

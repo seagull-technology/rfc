@@ -7,14 +7,23 @@ use App\Models\ApplicationAuthorityApproval;
 use App\Models\Entity;
 use App\Models\ScoutingRequest;
 use App\Models\User;
+use App\Notifications\InboxMessageNotification;
 use App\Support\ApplicantDashboardState;
+use App\Support\PhoneNumber;
+use App\Support\ProfileChangeRequests;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ProfileController extends Controller
 {
@@ -41,6 +50,9 @@ class ProfileController extends Controller
             $applications = $this->applicationsLinkedToInternationalProducer($applications, $user);
             $scoutingRequests = $this->scoutingRequestsLinkedToInternationalProducer($scoutingRequests, $user);
         }
+
+        $canManageEntityProfile = $variant !== 'foreign_producer'
+            && $this->canManageEntityProfile($user, $entity);
 
         $monthlyApplications = collect(range(5, 0))
             ->map(fn (int $offset) => now()->copy()->startOfMonth()->subMonths($offset))
@@ -172,6 +184,11 @@ class ProfileController extends Controller
             'reviewHistory' => $reviewHistory,
             'reviewerNames' => $reviewerNames,
             'latestRegistrationNotification' => $this->latestRegistrationNotification($user),
+            'canManageEntityProfile' => $canManageEntityProfile,
+            'profileOfficialFields' => ProfileChangeRequests::officialFields($entity),
+            'profileChangeRequests' => ProfileChangeRequests::all($entity),
+            'pendingProfileChangeRequest' => ProfileChangeRequests::pending($entity),
+            'profileLogoUrl' => data_get($entity->metadata, 'logo_path') ? route('profile.logo') : asset('images/OIP.jpeg'),
             'entityApplications' => $applications,
             'scoutingRequests' => $scoutingRequests,
             'previousProjects' => $previousProjects,
@@ -192,6 +209,155 @@ class ProfileController extends Controller
                 ],
             ],
         ]);
+    }
+
+    public function logo(Request $request): StreamedResponse|RedirectResponse
+    {
+        $entity = $request->user()?->primaryEntity();
+        $path = data_get($entity?->metadata, 'logo_path');
+
+        if (! $entity || ! is_string($path) || ! Storage::disk('local')->exists($path)) {
+            return redirect()
+                ->route('profile.show')
+                ->withErrors(['profile' => __('app.profile.logo_missing')]);
+        }
+
+        return Storage::disk('local')->response(
+            $path,
+            data_get($entity->metadata, 'logo_name', basename($path)),
+            ['Content-Type' => data_get($entity->metadata, 'logo_mime', 'image/png')],
+        );
+    }
+
+    public function updateAccount(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+        $entity = $user?->primaryEntity();
+
+        abort_unless($user && $entity && $this->canManageEntityProfile($user, $entity), 403);
+
+        $validated = $request->validate([
+            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->getKey())],
+            'phone' => ['required', 'string', 'max:30', Rule::unique('users', 'phone')->ignore($user->getKey())],
+            'current_password' => ['required_with:password', 'nullable', 'current_password'],
+            'password' => ['nullable', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
+        ]);
+
+        $payload = [
+            'email' => $validated['email'],
+            'phone' => PhoneNumber::normalize($validated['phone']),
+        ];
+
+        if (filled($validated['password'] ?? null)) {
+            $payload['password'] = $validated['password'];
+        }
+
+        $user->forceFill($payload)->save();
+
+        return redirect()
+            ->route('profile.show')
+            ->with('status', __('app.profile.account_updated'));
+    }
+
+    public function updateContact(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+        $entity = $user?->primaryEntity();
+
+        abort_unless($user && $entity && $this->canManageEntityProfile($user, $entity), 403);
+
+        $validated = $request->validate([
+            'email' => ['required', 'email', 'max:255'],
+            'phone' => ['required', 'string', 'max:30'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'website_url' => ['nullable', 'url', 'max:255'],
+            'description' => ['nullable', 'string', 'max:5000'],
+            'logo' => $this->logoValidationRules(),
+        ], $this->logoValidationMessages());
+
+        $logo = $validated['logo'] ?? null;
+
+        DB::transaction(function () use ($entity, $validated, $logo): void {
+            $metadata = $entity->metadata ?? [];
+
+            if ($logo instanceof UploadedFile) {
+                $previousLogoPath = data_get($metadata, 'logo_path');
+
+                if (is_string($previousLogoPath) && Storage::disk('local')->exists($previousLogoPath)) {
+                    Storage::disk('local')->delete($previousLogoPath);
+                }
+
+                $metadata['logo_path'] = $logo->store('registration-logos/'.$entity->registration_type, 'local');
+                $metadata['logo_name'] = $logo->getClientOriginalName();
+                $metadata['logo_mime'] = $logo->getClientMimeType();
+                $metadata['logo_size'] = $logo->getSize();
+            }
+
+            $metadata['address'] = $validated['address'] ?: null;
+            $metadata['website_url'] = $validated['website_url'] ?: null;
+            $metadata['description'] = $validated['description'] ?: null;
+
+            $entity->forceFill([
+                'email' => $validated['email'],
+                'phone' => PhoneNumber::normalize($validated['phone']),
+                'metadata' => $metadata,
+            ])->save();
+        });
+
+        return redirect()
+            ->route('profile.show')
+            ->with('status', __('app.profile.contact_updated'));
+    }
+
+    public function storeOfficialChangeRequest(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+        $entity = $user?->primaryEntity();
+
+        abort_unless($user && $entity && $this->canManageEntityProfile($user, $entity), 403);
+
+        if (ProfileChangeRequests::pending($entity)) {
+            return redirect()
+                ->route('profile.show')
+                ->withErrors(['profile' => __('app.profile.official_change_pending_exists')]);
+        }
+
+        $validated = $request->validate([
+            ...ProfileChangeRequests::validationRules($entity),
+            'note' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $changes = ProfileChangeRequests::buildChanges($entity, $validated);
+
+        if ($changes === []) {
+            return redirect()
+                ->route('profile.show')
+                ->withErrors(['profile' => __('app.profile.official_change_no_changes')]);
+        }
+
+        $changeRequest = [
+            'id' => (string) Str::uuid(),
+            'status' => 'pending',
+            'requested_at' => now()->toDateTimeString(),
+            'requested_by_user_id' => $user->getKey(),
+            'requested_by_name' => $user->displayName(),
+            'note' => $validated['note'] ?? null,
+            'fields' => $changes,
+        ];
+
+        $metadata = $entity->metadata ?? [];
+        $metadata['profile_change_requests'] = collect((array) ($metadata['profile_change_requests'] ?? []))
+            ->push($changeRequest)
+            ->values()
+            ->all();
+
+        $entity->forceFill(['metadata' => $metadata])->save();
+
+        $this->notifyProfileChangeReviewers($entity, $changeRequest);
+
+        return redirect()
+            ->route('profile.show')
+            ->with('status', __('app.profile.official_change_submitted'));
     }
 
     public function signForeignProducerDeclaration(Request $request, string $application): RedirectResponse
@@ -241,6 +407,62 @@ class ProfileController extends Controller
             'approved' => 'success',
             default => 'secondary',
         };
+    }
+
+    private function canManageEntityProfile(User $user, Entity $entity): bool
+    {
+        if ($this->isInternationalProducerUser($user)) {
+            return false;
+        }
+
+        return $entity->users()
+            ->whereKey($user->getKey())
+            ->wherePivot('status', 'active')
+            ->wherePivot('is_primary', true)
+            ->exists();
+    }
+
+    private function notifyProfileChangeReviewers(Entity $entity, array $changeRequest): void
+    {
+        User::query()
+            ->where('status', 'active')
+            ->whereHas('entities.group', fn (Builder $query): Builder => $query->whereIn('code', ['rfc', 'admins']))
+            ->get()
+            ->unique('id')
+            ->each(function (User $reviewer) use ($entity, $changeRequest): void {
+                $reviewer->notify(new InboxMessageNotification(
+                    typeKey: 'profile_change_requested',
+                    title: __('app.profile.notifications.change_requested_title'),
+                    body: __('app.profile.notifications.change_requested_body', ['entity' => $entity->displayName()]),
+                    routeName: 'admin.entities.show',
+                    routeParameters: ['entity' => $entity->getKey()],
+                    meta: [
+                        'entity_id' => $entity->getKey(),
+                        'profile_change_request_id' => $changeRequest['id'] ?? null,
+                    ],
+                ));
+            });
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function logoValidationRules(): array
+    {
+        return ['nullable', 'file', 'image', 'mimes:png', 'mimetypes:image/png', 'max:2048'];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function logoValidationMessages(): array
+    {
+        return [
+            'logo.image' => __('app.auth.logo_png_only'),
+            'logo.mimes' => __('app.auth.logo_png_only'),
+            'logo.mimetypes' => __('app.auth.logo_png_only'),
+            'logo.max' => __('app.auth.logo_max_size'),
+        ];
     }
 
     /**

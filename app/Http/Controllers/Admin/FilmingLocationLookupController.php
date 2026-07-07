@@ -122,6 +122,7 @@ class FilmingLocationLookupController extends Controller
             'name_en' => $validated['name_en'],
             'name_ar' => $validated['name_ar'],
             'sort_order' => (int) ($validated['sort_order'] ?? 500),
+            'approval_days' => filled($validated['approval_days'] ?? null) ? (int) $validated['approval_days'] : null,
             'is_active' => $request->boolean('is_active', true),
         ]);
 
@@ -140,6 +141,7 @@ class FilmingLocationLookupController extends Controller
             'name_en' => $validated['name_en'],
             'name_ar' => $validated['name_ar'],
             'sort_order' => (int) $validated['sort_order'],
+            'approval_days' => filled($validated['approval_days'] ?? null) ? (int) $validated['approval_days'] : null,
             'is_active' => $request->boolean('is_active'),
         ])->save();
         $locationType->governorates()->sync($this->governorateIds((array) $validated['governorates']));
@@ -234,6 +236,7 @@ class FilmingLocationLookupController extends Controller
             'name_en' => ['required', 'string', 'max:255'],
             'name_ar' => ['required', 'string', 'max:255'],
             'sort_order' => [$requireSortOrder ? 'required' : 'nullable', 'integer', 'min:0', 'max:999999'],
+            'approval_days' => ['nullable', 'integer', 'min:0', 'max:365'],
             'is_active' => ['nullable', 'boolean'],
             'governorates' => ['required', 'array', 'min:1'],
             'governorates.*' => [Rule::in(Governorate::query()->pluck('code')->all())],

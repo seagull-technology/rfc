@@ -105,7 +105,7 @@
                     </div>
                     <div class="col-lg-6">
                         <label class="form-label">{{ __('app.wrap_report.fields.nationalities') }} <span class="text-danger">*</span></label>
-                        <input class="form-control" name="nationalities" value="{{ $fieldValue('nationalities', \App\Models\Nationality::labelFor($application->project_nationality)) }}" required>
+                        <input class="form-control" name="nationalities" value="{{ $fieldValue('nationalities', $application->projectNationalityLabels()) }}" required>
                     </div>
                 </div>
 

@@ -105,6 +105,16 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSee('name="imported_equipment[traveler_0][traveler_name]"', false)
             ->assertSeeText('Equipment Handler')
             ->assertSee('name="airport_people[airport-person][nationality]"', false)
+            ->assertSee('application-annex-offcanvas', false)
+            ->assertDontSee('PublicSecuritySupport', false)
+            ->assertDontSee('MilitarySupport', false)
+            ->assertDontSeeText(__('app.applications.annex_sections.public_security_support'))
+            ->assertDontSeeText(__('app.applications.annex_sections.military_support'))
+            ->assertSeeText(__('app.applications.location_support_requirements_title'))
+            ->assertSee('data-cast-crew-nationality', false)
+            ->assertSee('name="cast_crew[lead][first_name]"', false)
+            ->assertSee('data-cast-crew-name-output', false)
+            ->assertSee('data-row-count-for', false)
             ->assertSee('data-application-password-strength', false)
             ->assertSeeText(__('app.auth.password_rule_mixed'))
             ->assertSee('formnovalidate', false)
@@ -190,6 +200,30 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertSame('studio@applicant.test', data_get($application->metadata, 'producer.contact_email'));
     }
 
+    public function test_cast_crew_birth_date_must_be_before_today(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $this
+            ->actingAs($user)
+            ->from(route('applications.create'))
+            ->post(route('applications.store'), $this->applicationPayload([
+                'cast_crew' => [[
+                    'name' => 'Future Actor',
+                    'role' => 'Actor',
+                    'nationality' => 'jordanian',
+                    'gender' => 'male',
+                    'birth_date' => now()->addDay()->toDateString(),
+                    'identity_number' => 'FUT-001',
+                ]],
+            ]))
+            ->assertRedirect(route('applications.create'))
+            ->assertSessionHasErrors('cast_crew.0.birth_date');
+    }
+
     public function test_international_account_password_validation_uses_localized_label(): void
     {
         $this->refreshApplicationWithLocale('ar');
@@ -209,6 +243,146 @@ class ApplicationWorkflowTest extends TestCase
 
         $this->assertNotEmpty($errors);
         $this->assertStringContainsString('كلمة مرور حساب ضابط الارتباط الدولي', $errors[0]);
+    }
+
+    public function test_non_jordanian_project_requires_international_section_before_submission(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'project_nationalities' => ['international'],
+                'international_producer_name' => null,
+                'international_producer_nationality' => null,
+                'international_producer_company' => null,
+                'international_producer_email' => null,
+                'international_producer_profile_url' => null,
+                'international_producer_address' => null,
+                'international_producer_website' => null,
+                'international_liaison_name' => null,
+                'international_liaison_email' => null,
+                'international_liaison_mobile' => null,
+            ]));
+
+        $application = Application::query()->firstOrFail();
+
+        $this
+            ->from(route('applications.show', $application))
+            ->actingAs($user)
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasErrors([
+                'international_producer_name',
+                'international_producer_nationality',
+                'international_producer_company',
+                'international_producer_email',
+                'international_producer_profile_url',
+                'international_producer_address',
+                'international_producer_website',
+                'international_liaison_name',
+                'international_liaison_email',
+                'international_liaison_mobile',
+                'international_account_exists',
+                'international_account_password',
+                'international_account_password_confirmation',
+            ]);
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.update', $application), $this->applicationPayload([
+                'project_nationalities' => ['international'],
+                'international_producer_name' => 'Global Partner',
+                'international_producer_nationality' => 'non_jordanian',
+                'international_producer_company' => 'Global Films',
+                'international_producer_email' => 'global-submit@example.com',
+                'international_producer_profile_url' => 'https://example.com/global-submit',
+                'international_producer_address' => 'London',
+                'international_producer_website' => 'https://global-submit.example.com',
+                'international_liaison_name' => 'Global Liaison',
+                'international_liaison_email' => 'liaison-submit@example.com',
+                'international_liaison_mobile' => '+962799000111',
+                'international_account_password' => 'International@12345',
+                'international_account_password_confirmation' => 'International@12345',
+            ]))
+            ->assertRedirect(route('applications.show', $application));
+
+        $this->assertNotEmpty(data_get($application->fresh()->metadata, 'international.account.user_id'));
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application));
+
+        $this->assertSame('submitted', $application->fresh()->status);
+    }
+
+    public function test_student_non_jordanian_project_never_requires_international_project_section(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $individualsGroup = Group::query()->where('code', 'individuals')->firstOrFail();
+        [$user] = $this->createApplicantContext([
+            'registration_type' => 'student',
+            'name' => 'Student Applicant',
+            'username' => 'student-international-check',
+            'email' => 'student-international-check@example.com',
+            'national_id' => '9988776611',
+        ], [
+            'group_id' => $individualsGroup->getKey(),
+            'registration_type' => 'student',
+            'name_en' => 'Student Applicant',
+            'name_ar' => 'Student Applicant',
+            'registration_no' => null,
+            'national_id' => '9988776611',
+            'metadata' => [
+                'address' => 'Amman Student Address',
+            ],
+        ]);
+
+        $this
+            ->actingAs($user)
+            ->get(route('applications.create'))
+            ->assertOk()
+            ->assertDontSee('id="international_projects_tab"', false);
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'project_nationality' => 'international',
+                'project_nationalities' => ['international'],
+                'international_producer_name' => null,
+                'international_producer_nationality' => null,
+                'international_producer_company' => null,
+                'international_producer_email' => null,
+                'international_producer_profile_url' => null,
+                'international_producer_address' => null,
+                'international_producer_website' => null,
+                'international_liaison_name' => null,
+                'international_liaison_email' => null,
+                'international_liaison_mobile' => null,
+                'international_account_exists' => null,
+                'international_account_password' => null,
+                'international_account_password_confirmation' => null,
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $application = Application::query()->firstOrFail();
+
+        $this->assertNull(data_get($application->metadata, 'international.account.user_id'));
+        $this->assertNull(data_get($application->metadata, 'international.international_liaison_email'));
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('submitted', $application->fresh()->status);
     }
 
     public function test_applicant_can_save_incomplete_draft_but_cannot_submit_until_complete(): void
@@ -243,7 +417,7 @@ class ApplicationWorkflowTest extends TestCase
         $submitResponse
             ->assertRedirect(route('applications.show', $application))
             ->assertSessionHasErrors([
-                'project_nationality',
+                'project_nationalities',
                 'work_category',
                 'release_method',
                 'planned_start_date',
@@ -282,7 +456,7 @@ class ApplicationWorkflowTest extends TestCase
         $response = $this
             ->actingAs($user)
             ->post(route('applications.store'), $this->applicationPayload([
-                'project_nationality' => 'egyptian',
+                'project_nationalities' => ['egyptian', 'jordanian'],
                 'director_nationality' => 'egyptian',
                 'international_producer_nationality' => 'american',
             ]));
@@ -292,6 +466,8 @@ class ApplicationWorkflowTest extends TestCase
         $response->assertRedirect(route('applications.show', $application));
 
         $this->assertSame('egyptian', $application->project_nationality);
+        $this->assertSame(['egyptian', 'jordanian'], $application->project_nationalities);
+        $this->assertSame(['egyptian', 'jordanian'], data_get($application->metadata, 'project.nationalities'));
         $this->assertSame('egyptian', data_get($application->metadata, 'director.director_nationality'));
         $this->assertSame('american', data_get($application->metadata, 'international.international_producer_nationality'));
 
@@ -299,7 +475,7 @@ class ApplicationWorkflowTest extends TestCase
             ->actingAs($user)
             ->get(route('applications.show', $application))
             ->assertOk()
-            ->assertSeeText('Egyptian');
+            ->assertSeeText('Egyptian, Jordanian');
     }
 
     public function test_application_form_accepts_lookup_backed_work_and_release_values(): void
@@ -405,7 +581,7 @@ class ApplicationWorkflowTest extends TestCase
             ->from(route('applications.create'))
             ->actingAs($user)
             ->post(route('applications.store'), $this->applicationPayload([
-                'planned_start_date' => '2026-05-01',
+                'planned_start_date' => '2026-05-03',
                 'planned_end_date' => '2026-05-10',
                 'schedule_phases' => [
                     'preparation' => ['start_date' => '2026-04-20', 'end_date' => '2026-05-02'],
@@ -421,6 +597,39 @@ class ApplicationWorkflowTest extends TestCase
             ]);
 
         $this->assertDatabaseCount('applications', 0);
+    }
+
+    public function test_application_requires_budget_breakdown_when_local_spend_reaches_threshold(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $storeResponse = $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'local_spend_estimate' => 175000,
+                'budget_items' => [
+                    'jordanian_actors' => ['units' => '', 'total' => ''],
+                ],
+            ]));
+
+        $application = Application::query()->firstOrFail();
+
+        $storeResponse->assertRedirect(route('applications.show', $application));
+
+        $this
+            ->from(route('applications.show', $application))
+            ->actingAs($user)
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasErrors([
+                'budget_items.jordanian_actors.units',
+                'budget_items.jordanian_actors.total',
+            ]);
+
+        $this->assertSame('draft', $application->fresh()->status);
     }
 
     public function test_wrap_report_is_locked_until_wrap_end_date(): void
@@ -710,11 +919,15 @@ class ApplicationWorkflowTest extends TestCase
         [$applicant, $applicantEntity] = $this->createApplicantContext();
         [$authorityUser] = $this->createAuthorityContext();
 
+        $workContentSummary = $this->arabicWorkContentSummary();
+
         $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
-            'work_categories' => ['feature_film', 'documentary', 'other'],
+            'project_nationalities' => ['international'],
+            'work_category' => 'feature_film',
             'work_category_other' => 'Hybrid docudrama',
             'release_methods' => ['cinema', 'web', 'other'],
             'release_method_other' => 'Community screenings',
+            'planned_start_date' => '2026-05-02',
             'schedule_phases' => [
                 'preparation' => ['start_date' => '2026-04-20', 'end_date' => '2026-04-30'],
                 'wrap' => ['start_date' => '2026-05-10', 'end_date' => '2026-05-10'],
@@ -735,14 +948,40 @@ class ApplicationWorkflowTest extends TestCase
             'international_liaison_mobile' => '+962799999999',
             'international_account_password' => 'International@12345',
             'international_account_password_confirmation' => 'International@12345',
-            'work_content_summary_synopsis' => 'A road sequence with controlled public access.',
-            'work_content_summary_sensitive_notes' => 'Contains a simulated checkpoint scene.',
+            'work_content_summary_synopsis' => $workContentSummary,
             'work_content_summary_confirmed' => '1',
             'cast_crew' => [
                 ['name' => 'Jordanian Lead', 'role' => 'Actor', 'nationality' => 'Jordanian', 'gender' => 'male', 'birth_date' => '1990-03-15', 'identity_number' => 'J12345'],
             ],
             'filming_locations' => [
-                ['governorate' => 'amman', 'location_name' => 'Downtown Amman', 'address' => 'GPS pin 31.9,35.9', 'nature' => 'Open public street', 'location_type' => 'public_locations', 'start_date' => '2026-05-02', 'end_date' => '2026-05-03', 'notes' => 'Traffic support needed'],
+                [
+                    'governorate' => 'amman',
+                    'location_name' => 'Downtown Amman',
+                    'address' => 'GPS pin 31.9,35.9',
+                    'nature' => 'Open public street',
+                    'location_type' => 'public_locations',
+                    'special_requirements' => ['road_closures', 'police_presence'],
+                    'start_date' => '2026-05-02',
+                    'end_date' => '2026-05-03',
+                    'notes' => 'Traffic support needed',
+                    'support_requirements' => [
+                        ['authority' => 'public_security', 'date' => '2026-05-04', 'time_from' => '08:00', 'time_to' => '12:00', 'requirement' => 'Traffic escort', 'notes' => 'Street lockup support'],
+                        ['authority' => 'military', 'date' => '2026-05-04', 'time_from' => '12:30', 'time_to' => '14:00', 'requirement' => 'Military standby', 'notes' => 'Shared location coordination'],
+                    ],
+                ],
+                [
+                    'governorate' => 'mafraq',
+                    'location_name' => 'Northern range',
+                    'address' => 'Northern range',
+                    'nature' => 'Controlled zone perimeter',
+                    'location_type' => 'public_locations',
+                    'start_date' => '2026-05-05',
+                    'end_date' => '2026-05-05',
+                    'notes' => 'Military coordination needed',
+                    'support_requirements' => [
+                        ['authority' => 'military', 'date' => '2026-05-05', 'time_from' => '09:00', 'time_to' => '11:00', 'requirement' => 'Military escort', 'notes' => 'Controlled access coordination'],
+                    ],
+                ],
             ],
             'special_location_requirements' => [
                 'road_closures' => ['locations' => ['Downtown Amman'], 'notes' => 'Road lockup from 6 AM'],
@@ -782,8 +1021,8 @@ class ApplicationWorkflowTest extends TestCase
 
         $application = Application::query()->firstOrFail();
 
-        $this->assertSame('A road sequence with controlled public access.', data_get($application->metadata, 'annex.work_content_summary.synopsis'));
-        $this->assertSame(['feature_film', 'documentary', 'other'], data_get($application->metadata, 'project.work_categories'));
+        $this->assertSame($workContentSummary, data_get($application->metadata, 'annex.work_content_summary.synopsis'));
+        $this->assertSame(['feature_film'], data_get($application->metadata, 'project.work_categories'));
         $this->assertSame('Hybrid docudrama', data_get($application->metadata, 'project.work_category_other'));
         $this->assertSame('2026-04-20', data_get($application->metadata, 'schedule.phases.preparation.start_date'));
         $this->assertSame(55000, data_get($application->metadata, 'budget.local_spend_estimate'));
@@ -797,13 +1036,18 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertSame('1990-03-15', data_get($application->metadata, 'annex.cast_crew.0.birth_date'));
         $this->assertSame('Downtown Amman', data_get($application->metadata, 'annex.filming_locations.0.location_name'));
         $this->assertSame('GPS pin 31.9,35.9', data_get($application->metadata, 'annex.filming_locations.0.address'));
+        $this->assertSame(['road_closures', 'police_presence'], data_get($application->metadata, 'annex.filming_locations.0.special_requirements'));
+        $this->assertSame('Military standby', data_get($application->metadata, 'annex.filming_locations.0.support_requirements.1.requirement'));
         $this->assertSame('Road lockup from 6 AM', data_get($application->metadata, 'annex.special_location_requirements.road_closures.notes'));
+        $this->assertSame(['Downtown Amman'], data_get($application->metadata, 'annex.special_location_requirements.police_presence.locations'));
         $this->assertSame('RJ101', data_get($application->metadata, 'annex.equipment_flights.0.flight_number'));
         $this->assertSame('Equipment Handler', data_get($application->metadata, 'annex.equipment_travelers.0.traveler_name'));
         $this->assertSame('Camera crane', data_get($application->metadata, 'annex.imported_equipment.0.item'));
         $this->assertSame('RJ101', data_get($application->metadata, 'annex.imported_equipment.0.flight_reference'));
         $this->assertSame('Northern range', data_get($application->metadata, 'annex.military_border_locations.0.address'));
         $this->assertSame('LL-4455', data_get($application->metadata, 'annex.military_border_equipment.0.serial_number'));
+        $this->assertSame('Traffic escort', data_get($application->metadata, 'annex.public_security_support.0.requirement'));
+        $this->assertSame('Military standby', data_get($application->metadata, 'annex.military_support.0.requirement'));
         $this->assertSame('Queen Alia International Airport', data_get($application->metadata, 'annex.airport_filming.airport_name'));
         $this->assertSame('Airport Crew Member', data_get($application->metadata, 'annex.airport_people.0.full_name'));
         $this->assertSame('jordanian', data_get($application->metadata, 'annex.airport_people.0.nationality'));
@@ -837,15 +1081,21 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSee('data-annex-add-button', false)
             ->assertSee('WorkContentSummary', false)
             ->assertSee('EquipmentMilitaryBorder', false)
+            ->assertDontSee('PublicSecuritySupport', false)
+            ->assertDontSee('MilitarySupport', false)
             ->assertSeeText('Attached Annexes:')
             ->assertSeeText('Add annex')
             ->assertSee('WorkContentSummaryView', false)
             ->assertSee('EquipmentMilitaryBorderView', false)
+            ->assertDontSee('PublicSecuritySupportView', false)
+            ->assertDontSee('MilitarySupportView', false)
             ->assertSeeText('View form')
             ->assertDontSeeText('Uploaded files')
             ->assertSeeText('Jordanian Lead')
             ->assertSeeText('Downtown Amman')
             ->assertSeeText('GPS pin 31.9,35.9')
+            ->assertSeeText('Traffic escort')
+            ->assertSeeText('Military escort')
             ->assertSeeText('Queen Alia International Airport');
 
         $this->actingAs($applicant)->post(route('applications.submit', $application));
@@ -856,6 +1106,8 @@ class ApplicationWorkflowTest extends TestCase
             ->assertOk()
             ->assertSeeText('Camera crane')
             ->assertSeeText('RJ101')
+            ->assertSeeText('Traffic escort')
+            ->assertSeeText('Military escort')
             ->assertSeeText('Airport Crew Member')
             ->assertSeeText('Municipal archive');
 
@@ -907,6 +1159,7 @@ class ApplicationWorkflowTest extends TestCase
         $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload());
 
         $application = Application::query()->firstOrFail();
+        $originalWorkContentSummary = data_get($application->metadata, 'annex.work_content_summary.synopsis');
 
         $this->actingAs($applicant)->post(route('applications.submit', $application));
 
@@ -918,8 +1171,10 @@ class ApplicationWorkflowTest extends TestCase
 
         $this->assertDoesNotMatchRegularExpression('/<button[^>]*data-annex-add-button[^>]*disabled/s', $showResponse->getContent());
 
+        $updatedWorkContentSummary = $this->arabicWorkContentSummary(520);
+
         $response = $this->actingAs($applicant)->post(route('applications.annex.update', $application), [
-            'work_content_summary_synopsis' => 'Updated annex synopsis after submission.',
+            'work_content_summary_synopsis' => $updatedWorkContentSummary,
             'work_content_summary_confirmed' => '1',
             'cast_crew' => [
                 ['name' => 'New Annex Actor', 'role' => 'Lead', 'nationality' => 'jordanian', 'gender' => 'female', 'birth_date' => '1995-08-20', 'identity_number' => 'J-900'],
@@ -929,13 +1184,42 @@ class ApplicationWorkflowTest extends TestCase
             'airport_people' => [
                 ['full_name' => 'Airport Access Lead', 'nationality' => 'jordanian', 'mother_name' => 'Mariam', 'identity_number' => '9876543210', 'profession' => 'Producer', 'address_phone' => 'Amman 0790000000', 'entry_reason' => 'Filming', 'target_area' => 'Departures hall'],
             ],
+            'filming_locations' => [
+                [
+                    'governorate' => 'maan',
+                    'location_name' => 'Wadi Rum Reserve',
+                    'address' => 'Wadi Rum',
+                    'nature' => 'Protected reserve landscape',
+                    'location_type' => 'reserves',
+                    'start_date' => '2026-05-01',
+                    'end_date' => '2026-05-10',
+                    'notes' => 'Reserve filming coordination required.',
+                    'support_requirements' => [
+                        ['authority' => 'public_security', 'date' => '2026-05-06', 'time_from' => '07:30', 'time_to' => '09:30', 'requirement' => 'Patrol support', 'notes' => 'Applicant annex update'],
+                        ['authority' => 'military', 'date' => '2026-05-06', 'time_from' => '10:00', 'time_to' => '11:00', 'requirement' => 'Reserve liaison', 'notes' => 'Second support row for same location'],
+                    ],
+                ],
+                [
+                    'governorate' => 'amman',
+                    'location_name' => 'Training zone',
+                    'address' => 'Training zone',
+                    'nature' => 'Controlled training area',
+                    'location_type' => 'public_locations',
+                    'start_date' => '2026-05-07',
+                    'end_date' => '2026-05-07',
+                    'notes' => 'Army liaison required',
+                    'support_requirements' => [
+                        ['authority' => 'military', 'date' => '2026-05-07', 'time_from' => '10:00', 'time_to' => '13:00', 'requirement' => 'Army liaison', 'notes' => 'Applicant annex update'],
+                    ],
+                ],
+            ],
         ]);
 
         $response->assertRedirect(route('applications.show', $application));
 
         $application->refresh();
 
-        $this->assertNull(data_get($application->metadata, 'annex.work_content_summary.synopsis'));
+        $this->assertSame($originalWorkContentSummary, data_get($application->metadata, 'annex.work_content_summary.synopsis'));
         $this->assertNull(data_get($application->metadata, 'annex.cast_crew.0.name'));
         $this->assertSame('Wadi Rum Reserve', data_get($application->metadata, 'annex.filming_locations.0.location_name'));
 
@@ -943,13 +1227,15 @@ class ApplicationWorkflowTest extends TestCase
 
         $this->assertSame($application->getKey(), $submission->application_id);
         $this->assertSame(ApplicationAnnexSubmission::STATUS_SUBMITTED, $submission->status);
-        $this->assertSame('Updated annex synopsis after submission.', data_get($submission->payload, 'work_content_summary.synopsis'));
+        $this->assertSame($updatedWorkContentSummary, data_get($submission->payload, 'work_content_summary.synopsis'));
         $this->assertTrue(data_get($submission->payload, 'work_content_summary.confirmed'));
         $this->assertSame('New Annex Actor', data_get($submission->payload, 'cast_crew.0.name'));
         $this->assertSame('female', data_get($submission->payload, 'cast_crew.0.gender'));
         $this->assertSame('1995-08-20', data_get($submission->payload, 'cast_crew.0.birth_date'));
         $this->assertSame('Queen Alia International Airport', data_get($submission->payload, 'airport_filming.airport_name'));
         $this->assertSame('Airport Access Lead', data_get($submission->payload, 'airport_people.0.full_name'));
+        $this->assertSame('Patrol support', data_get($submission->payload, 'public_security_support.0.requirement'));
+        $this->assertSame('Reserve liaison', data_get($submission->payload, 'military_support.0.requirement'));
         $this->assertSame('Wadi Rum Reserve', data_get($submission->previous_payload, 'filming_locations.0.location_name'));
 
         $this->assertDatabaseHas('application_status_histories', [
@@ -970,8 +1256,9 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Annex under RFC review')
             ->assertSee('WorkContentSummary', false)
             ->assertSeeText('Annex 1')
-            ->assertSeeText('Updated annex synopsis after submission.')
+            ->assertSeeText('تصوير تصوير تصوير')
             ->assertSeeText('New Annex Actor')
+            ->assertSeeText('Patrol support')
             ->assertSeeText('Airport Access Lead');
 
         $this->assertMatchesRegularExpression('/<button[^>]*data-annex-add-button[^>]*disabled/s', $applicantPendingResponse->getContent());
@@ -982,8 +1269,9 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSee('href="#profile-Annex"', false)
             ->assertSeeText('Attached Annexes:')
             ->assertSeeText('Annex awaiting RFC review')
-            ->assertSeeText('Updated annex synopsis after submission.')
-            ->assertSeeText('New Annex Actor');
+            ->assertSeeText('تصوير تصوير تصوير')
+            ->assertSeeText('New Annex Actor')
+            ->assertSeeText('Patrol support');
 
         $this->actingAs($admin)->post(route('admin.applications.annex-submissions.review', [$application, $submission]), [
             'decision' => ApplicationAnnexSubmission::STATUS_APPROVED,
@@ -993,10 +1281,12 @@ class ApplicationWorkflowTest extends TestCase
         $submission->refresh();
 
         $this->assertSame(ApplicationAnnexSubmission::STATUS_APPROVED, $submission->status);
-        $this->assertSame('Updated annex synopsis after submission.', data_get($application->metadata, 'annex.work_content_summary.synopsis'));
+        $this->assertSame($updatedWorkContentSummary, data_get($application->metadata, 'annex.work_content_summary.synopsis'));
         $this->assertTrue(data_get($application->metadata, 'annex.work_content_summary.confirmed'));
         $this->assertSame('New Annex Actor', data_get($application->metadata, 'annex.cast_crew.0.name'));
         $this->assertSame('Queen Alia International Airport', data_get($application->metadata, 'annex.airport_filming.airport_name'));
+        $this->assertSame('Patrol support', data_get($application->metadata, 'annex.public_security_support.0.requirement'));
+        $this->assertSame('Reserve liaison', data_get($application->metadata, 'annex.military_support.0.requirement'));
         $this->assertSame(ApplicationAnnexSubmission::STATUS_APPROVED, data_get($application->metadata, 'applicant_annex_submission.status'));
     }
 
@@ -1046,6 +1336,8 @@ class ApplicationWorkflowTest extends TestCase
                 'director' => [
                     'director_name' => 'Director Review',
                     'director_nationality' => 'Jordanian',
+                    'director_email' => 'director-review@example.com',
+                    'director_profile_url' => 'https://example.com/director-review',
                 ],
                 'international' => [
                     'international_producer_name' => 'Global Partner',
@@ -3990,6 +4282,11 @@ class ApplicationWorkflowTest extends TestCase
         ], $overrides);
     }
 
+    private function arabicWorkContentSummary(int $words = 500): string
+    {
+        return implode(' ', array_fill(0, $words, 'تصوير'));
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -4009,9 +4306,10 @@ class ApplicationWorkflowTest extends TestCase
         $payload = array_merge([
             'project_name' => 'Desert Dreams',
             'project_nationality' => 'jordanian',
+            'project_nationalities' => ['jordanian'],
             'work_category' => 'feature_film',
             'release_method' => 'cinema',
-            'planned_start_date' => '2026-05-01',
+            'planned_start_date' => '2026-05-02',
             'planned_end_date' => '2026-05-10',
             'schedule_phases' => [
                 'preparation' => ['start_date' => '2026-04-20', 'end_date' => '2026-04-30'],
@@ -4035,6 +4333,7 @@ class ApplicationWorkflowTest extends TestCase
             'liaison_mobile' => '0792222222',
             'director_name' => 'Director Name',
             'director_nationality' => 'jordanian',
+            'director_email' => 'director@example.com',
             'director_profile_url' => 'https://example.com/director',
             'international_producer_name' => 'Global Partner',
             'international_producer_nationality' => 'non_jordanian',
@@ -4056,6 +4355,8 @@ class ApplicationWorkflowTest extends TestCase
                 ],
             ],
             'safety_guidelines_acknowledged' => '1',
+            'work_content_summary_synopsis' => $this->arabicWorkContentSummary(),
+            'work_content_summary_confirmed' => '1',
             'supporting_notes' => 'Need desert location and crowd management support.',
         ], $overrides);
 

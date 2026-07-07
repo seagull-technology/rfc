@@ -64,12 +64,14 @@ class RegisterController extends Controller
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
             'national_id' => ['required', 'regex:/^\d{10}$/', Rule::unique('users', 'national_id'), Rule::unique('entities', 'national_id')],
             'phone' => ['required', 'regex:/^\d{10}$/', Rule::unique('users', 'phone')],
+            'address' => ['required', 'string', 'max:255'],
+            'logo' => $this->logoValidationRules(),
             'student_lookup_verified' => ['accepted'],
             'password' => array_merge(['required', 'confirmed'], $this->passwordRules()),
-        ], [
+        ], array_merge([
             'national_id.regex' => __('app.auth.national_id_digits'),
             'phone.regex' => __('app.auth.phone_digits'),
-        ]);
+        ], $this->logoValidationMessages()));
 
         $lookupState = $request->session()->get(StudentRegistrationLookupService::SESSION_KEY);
 
@@ -82,8 +84,9 @@ class RegisterController extends Controller
         $data = array_merge($data, (array) data_get($lookupState, 'data', []));
         $data['phone'] = PhoneNumber::normalize($data['phone']);
         $username = $this->makeUsername('student', $data['national_id']);
+        $logo = $data['logo'] ?? null;
 
-        DB::transaction(function () use ($data, $roleAssignmentService, $username): void {
+        DB::transaction(function () use ($data, $roleAssignmentService, $username, $logo): void {
             $group = Group::query()->where('code', 'individuals')->firstOrFail();
 
             $user = User::query()->create([
@@ -106,13 +109,14 @@ class RegisterController extends Controller
                 'phone' => $data['phone'],
                 'registration_type' => 'student',
                 'status' => 'pending_review',
-                'metadata' => [
+                'metadata' => array_merge([
                     'birth_date' => $data['birth_date'],
                     'gender' => $data['gender'],
                     'nationality' => $data['nationality'],
                     'university_name' => $data['university_name'],
                     'major' => $data['major'],
-                ],
+                    'address' => $data['address'],
+                ], $this->logoMetadata($logo, 'student')),
             ]);
 
             $entity->users()->attach($user->getKey(), [
@@ -147,11 +151,12 @@ class RegisterController extends Controller
             'address' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
             'registration_document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+            'logo' => $this->logoValidationRules(),
             'company_lookup_verified' => ['accepted'],
             'password' => array_merge(['required', 'confirmed'], $this->passwordRules()),
-        ], [
+        ], array_merge([
             'phone.regex' => __('app.auth.phone_digits'),
-        ]);
+        ], $this->logoValidationMessages()));
 
         $lookupState = $request->session()->get(CompanyRegistrationLookupService::SESSION_KEY);
 
@@ -166,8 +171,9 @@ class RegisterController extends Controller
         $username = $this->makeUsername('company', $data['registration_number']);
         $document = $data['registration_document'];
         $documentPath = $this->storeRegistrationDocument($document, 'company');
+        $logo = $data['logo'] ?? null;
 
-        DB::transaction(function () use ($data, $roleAssignmentService, $username, $documentPath, $document): void {
+        DB::transaction(function () use ($data, $roleAssignmentService, $username, $documentPath, $document, $logo): void {
             $group = Group::query()->where('code', 'organizations')->firstOrFail();
 
             $user = User::query()->create([
@@ -190,7 +196,7 @@ class RegisterController extends Controller
                 'phone' => $data['phone'],
                 'registration_type' => 'company',
                 'status' => 'pending_review',
-                'metadata' => array_filter([
+                'metadata' => array_filter(array_merge([
                     'address' => $data['address'],
                     'description' => $data['description'] ?: null,
                     'company_registration_date' => $data['company_registration_date'],
@@ -198,7 +204,7 @@ class RegisterController extends Controller
                     'registration_document_path' => $documentPath,
                     'registration_document_name' => $document->getClientOriginalName(),
                     'registration_document_mime' => $document->getClientMimeType(),
-                ], static fn ($value) => $value !== null && $value !== ''),
+                ], $this->logoMetadata($logo, 'company')), static fn ($value) => $value !== null && $value !== ''),
             ]);
 
             $entity->users()->attach($user->getKey(), [
@@ -231,17 +237,19 @@ class RegisterController extends Controller
             'address' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
             'registration_document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+            'logo' => $this->logoValidationRules(),
             'password' => array_merge(['required', 'confirmed'], $this->passwordRules()),
-        ], [
+        ], array_merge([
             'phone.regex' => __('app.auth.phone_digits'),
-        ]);
+        ], $this->logoValidationMessages()));
 
         $data['phone'] = PhoneNumber::normalize($data['phone']);
         $username = $this->makeUsername($registrationType, $data['registration_number']);
         $document = $data['registration_document'];
         $documentPath = $this->storeRegistrationDocument($document, $registrationType);
+        $logo = $data['logo'] ?? null;
 
-        DB::transaction(function () use ($data, $roleAssignmentService, $registrationType, $username, $documentPath, $document): void {
+        DB::transaction(function () use ($data, $roleAssignmentService, $registrationType, $username, $documentPath, $document, $logo): void {
             $group = Group::query()->where('code', 'organizations')->firstOrFail();
 
             $user = User::query()->create([
@@ -264,13 +272,13 @@ class RegisterController extends Controller
                 'phone' => $data['phone'],
                 'registration_type' => $registrationType,
                 'status' => 'pending_review',
-                'metadata' => array_filter([
+                'metadata' => array_filter(array_merge([
                     'address' => $data['address'],
                     'description' => $data['description'] ?: null,
                     'registration_document_path' => $documentPath,
                     'registration_document_name' => $document->getClientOriginalName(),
                     'registration_document_mime' => $document->getClientMimeType(),
-                ], static fn ($value) => $value !== null && $value !== ''),
+                ], $this->logoMetadata($logo, $registrationType)), static fn ($value) => $value !== null && $value !== ''),
             ]);
 
             $entity->users()->attach($user->getKey(), [
@@ -333,6 +341,44 @@ class RegisterController extends Controller
     private function storeRegistrationDocument(UploadedFile $document, string $registrationType): string
     {
         return $document->store('registration-documents/'.$registrationType, 'local');
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function logoValidationRules(): array
+    {
+        return ['nullable', 'file', 'image', 'mimes:png', 'mimetypes:image/png', 'max:2048'];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function logoValidationMessages(): array
+    {
+        return [
+            'logo.image' => __('app.auth.logo_png_only'),
+            'logo.mimes' => __('app.auth.logo_png_only'),
+            'logo.mimetypes' => __('app.auth.logo_png_only'),
+            'logo.max' => __('app.auth.logo_max_size'),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function logoMetadata(mixed $logo, string $registrationType): array
+    {
+        if (! $logo instanceof UploadedFile) {
+            return [];
+        }
+
+        return [
+            'logo_path' => $logo->store('registration-logos/'.$registrationType, 'local'),
+            'logo_name' => $logo->getClientOriginalName(),
+            'logo_mime' => $logo->getClientMimeType(),
+            'logo_size' => $logo->getSize(),
+        ];
     }
 
     /**

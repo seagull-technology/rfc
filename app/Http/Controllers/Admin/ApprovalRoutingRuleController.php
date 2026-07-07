@@ -614,6 +614,20 @@ class ApprovalRoutingRuleController extends Controller
                         'special_requirement_',
                     ),
                 ],
+                [
+                    'key' => 'support_authorities',
+                    'label' => __('app.admin.approval_routing.annex_trigger_child_groups.support_authorities'),
+                    'options' => [
+                        [
+                            'flag' => 'public_security_support',
+                            'label' => __('app.applications.support_authorities.public_security'),
+                        ],
+                        [
+                            'flag' => 'military_support',
+                            'label' => __('app.applications.support_authorities.military'),
+                        ],
+                    ],
+                ],
             ]),
             $this->annexTriggerGroup('safety_guidelines', 'safety_guidelines'),
             $this->annexTriggerGroup('imported_equipment', 'imported_equipment', [

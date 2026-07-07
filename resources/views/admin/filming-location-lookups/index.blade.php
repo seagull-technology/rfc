@@ -206,17 +206,22 @@
                         <label for="new-location-type-code" class="form-label">{{ __('app.admin.filming_location_lookups.code') }}</label>
                         <input id="new-location-type-code" name="code" type="text" class="form-control" value="{{ old('code') }}" placeholder="public_locations">
                     </div>
-                    <div class="col-lg-3">
+                    <div class="col-lg-2">
                         <label for="new-location-type-name-en" class="form-label">{{ __('app.admin.filming_location_lookups.name_en') }}</label>
                         <input id="new-location-type-name-en" name="name_en" type="text" class="form-control" value="{{ old('name_en') }}" required>
                     </div>
-                    <div class="col-lg-3">
+                    <div class="col-lg-2">
                         <label for="new-location-type-name-ar" class="form-label">{{ __('app.admin.filming_location_lookups.name_ar') }}</label>
                         <input id="new-location-type-name-ar" name="name_ar" type="text" class="form-control" value="{{ old('name_ar') }}" required>
                     </div>
                     <div class="col-lg-2 col-md-6">
                         <label for="new-location-type-sort-order" class="form-label">{{ __('app.admin.filming_location_lookups.sort_order') }}</label>
                         <input id="new-location-type-sort-order" name="sort_order" type="number" min="0" class="form-control" value="{{ old('sort_order', 500) }}">
+                    </div>
+                    <div class="col-lg-2 col-md-6">
+                        <label for="new-location-type-approval-days" class="form-label">{{ __('app.admin.filming_location_lookups.approval_days') }}</label>
+                        <input id="new-location-type-approval-days" name="approval_days" type="number" min="0" max="365" class="form-control" value="{{ old('approval_days') }}" placeholder="14">
+                        <div class="form-text">{{ __('app.admin.filming_location_lookups.approval_days_help') }}</div>
                     </div>
                     <div class="col-lg-2 col-md-6">
                         <input type="hidden" name="is_active" value="0">
@@ -257,6 +262,7 @@
                                 <th>{{ __('app.admin.filming_location_lookups.name_en') }}</th>
                                 <th>{{ __('app.admin.filming_location_lookups.name_ar') }}</th>
                                 <th>{{ __('app.admin.filming_location_lookups.sort_order') }}</th>
+                                <th>{{ __('app.admin.filming_location_lookups.approval_days') }}</th>
                                 <th>{{ __('app.admin.filming_location_lookups.availability') }}</th>
                                 <th>{{ __('app.admin.filming_location_lookups.governorate_associations') }}</th>
                                 <th>{{ __('app.admin.filming_location_lookups.actions') }}</th>
@@ -269,6 +275,7 @@
                                     <td><input name="name_en" form="location-type-update-{{ $locationType->getKey() }}" type="text" class="form-control" value="{{ $locationType->name_en }}" required></td>
                                     <td><input name="name_ar" form="location-type-update-{{ $locationType->getKey() }}" type="text" class="form-control" value="{{ $locationType->name_ar }}" required></td>
                                     <td><input name="sort_order" form="location-type-update-{{ $locationType->getKey() }}" type="number" min="0" class="form-control" value="{{ $locationType->sort_order }}" required></td>
+                                    <td><input name="approval_days" form="location-type-update-{{ $locationType->getKey() }}" type="number" min="0" max="365" class="form-control" value="{{ $locationType->approval_days }}"></td>
                                     <td>
                                         <input type="hidden" form="location-type-update-{{ $locationType->getKey() }}" name="is_active" value="0">
                                         <div class="form-check">
@@ -308,7 +315,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="7" class="text-center text-muted py-5">{{ __('app.admin.filming_location_lookups.location_types_empty') }}</td>
+                                    <td colspan="8" class="text-center text-muted py-5">{{ __('app.admin.filming_location_lookups.location_types_empty') }}</td>
                                 </tr>
                             @endforelse
                         </tbody>

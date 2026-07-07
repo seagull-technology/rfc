@@ -250,6 +250,7 @@ class AdminPanelTest extends TestCase
                 'name_en' => 'Test Location Type',
                 'name_ar' => 'نوع موقع اختبار',
                 'sort_order' => 140,
+                'approval_days' => 14,
                 'is_active' => '1',
                 'governorates' => ['amman', 'test_governorate'],
             ])
@@ -260,6 +261,7 @@ class AdminPanelTest extends TestCase
             ->firstOrFail();
 
         $this->assertTrue($locationType->governorates()->where('code', 'test_governorate')->exists());
+        $this->assertSame(14, $locationType->approval_days);
 
         $this
             ->actingAs($admin)
@@ -267,6 +269,7 @@ class AdminPanelTest extends TestCase
                 'name_en' => 'Updated Test Location Type',
                 'name_ar' => 'نوع موقع اختبار محدث',
                 'sort_order' => 145,
+                'approval_days' => 21,
                 'is_active' => '0',
                 'governorates' => ['amman'],
             ])
@@ -275,6 +278,7 @@ class AdminPanelTest extends TestCase
         $locationType->refresh();
 
         $this->assertSame('Updated Test Location Type', $locationType->name_en);
+        $this->assertSame(21, $locationType->approval_days);
         $this->assertFalse($locationType->is_active);
         $this->assertFalse($locationType->governorates()->whereKey($governorate->getKey())->exists());
         $this->assertTrue($locationType->governorates()->where('code', 'amman')->exists());
