@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Services\Gsb\CspdPersonalInfoService;
 use App\Services\Gsb\MoheSanadService;
+use Carbon\Carbon;
+use Throwable;
 
 class StudentRegistrationLookupService
 {
@@ -18,9 +20,10 @@ class StudentRegistrationLookupService
     /**
      * @return array<string, mixed>
      */
-    public function lookup(string $nationalId): array
+    public function lookup(string $nationalId, string $birthDate): array
     {
         $nationalId = preg_replace('/\D+/', '', $nationalId) ?: '';
+        $birthDate = $this->normalizeBirthDate($birthDate);
 
         if (! preg_match('/^\d{10}$/', $nationalId)) {
             return [
@@ -29,18 +32,26 @@ class StudentRegistrationLookupService
             ];
         }
 
+        if ($birthDate === null) {
+            return [
+                'ok' => false,
+                'error' => 'INVALID_BIRTH_DATE',
+            ];
+        }
+
         if ($this->shouldUseLocalLookup()) {
             return [
                 'ok' => true,
                 'national_id' => $nationalId,
-                'data' => $this->localProfile($nationalId),
+                'birth_date' => $birthDate,
+                'data' => $this->localProfile($nationalId, $birthDate),
                 'meta' => [
                     'source' => 'local_mock',
                 ],
             ];
         }
 
-        $data = $this->localProfile($nationalId);
+        $data = $this->localProfile($nationalId, $birthDate);
         $sources = ['local_fallback'];
 
         if ($this->cspdPersonalInfoService->isRunnable()) {
@@ -59,7 +70,7 @@ class StudentRegistrationLookupService
         }
 
         if ($this->moheSanadService->isRunnable()) {
-            $educationLookup = $this->moheSanadService->lookupCurrentStudent($nationalId);
+            $educationLookup = $this->moheSanadService->lookupCurrentStudent($nationalId, $birthDate);
 
             if (! ($educationLookup['ok'] ?? false)) {
                 return [
@@ -71,6 +82,16 @@ class StudentRegistrationLookupService
                 ];
             }
 
+            $studentStatus = data_get($educationLookup, 'data.student_status')
+                ?? data_get($educationLookup, 'meta.student_status');
+
+            if (! $this->isCurrentlyStudying($studentStatus)) {
+                return [
+                    'ok' => false,
+                    'error' => 'NOT_CURRENT_STUDENT',
+                ];
+            }
+
             $data = $this->mergeFilled($data, (array) ($educationLookup['data'] ?? []));
             $sources[] = (string) data_get($educationLookup, 'meta.source', 'gsb_mohe_sanad');
         }
@@ -78,6 +99,7 @@ class StudentRegistrationLookupService
         return [
             'ok' => true,
             'national_id' => $nationalId,
+            'birth_date' => $birthDate,
             'data' => $data,
             'meta' => [
                 'source' => implode('+', array_values(array_unique($sources))),
@@ -88,11 +110,21 @@ class StudentRegistrationLookupService
     /**
      * @param  array<string, mixed>|null  $lookupState
      */
-    public function lookupStateMatches(?array $lookupState, string $nationalId): bool
+    public function lookupStateMatches(?array $lookupState, string $nationalId, string $birthDate): bool
     {
-        return (bool) ($lookupState['ok'] ?? false)
+        $matches = (bool) ($lookupState['ok'] ?? false)
             && ($lookupState['national_id'] ?? null) === trim($nationalId)
+            && ($lookupState['birth_date'] ?? null) === $this->normalizeBirthDate($birthDate)
             && is_array($lookupState['data'] ?? null);
+
+        if (! $matches) {
+            return false;
+        }
+
+        $source = (string) data_get($lookupState, 'meta.source', '');
+
+        return ! str_contains($source, 'gsb_mohe_sanad')
+            || $this->isCurrentlyStudying(data_get($lookupState, 'data.student_status'));
     }
 
     /**
@@ -104,6 +136,7 @@ class StudentRegistrationLookupService
         return [
             'ok' => (bool) ($lookup['ok'] ?? false),
             'national_id' => $lookup['national_id'] ?? null,
+            'birth_date' => $lookup['birth_date'] ?? data_get($lookup, 'data.birth_date'),
             'data' => (array) ($lookup['data'] ?? []),
             'meta' => (array) ($lookup['meta'] ?? []),
             'verified_at' => now()->toDateTimeString(),
@@ -113,22 +146,46 @@ class StudentRegistrationLookupService
     /**
      * @return array{full_name:string,birth_date:string,gender:string,nationality:string,university_name:string,major:string}
      */
-    private function localProfile(string $nationalId): array
+    private function localProfile(string $nationalId, string $birthDate): array
     {
         $suffix = substr($nationalId, -4);
-        $year = 1998 + ((int) substr($nationalId, -2) % 8);
-        $month = ((int) substr($nationalId, 2, 2) % 12) + 1;
-        $day = ((int) substr($nationalId, 4, 2) % 28) + 1;
         $isFemale = ((int) substr($nationalId, -1)) % 2 === 0;
 
         return [
             'full_name' => 'RFC Student '.$suffix,
-            'birth_date' => sprintf('%04d-%02d-%02d', $year, $month, $day),
+            'birth_date' => $birthDate,
             'gender' => $isFemale ? 'female' : 'male',
             'nationality' => 'Jordanian',
             'university_name' => 'University of Jordan',
             'major' => 'Film Studies',
         ];
+    }
+
+    public function normalizeBirthDate(string $value): ?string
+    {
+        $value = trim($value);
+
+        foreach (['Y-m-d', 'd/m/Y'] as $format) {
+            try {
+                $date = Carbon::createFromFormat($format, $value);
+
+                if ($date !== false && $date->format($format) === $value) {
+                    return $date->toDateString();
+                }
+            } catch (Throwable) {
+                // Try the next supported display format.
+            }
+        }
+
+        return null;
+    }
+
+    private function isCurrentlyStudying(mixed $status): bool
+    {
+        $status = preg_replace('/[\x{200B}-\x{200D}\x{FEFF}]/u', '', (string) $status) ?? '';
+        $status = preg_replace('/\s+/u', ' ', trim($status)) ?? '';
+
+        return $status === 'على مقاعد الدراسة';
     }
 
     private function shouldUseLocalLookup(): bool

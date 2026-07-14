@@ -2,7 +2,7 @@
     $currentAuthorityUser = auth()->user();
     $currentAuthorityEntity = $currentAuthorityUser?->primaryEntity();
     $authorityAvailableEntities = $currentAuthorityUser?->availableEntities() ?? collect();
-    $authorityAvatar = asset('images/111.jpeg');
+    $authorityAvatar = \App\Support\EntityLogo::url($currentAuthorityEntity, 'images/111.jpeg');
     $authorityUnreadNotifications = $currentAuthorityUser?->unreadNotifications ?? collect();
     $authorityNotificationCount = $authorityUnreadNotifications->count();
     $authorityNotificationItems = $notificationItems ?? ($currentAuthorityUser?->notifications()->latest()->take(5)->get() ?? collect());

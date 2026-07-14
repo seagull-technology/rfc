@@ -1,0 +1,124 @@
+{
+  "info": {
+    "_postman_id": "ff07957a-d5ea-4bd6-a2d6-997f30a88866",
+    "name": "RFC Government Service Bus (GSB)",
+    "description": "Reusable RFC staging requests for Government Service Bus integrations. Credentials and test identities are supplied only through a local Postman environment and are never stored in this collection.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const requiredVariables = ['gsb_base_url', 'gsb_client_id', 'gsb_client_secret'];",
+          "const missingVariables = requiredVariables.filter((name) => !String(pm.variables.get(name) || '').trim());",
+          "if (missingVariables.length) {",
+          "    throw new Error(`Missing required Postman variables: ${missingVariables.join(', ')}`);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "MOHE - Student Verification",
+      "description": "Ministry of Higher Education student lookup through Mohe-Standard-Api v1.0.0.",
+      "item": [
+        {
+          "name": "Lookup Student - Mohe Standard",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const nationalNo = String(pm.variables.get('test_national_no') || '').trim();",
+                  "const birthDate = String(pm.variables.get('test_birth_date') || '').trim();",
+                  "if (!/^\\d{10}$/.test(nationalNo)) {",
+                  "    throw new Error('test_national_no must contain exactly 10 digits.');",
+                  "}",
+                  "if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(birthDate)) {",
+                  "    throw new Error('test_birth_date must use YYYY-MM-DD format.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('GSB returned HTTP 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "    pm.expect(() => pm.response.json()).not.to.throw();",
+                  "});",
+                  "pm.test('Response body is not empty', function () {",
+                  "    pm.expect(pm.response.text().trim()).not.to.eql('');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-MODEE-Client-Id",
+                "value": "{{gsb_client_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-MODEE-Client-Secret",
+                "value": "{{gsb_client_secret}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nationalNo\": \"{{test_national_no}}\",\n  \"birthDate\": \"{{test_birth_date}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{gsb_base_url}}{{mohe_standard_path}}",
+            "description": "POST Mohe-Standard-Api v1.0.0. Both nationalNo and birthDate are required by the provider's OpenAPI contract."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "gsb_base_url",
+      "value": "https://api-gateway.stg.gsb.gov.jo:9443",
+      "type": "string"
+    },
+    {
+      "key": "mohe_standard_path",
+      "value": "/porg-g2g/g2g/newstandard/api/MoheStandard",
+      "type": "string"
+    }
+  ]
+}

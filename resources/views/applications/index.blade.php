@@ -2,6 +2,7 @@
     $title = __('app.applications.index_title');
     $activeApplications = $applications->whereIn('status', ['draft', 'submitted', 'under_review', 'needs_clarification'])->values();
     $previousApplications = $applications->whereIn('status', ['approved', 'rejected'])->values();
+    $canCreateApplications = auth()->user()?->can('applications.create') ?? false;
 @endphp
 
 @extends('layouts.portal-dashboard', ['title' => $title])
@@ -75,9 +76,11 @@
                         </h2>
                         <div class="text-muted">{{ __('app.applications.index_intro') }}</div>
                     </div>
-                    <a class="btn btn-danger" href="{{ route('applications.create') }}">
-                        <i class="fa fa-plus me-2"></i>{{ __('app.applications.create_action') }}
-                    </a>
+                    @if ($canCreateApplications)
+                        <a class="btn btn-danger" href="{{ route('applications.create') }}">
+                            <i class="fa fa-plus me-2"></i>{{ __('app.applications.create_action') }}
+                        </a>
+                    @endif
                 </div>
 
                 <form method="GET" action="{{ route('applications.index') }}" class="request-toolbar mb-4">

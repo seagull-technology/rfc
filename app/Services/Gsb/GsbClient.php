@@ -12,8 +12,12 @@ class GsbClient
     /**
      * @return array<string, mixed>
      */
-    public function request(string $service, array $payload = [], ?string $method = null): array
-    {
+    public function request(
+        string $service,
+        array $payload = [],
+        ?string $method = null,
+        array $pathParameters = [],
+    ): array {
         $config = $this->serviceConfig($service);
 
         if (! $this->isEnabled($service)) {
@@ -28,7 +32,7 @@ class GsbClient
             return $this->failure($service, 'MISSING_CREDENTIALS');
         }
 
-        $url = $this->url($service);
+        $url = $this->url($service, $pathParameters);
         $method = strtoupper($method ?: (string) ($config['method'] ?? 'POST'));
 
         try {
@@ -51,7 +55,7 @@ class GsbClient
             Log::channel('gov_lookup')->info('GSB request completed', [
                 'service' => $service,
                 'method' => $method,
-                'url' => $url,
+                'url' => $this->safeUrl($url, $pathParameters),
                 'status' => $response->status(),
                 'payload' => $this->safePayloadSummary($payload),
             ]);
@@ -61,7 +65,7 @@ class GsbClient
                 'service' => $service,
                 'method' => $method,
                 'status' => $response->status(),
-                'url' => $url,
+                'url' => $this->safeUrl($url, $pathParameters),
                 'json' => is_array($json) ? $json : null,
                 'body' => $response->body(),
                 'error' => null,
@@ -70,7 +74,7 @@ class GsbClient
             Log::channel('gov_lookup')->error('GSB request failed', [
                 'service' => $service,
                 'method' => $method,
-                'url' => $url,
+                'url' => $this->safeUrl($url, $pathParameters),
                 'message' => $exception->getMessage(),
                 'payload' => $this->safePayloadSummary($payload),
             ]);
@@ -237,10 +241,14 @@ class GsbClient
         ];
     }
 
-    private function url(string $service): string
+    private function url(string $service, array $pathParameters = []): string
     {
         $config = $this->serviceConfig($service);
         $path = (string) ($config['path'] ?? '');
+
+        foreach ($pathParameters as $key => $value) {
+            $path = str_replace('{'.$key.'}', rawurlencode((string) $value), $path);
+        }
 
         if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
             return $path;
@@ -249,6 +257,19 @@ class GsbClient
         $baseUrl = rtrim((string) ($config['base_url'] ?? config('services.gsb.base_url')), '/');
 
         return $baseUrl.'/'.ltrim($path, '/');
+    }
+
+    private function safeUrl(string $url, array $pathParameters): string
+    {
+        foreach ($pathParameters as $value) {
+            $encoded = rawurlencode((string) $value);
+
+            if ($encoded !== '') {
+                $url = str_replace($encoded, '[masked]', $url);
+            }
+        }
+
+        return $url;
     }
 
     /**

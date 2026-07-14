@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Entity;
 use App\Models\Group;
 use App\Models\User;
+use App\Support\EntityLogo;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -70,6 +71,21 @@ class ProfileManagementTest extends TestCase
             ->actingAs($user)
             ->get(route('profile.logo'))
             ->assertOk();
+
+        $this
+            ->actingAs($user)
+            ->get(route('entities.logo', $entity))
+            ->assertOk();
+
+        $logoUrl = EntityLogo::url($entity);
+        $this->assertStringContainsString(route('entities.logo', $entity), $logoUrl);
+        $this->assertStringContainsString('v=', $logoUrl);
+
+        $this
+            ->actingAs($user)
+            ->get(route('profile.show'))
+            ->assertOk()
+            ->assertSee($logoUrl, false);
     }
 
     public function test_official_profile_changes_are_reviewed_before_being_applied(): void

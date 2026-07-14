@@ -1,0 +1,10 @@
+{
+  "version": "1",
+  "name": "RFC Government Service Bus (GSB)",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git",
+    ".env"
+  ]
+}

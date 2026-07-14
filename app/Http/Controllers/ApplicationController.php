@@ -15,13 +15,16 @@ use App\Models\ReleaseMethod;
 use App\Models\User;
 use App\Models\WorkCategory;
 use App\Notifications\InboxMessageNotification;
+use App\Rules\SupportRequirementNotesRequired;
 use App\Services\ApprovalRoutingService;
 use App\Support\ApplicantRequestOverview;
+use App\Support\JordanBusinessDays;
 use App\Support\NotificationRecipients;
 use App\Support\WorkflowMessageMetadata;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -45,7 +48,7 @@ class ApplicationController extends Controller
     public function index(Request $request): View
     {
         [$user, $entity] = $this->applicantContext($request);
-        $this->ensureApplicantPermission($user, 'applications.view.entity');
+        $this->ensureApplicantHasAnyPermission($user, ['applications.view.entity', 'applications.view.own']);
 
         $filters = $request->validate([
             'q' => ['nullable', 'string', 'max:255'],
@@ -55,6 +58,8 @@ class ApplicationController extends Controller
         $query = FilmApplication::query()
             ->with(['entity', 'submittedBy', 'reviewedBy'])
             ->where('entity_id', $entity->getKey());
+
+        $this->restrictApplicantApplicationsQuery($query, $user);
 
         if (filled($filters['q'] ?? null)) {
             $search = trim((string) $filters['q']);
@@ -208,8 +213,9 @@ class ApplicationController extends Controller
     public function edit(Request $request, string $application): View
     {
         [$user, $entity] = $this->applicantContext($request);
-        $this->ensureApplicantPermission($user, 'applications.update.entity');
+        $this->ensureApplicantHasAnyPermission($user, ['applications.update.entity', 'applications.update.own']);
         $record = $this->findApplicantApplication($application, $entity);
+        $this->ensureApplicantCanUpdateApplication($user, $record);
 
         abort_unless($record->canBeEditedByApplicant(), 403);
 
@@ -233,15 +239,21 @@ class ApplicationController extends Controller
     public function update(Request $request, string $application): RedirectResponse
     {
         [$user, $entity] = $this->applicantContext($request);
-        $this->ensureApplicantPermission($user, 'applications.update.entity');
+        $this->ensureApplicantHasAnyPermission($user, ['applications.update.entity', 'applications.update.own']);
         $record = $this->findApplicantApplication($application, $entity);
+        $this->ensureApplicantCanUpdateApplication($user, $record);
 
         abort_unless($record->canBeEditedByApplicant(), 403);
 
         $this->mergeLockedApplicantProducerFields($request, $user, $entity);
         $validated = $this->validateApplicationPayload($request, false, $entity, $user);
 
-        $attributes = $this->applicationAttributes($validated, $entity, $user);
+        $attributes = $this->applicationAttributes(
+            $validated,
+            $entity,
+            $user,
+            (array) data_get($record->metadata ?? [], 'annex', []),
+        );
         $requiresInternationalProject = $this->projectRequiresInternationalSection($validated, $entity, $user);
         $existingInternationalAccount = data_get($record->metadata, 'international.account');
 
@@ -263,8 +275,9 @@ class ApplicationController extends Controller
     public function updateAnnex(Request $request, string $application): RedirectResponse
     {
         [$user, $entity] = $this->applicantContext($request);
-        $this->ensureApplicantPermission($user, 'applications.update.entity');
+        $this->ensureApplicantHasAnyPermission($user, ['applications.update.entity', 'applications.update.own']);
         $record = $this->findApplicantApplication($application, $entity);
+        $this->ensureApplicantCanUpdateApplication($user, $record);
 
         abort_unless($record->canUpdateApplicantAnnex(), 403);
 
@@ -276,7 +289,7 @@ class ApplicationController extends Controller
             $submission = $record->annexSubmissions()->create([
                 'submitted_by_user_id' => $user->getKey(),
                 'status' => ApplicationAnnexSubmission::STATUS_SUBMITTED,
-                'payload' => $this->annexMetadata($validated),
+                'payload' => $this->annexMetadata($validated, (array) data_get($metadata, 'annex', [])),
                 'previous_payload' => (array) data_get($metadata, 'annex', []),
                 'submitted_at' => $submittedAt,
             ]);
@@ -327,8 +340,9 @@ class ApplicationController extends Controller
     public function updateWrapReport(Request $request, string $application): RedirectResponse
     {
         [$user, $entity] = $this->applicantContext($request);
-        $this->ensureApplicantPermission($user, 'applications.update.entity');
+        $this->ensureApplicantHasAnyPermission($user, ['applications.update.entity', 'applications.update.own']);
         $record = $this->findApplicantApplication($application, $entity);
+        $this->ensureApplicantCanUpdateApplication($user, $record);
 
         abort_unless($record->wrapReportIsAvailable(), 403);
 
@@ -418,7 +432,7 @@ class ApplicationController extends Controller
         abort_unless($record->canReceiveApplicantDocuments(), 403);
 
         $validated = $request->validate([
-            'document_type' => ['required', Rule::in(['site_request', 'work_content_summary', 'cast_crew_list', 'location_list', 'safety_guidelines', 'security_clearance', 'imported_equipment', 'military_border_equipment', 'airport_filming', 'governmental_scenes', 'other'])],
+            'document_type' => ['required', Rule::in(['site_request', 'work_content_summary', 'cast_crew_list', 'location_list', 'safety_guidelines', 'security_clearance', 'imported_equipment', 'airport_filming', 'governmental_scenes', 'other'])],
             'title' => ['required', 'string', 'max:255'],
             'note' => ['nullable', 'string', 'max:2000'],
             'file' => ['required', 'file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png'],
@@ -475,7 +489,7 @@ class ApplicationController extends Controller
     public function downloadDocument(Request $request, string $application, string $document): StreamedResponse|RedirectResponse
     {
         [$user, $entity] = $this->applicantContext($request);
-        $this->ensureApplicantPermission($user, 'documents.view.entity');
+        $this->ensureApplicantHasAnyPermission($user, ['documents.view.entity', 'documents.view.own']);
         $record = $this->findApplicantApplication($application, $entity);
         $documentRecord = $this->findApplicantDocument($document, $record);
 
@@ -491,6 +505,7 @@ class ApplicationController extends Controller
     public function storeCorrespondence(Request $request, string $application): RedirectResponse
     {
         [$user, $entity] = $this->applicantContext($request);
+        $this->ensureApplicantHasAnyPermission($user, ['applications.view.entity', 'applications.view.own']);
         $record = $this->findApplicantApplication($application, $entity);
 
         $validated = $request->validate([
@@ -567,7 +582,8 @@ class ApplicationController extends Controller
 
     public function downloadCorrespondenceAttachment(Request $request, string $application, string $correspondence): StreamedResponse|RedirectResponse
     {
-        [, $entity] = $this->applicantContext($request);
+        [$user, $entity] = $this->applicantContext($request);
+        $this->ensureApplicantHasAnyPermission($user, ['applications.view.entity', 'applications.view.own']);
         $record = $this->findApplicantApplication($application, $entity);
         $message = $this->findApplicantCorrespondence($correspondence, $record);
 
@@ -583,7 +599,7 @@ class ApplicationController extends Controller
     public function downloadFinalLetter(Request $request, string $application): StreamedResponse|RedirectResponse
     {
         [$user, $entity] = $this->applicantContext($request);
-        $this->ensureApplicantPermission($user, 'applications.view.entity');
+        $this->ensureApplicantHasAnyPermission($user, ['applications.view.entity', 'applications.view.own']);
         $record = $this->findApplicantApplication($application, $entity);
 
         if (! $record->final_letter_path || ! Storage::disk('local')->exists($record->final_letter_path)) {
@@ -598,7 +614,7 @@ class ApplicationController extends Controller
     public function printFinalLetter(Request $request, string $application): View
     {
         [$user, $entity] = $this->applicantContext($request);
-        $this->ensureApplicantPermission($user, 'applications.view.entity');
+        $this->ensureApplicantHasAnyPermission($user, ['applications.view.entity', 'applications.view.own']);
         $record = $this->findApplicantApplication($application, $entity);
 
         abort_unless($record->finalDecisionIssued(), 404);
@@ -660,6 +676,55 @@ class ApplicationController extends Controller
         abort_unless($user->can($permission), 403);
     }
 
+    /**
+     * @param  array<int, string>  $permissions
+     */
+    private function ensureApplicantHasAnyPermission(User $user, array $permissions): void
+    {
+        abort_unless(collect($permissions)->contains(fn (string $permission): bool => $user->can($permission)), 403);
+    }
+
+    private function restrictApplicantApplicationsQuery(Builder $query, User $user): Builder
+    {
+        if (! $user->can('applications.view.entity')) {
+            $query->where('submitted_by_user_id', $user->getKey());
+        }
+
+        return $query;
+    }
+
+    private function ensureApplicantCanViewApplication(User $user, FilmApplication $application): void
+    {
+        if ($this->isInternationalProducerUser($user)) {
+            abort_unless($this->applicationIsLinkedToInternationalProducer($application, $user), 403);
+
+            return;
+        }
+
+        if ($user->can('applications.view.entity')) {
+            return;
+        }
+
+        abort_unless(
+            $user->can('applications.view.own')
+            && (int) $application->submitted_by_user_id === (int) $user->getKey(),
+            403,
+        );
+    }
+
+    private function ensureApplicantCanUpdateApplication(User $user, FilmApplication $application): void
+    {
+        if ($user->can('applications.update.entity')) {
+            return;
+        }
+
+        abort_unless(
+            $user->can('applications.update.own')
+            && (int) $application->submitted_by_user_id === (int) $user->getKey(),
+            403,
+        );
+    }
+
     private function findApplicantApplication(string $application, Entity $entity): FilmApplication
     {
         $record = FilmApplication::query()
@@ -669,8 +734,8 @@ class ApplicationController extends Controller
 
         $user = auth()->user();
 
-        if ($user instanceof User && $this->isInternationalProducerUser($user)) {
-            abort_unless($this->applicationIsLinkedToInternationalProducer($record, $user), 403);
+        if ($user instanceof User) {
+            $this->ensureApplicantCanViewApplication($user, $record);
         }
 
         return $record;
@@ -877,7 +942,6 @@ class ApplicationController extends Controller
             'airports' => FormLookupOption::activeForType(FormLookupOption::TYPE_AIRPORT),
             'special_location_requirements' => FormLookupOption::activeForType(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT),
             'budget_spending_categories' => FormLookupOption::activeForType(FormLookupOption::TYPE_BUDGET_SPENDING_CATEGORY),
-            'military_border_location_types' => FormLookupOption::activeForType(FormLookupOption::TYPE_MILITARY_BORDER_LOCATION_TYPE),
             'drone_request_types' => FormLookupOption::activeForType(FormLookupOption::TYPE_DRONE_REQUEST_TYPE),
         ];
     }
@@ -901,6 +965,68 @@ class ApplicationController extends Controller
 
             if (! in_array((string) $value, FilmingLocationType::activeCodesForGovernorate((string) $governorate), true)) {
                 $fail(__('validation.location_type_governorate'));
+            }
+        };
+    }
+
+    private function filmingLocationSupportDateWithinRangeRule(Request $request): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($request): void {
+            if (blank($value) || ! preg_match('/^filming_locations\.([^\.]+)\.support_requirements\.([^\.]+)\.date$/', $attribute, $matches)) {
+                return;
+            }
+
+            $location = (array) data_get((array) $request->input('filming_locations', []), $matches[1], []);
+            $supportDate = strtotime((string) $value);
+            $startDate = filled($location['start_date'] ?? null) ? strtotime((string) $location['start_date']) : false;
+            $endDate = filled($location['end_date'] ?? null) ? strtotime((string) $location['end_date']) : false;
+
+            if ($supportDate === false) {
+                return;
+            }
+
+            if ($startDate !== false && $supportDate < $startDate) {
+                $fail(__('app.applications.location_support_date_range'));
+
+                return;
+            }
+
+            if ($endDate !== false && $supportDate > $endDate) {
+                $fail(__('app.applications.location_support_date_range'));
+            }
+        };
+    }
+
+    /**
+     * @param  array<string, int>  $approvalDaysByLocationType
+     */
+    private function filmingLocationStartRespectsApprovalLeadTimeRule(Request $request, string $collection, array $approvalDaysByLocationType): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($request, $collection, $approvalDaysByLocationType): void {
+            if (blank($value) || ! preg_match('/^'.preg_quote($collection, '/').'\.([^\.]+)\.start_date$/', $attribute, $matches)) {
+                return;
+            }
+
+            $locationType = (string) data_get((array) $request->input($collection, []), $matches[1].'.location_type', '');
+            $approvalDays = (int) ($approvalDaysByLocationType[$locationType] ?? 0);
+
+            if ($approvalDays <= 0) {
+                return;
+            }
+
+            try {
+                $selectedStartDate = JordanBusinessDays::parse((string) $value);
+            } catch (\Throwable) {
+                return;
+            }
+
+            $minimumStartDate = JordanBusinessDays::addBusinessDays(JordanBusinessDays::today(), $approvalDays);
+
+            if ($selectedStartDate->lt($minimumStartDate)) {
+                $fail(__('app.applications.location_type_approval_business_days', [
+                    'days' => $approvalDays,
+                    'date' => $minimumStartDate->toDateString(),
+                ]));
             }
         };
     }
@@ -937,6 +1063,44 @@ class ApplicationController extends Controller
                 }
             }
         };
+    }
+
+    private function castCrewIdentityNumberRule(Request $request): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($request): void {
+            if (blank($value) || ! preg_match('/^cast_crew\.([^\.]+)\.identity_number$/', $attribute, $matches)) {
+                return;
+            }
+
+            $nationality = (string) data_get((array) $request->input('cast_crew', []), $matches[1].'.nationality');
+
+            if ($this->castCrewNationalityIsJordanian($nationality) && ! preg_match('/^\d{10}$/', (string) $value)) {
+                $fail(__('app.applications.cast_crew_national_id_digits'));
+            }
+        };
+    }
+
+    private function airportPeopleIdentityNumberRule(Request $request): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($request): void {
+            if (blank($value) || ! preg_match('/^airport_people\.([^\.]+)\.identity_number$/', $attribute, $matches)) {
+                return;
+            }
+
+            $nationality = (string) data_get((array) $request->input('airport_people', []), $matches[1].'.nationality');
+
+            if ($this->castCrewNationalityIsJordanian($nationality) && ! preg_match('/^\d{10}$/', (string) $value)) {
+                $fail(__('app.applications.airport_people_national_id_digits'));
+            }
+        };
+    }
+
+    private function castCrewNationalityIsJordanian(?string $nationality): bool
+    {
+        $value = trim((string) $nationality);
+
+        return Str::lower($value) === 'jordanian'
+            || in_array($value, ['أردني', 'اردني'], true);
     }
 
     /**
@@ -1093,6 +1257,12 @@ class ApplicationController extends Controller
         $releaseMethods = ReleaseMethod::activeCodes();
         $governorateCodes = Governorate::activeCodes();
         $locationTypeCodes = FilmingLocationType::activeCodes();
+        $locationTypeApprovalDays = FilmingLocationType::query()
+            ->active()
+            ->where('approval_days', '>', 0)
+            ->pluck('approval_days', 'code')
+            ->map(fn ($days): int => (int) $days)
+            ->all();
         $specialRequirementCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT, $request, [
             'filming_locations.*.special_requirements',
         ]);
@@ -1103,26 +1273,26 @@ class ApplicationController extends Controller
         $budgetSpendingCategoryCodes = FormLookupOption::activeCodesForType(FormLookupOption::TYPE_BUDGET_SPENDING_CATEGORY);
         $equipmentCategoryCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_EQUIPMENT_CATEGORY, $request, [
             'imported_equipment.*.classification',
-            'military_border_equipment.*.classification',
         ]);
         $equipmentShippingMethodCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_EQUIPMENT_SHIPPING_METHOD, $request, [
             'imported_equipment.*.shipping_method',
         ]);
         $equipmentEntryPointCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT, $request, [
+            'imported_equipment.*.customs_center',
             'imported_equipment.*.entry_point',
-            'military_border_equipment.*.entry_point',
         ]);
         $airportCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_AIRPORT, $request, [
             'airport_filming_airport_name',
-        ]);
-        $militaryBorderLocationTypeCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_MILITARY_BORDER_LOCATION_TYPE, $request, [
-            'military_border_locations.*.location_type',
         ]);
         $requiresInternationalProject = $this->projectRequiresInternationalSection($request->all(), $entity, $user);
         $hasInternationalAccount = filter_var($request->input('international_account_exists'), FILTER_VALIDATE_BOOLEAN)
             || filled($request->input('international_account_user_id'));
         $requiresInternationalAccountPassword = $requiresInternationalProject && ! $hasInternationalAccount;
         $requiresBudgetBreakdown = ((float) $request->input('local_spend_estimate', 0)) >= 175000;
+        $requiresTravelerEquipmentAcknowledgement = $this->travelerEquipmentAcknowledgementRequired($request);
+        $travelerEquipmentAcknowledgementRules = $requiresTravelerEquipmentAcknowledgement
+            ? ['required', 'accepted']
+            : ['nullable', 'boolean'];
 
         $preparationEndDate = $request->input('schedule_phases.preparation.end_date');
 
@@ -1147,7 +1317,7 @@ class ApplicationController extends Controller
                         return;
                     }
 
-                    $minimumStartDate = strtotime((string) $preparationEndDate.' +2 days');
+                    $minimumStartDate = strtotime((string) $preparationEndDate);
                     $shootingStartDate = strtotime((string) $value);
 
                     if ($minimumStartDate === false || $shootingStartDate === false) {
@@ -1155,7 +1325,7 @@ class ApplicationController extends Controller
                     }
 
                     if ($shootingStartDate < $minimumStartDate) {
-                        $fail(__('app.applications.schedule_validation.shooting_start_after_preparation_buffer'));
+                        $fail(__('app.applications.schedule_validation.shooting_start_after_preparation'));
                     }
                 },
             ],
@@ -1181,10 +1351,6 @@ class ApplicationController extends Controller
             'contact_mobile' => ['nullable', 'string', 'max:50'],
             'contact_fax' => ['nullable', 'string', 'max:50'],
             'contact_email' => ['required', 'email', 'max:255'],
-            'liaison_name' => ['required', 'string', 'max:255'],
-            'liaison_position' => ['required', 'string', 'max:255'],
-            'liaison_email' => ['required', 'email', 'max:255'],
-            'liaison_mobile' => ['required', 'string', 'max:50'],
             'director_name' => ['required', 'string', 'max:255'],
             'director_nationality' => ['required', Rule::in(Nationality::activeCodesFor(Nationality::USAGE_DIRECTOR))],
             'director_email' => ['required', 'email', 'max:255'],
@@ -1196,7 +1362,6 @@ class ApplicationController extends Controller
             'international_producer_profile_url' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'url', 'max:500'],
             'international_producer_address' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:500'],
             'international_producer_website' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'url', 'max:500'],
-            'international_liaison_name' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:255'],
             'international_liaison_email' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'email', 'max:255'],
             'international_liaison_mobile' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:50'],
             'international_account_exists' => $requiresInternationalProject ? ['required', 'accepted'] : ['nullable', 'boolean'],
@@ -1215,7 +1380,7 @@ class ApplicationController extends Controller
             'cast_crew.*.nationality' => ['nullable', 'string', 'max:255'],
             'cast_crew.*.gender' => ['nullable', Rule::in(['male', 'female'])],
             'cast_crew.*.birth_date' => ['nullable', 'date', 'before:today'],
-            'cast_crew.*.identity_number' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.identity_number' => ['nullable', 'string', 'max:255', $this->castCrewIdentityNumberRule($request)],
             'filming_locations' => ['nullable', 'array'],
             'filming_locations.*.governorate' => ['nullable', 'string', Rule::in($governorateCodes)],
             'filming_locations.*.location_name' => ['nullable', 'string', 'max:255'],
@@ -1227,33 +1392,25 @@ class ApplicationController extends Controller
             'filming_locations.*.support_requirements' => ['nullable', 'array'],
             'filming_locations.*.support_requirements.*.authority' => ['nullable', 'string', Rule::in(['public_security', 'military'])],
             'filming_locations.*.support_requirements.*.requirement' => ['nullable', 'string', 'max:255'],
-            'filming_locations.*.support_requirements.*.date' => ['nullable', 'date'],
+            'filming_locations.*.support_requirements.*.date' => ['nullable', 'date', $this->filmingLocationSupportDateWithinRangeRule($request)],
             'filming_locations.*.support_requirements.*.time_from' => ['nullable', 'date_format:H:i'],
             'filming_locations.*.support_requirements.*.time_to' => ['nullable', 'date_format:H:i'],
-            'filming_locations.*.support_requirements.*.notes' => ['nullable', 'string', 'max:1000'],
-            'filming_locations.*.start_date' => ['nullable', 'date'],
+            'filming_locations.*.support_requirements.*.notes' => [new SupportRequirementNotesRequired(), 'nullable', 'string', 'max:1000'],
+            'filming_locations.*.start_date' => ['nullable', 'date', 'after_or_equal:today', $this->filmingLocationStartRespectsApprovalLeadTimeRule($request, 'filming_locations', $locationTypeApprovalDays)],
             'filming_locations.*.end_date' => ['nullable', 'date'],
-            'filming_locations.*.notes' => ['nullable', 'string', 'max:1000'],
             'special_location_requirements' => ['nullable', 'array', $this->lookupArrayKeysRule($specialRequirementCodes)],
             'special_location_requirements.*.locations' => ['nullable', 'array'],
             'special_location_requirements.*.locations.*' => ['nullable', 'string', 'max:255'],
             'special_location_requirements.*.notes' => ['nullable', 'string', 'max:1000'],
             'safety_guidelines_acknowledged' => ['accepted'],
             'safety_guidelines_notes' => ['nullable', 'string', 'max:3000'],
-            'equipment_flights' => ['nullable', 'array'],
-            'equipment_flights.*.flight_type' => ['nullable', 'string', 'max:100'],
-            'equipment_flights.*.flight_number' => ['nullable', 'string', 'max:100'],
-            'equipment_flights.*.flight_date' => ['nullable', 'date'],
-            'equipment_flights.*.flight_time' => ['nullable', 'date_format:H:i'],
-            'equipment_flights.*.departure_city' => ['nullable', 'string', 'max:255'],
-            'equipment_flights.*.arrival_city' => ['nullable', 'string', 'max:255'],
             'equipment_travelers' => ['nullable', 'array'],
             'equipment_travelers.*.traveler_name' => ['nullable', 'string', 'max:255'],
             'equipment_travelers.*.arrival_date' => ['nullable', 'date'],
             'equipment_travelers.*.arrival_flight_number' => ['nullable', 'string', 'max:100'],
             'equipment_travelers.*.departure_date' => ['nullable', 'date'],
             'equipment_travelers.*.departure_flight_number' => ['nullable', 'string', 'max:100'],
-            'traveler_equipment_acknowledged' => ['nullable', 'boolean'],
+            'traveler_equipment_acknowledged' => $travelerEquipmentAcknowledgementRules,
             'imported_equipment' => ['nullable', 'array'],
             'imported_equipment.*.transport_group' => ['nullable', 'string', 'max:100'],
             'imported_equipment.*.item' => ['nullable', 'string', 'max:255'],
@@ -1267,30 +1424,18 @@ class ApplicationController extends Controller
             'imported_equipment.*.shipping_method' => ['nullable', 'string', 'max:255', Rule::in($equipmentShippingMethodCodes)],
             'imported_equipment.*.origin_country' => ['nullable', 'string', 'max:255'],
             'imported_equipment.*.entry_point' => ['nullable', 'string', 'max:255', Rule::in($equipmentEntryPointCodes)],
+            'imported_equipment.*.shipping_company_name' => ['nullable', 'string', 'max:255'],
+            'imported_equipment.*.invoice_number' => ['nullable', 'string', 'max:255'],
+            'imported_equipment.*.bill_of_lading_number' => ['nullable', 'string', 'max:255'],
             'imported_equipment.*.arrival_date' => ['nullable', 'date'],
-            'military_border_locations' => ['nullable', 'array'],
-            'military_border_locations.*.governorate' => ['nullable', 'string', Rule::in($governorateCodes)],
-            'military_border_locations.*.location_name' => ['nullable', 'string', 'max:255'],
-            'military_border_locations.*.address' => ['nullable', 'string', 'max:500'],
-            'military_border_locations.*.nature' => ['nullable', 'string', 'max:255'],
-            'military_border_locations.*.location_type' => ['nullable', 'string', 'max:255', Rule::in($militaryBorderLocationTypeCodes)],
-            'military_border_locations.*.start_date' => ['nullable', 'date'],
-            'military_border_locations.*.end_date' => ['nullable', 'date'],
-            'military_border_equipment' => ['nullable', 'array'],
-            'military_border_equipment.*.location_name' => ['nullable', 'string', 'max:255'],
-            'military_border_equipment.*.equipment' => ['nullable', 'string', 'max:255'],
-            'military_border_equipment.*.security_need' => ['nullable', 'string', 'max:255'],
-            'military_border_equipment.*.notes' => ['nullable', 'string', 'max:1000'],
-            'military_border_equipment.*.item' => ['nullable', 'string', 'max:255'],
-            'military_border_equipment.*.serial_number' => ['nullable', 'string', 'max:255'],
-            'military_border_equipment.*.location_reference' => ['nullable', 'string', 'max:255'],
-            'military_border_equipment.*.quantity' => ['nullable', 'integer', 'min:0', 'max:100000'],
-            'military_border_equipment.*.unit_value' => ['nullable', 'numeric', 'min:0', 'max:999999999.99'],
-            'military_border_equipment.*.total_value' => ['nullable', 'numeric', 'min:0', 'max:999999999.99'],
-            'military_border_equipment.*.classification' => ['nullable', 'string', 'max:255', Rule::in($equipmentCategoryCodes)],
-            'military_border_equipment.*.entry_method' => ['nullable', 'string', 'max:255'],
-            'military_border_equipment.*.entry_point' => ['nullable', 'string', 'max:255', Rule::in($equipmentEntryPointCodes)],
-            'military_border_equipment_acknowledged' => ['nullable', 'boolean'],
+            'imported_equipment.*.departure_date' => ['nullable', 'date'],
+            'imported_equipment.*.customs_center' => ['nullable', 'string', 'max:255', Rule::in($equipmentEntryPointCodes)],
+            'imported_equipment.*.attachment' => ['nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png'],
+            'imported_equipment.*.attachment_path' => ['nullable', 'string', 'max:1000'],
+            'imported_equipment.*.attachment_name' => ['nullable', 'string', 'max:255'],
+            'imported_equipment.*.attachment_mime_type' => ['nullable', 'string', 'max:255'],
+            'imported_equipment.*.attachment_size' => ['nullable', 'integer', 'min:0'],
+            'imported_equipment.*.attachment_uploaded_at' => ['nullable', 'string', 'max:255'],
             'public_security_support' => ['nullable', 'array'],
             'public_security_support.*.day' => ['nullable', 'string', 'max:255'],
             'public_security_support.*.date' => ['nullable', 'date'],
@@ -1314,9 +1459,13 @@ class ApplicationController extends Controller
             'airport_filming_notes' => ['nullable', 'string', 'max:3000'],
             'airport_people' => ['nullable', 'array'],
             'airport_people.*.full_name' => ['nullable', 'string', 'max:255'],
+            'airport_people.*.first_name' => ['nullable', 'string', 'max:255'],
+            'airport_people.*.second_name' => ['nullable', 'string', 'max:255'],
+            'airport_people.*.third_name' => ['nullable', 'string', 'max:255'],
+            'airport_people.*.family_name' => ['nullable', 'string', 'max:255'],
             'airport_people.*.nationality' => ['nullable', 'string', 'max:255'],
             'airport_people.*.mother_name' => ['nullable', 'string', 'max:255'],
-            'airport_people.*.identity_number' => ['nullable', 'string', 'max:255'],
+            'airport_people.*.identity_number' => ['nullable', 'string', 'max:255', $this->airportPeopleIdentityNumberRule($request)],
             'airport_people.*.profession' => ['nullable', 'string', 'max:255'],
             'airport_people.*.address_phone' => ['nullable', 'string', 'max:500'],
             'airport_people.*.entry_reason' => ['nullable', 'string', 'max:500'],
@@ -1347,6 +1496,12 @@ class ApplicationController extends Controller
     {
         $governorateCodes = Governorate::activeCodes();
         $locationTypeCodes = FilmingLocationType::activeCodes();
+        $locationTypeApprovalDays = FilmingLocationType::query()
+            ->active()
+            ->where('approval_days', '>', 0)
+            ->pluck('approval_days', 'code')
+            ->map(fn ($days): int => (int) $days)
+            ->all();
         $specialRequirementCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT, $request, [
             'filming_locations.*.special_requirements',
         ]);
@@ -1354,23 +1509,23 @@ class ApplicationController extends Controller
             ...$specialRequirementCodes,
             ...array_map('strval', array_keys((array) $request->input('special_location_requirements', []))),
         ]));
+        $equipmentEntryPointCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT, $request, [
+            'imported_equipment.*.customs_center',
+            'imported_equipment.*.entry_point',
+        ]);
         $equipmentCategoryCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_EQUIPMENT_CATEGORY, $request, [
             'imported_equipment.*.classification',
-            'military_border_equipment.*.classification',
         ]);
         $equipmentShippingMethodCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_EQUIPMENT_SHIPPING_METHOD, $request, [
             'imported_equipment.*.shipping_method',
         ]);
-        $equipmentEntryPointCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT, $request, [
-            'imported_equipment.*.entry_point',
-            'military_border_equipment.*.entry_point',
-        ]);
         $airportCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_AIRPORT, $request, [
             'airport_filming_airport_name',
         ]);
-        $militaryBorderLocationTypeCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_MILITARY_BORDER_LOCATION_TYPE, $request, [
-            'military_border_locations.*.location_type',
-        ]);
+        $requiresTravelerEquipmentAcknowledgement = $this->travelerEquipmentAcknowledgementRequired($request);
+        $travelerEquipmentAcknowledgementRules = $requiresTravelerEquipmentAcknowledgement
+            ? ['required', 'accepted']
+            : ['nullable', 'boolean'];
 
         return $request->validate([
             'work_content_summary_synopsis' => $this->workContentSummarySynopsisRules(),
@@ -1385,7 +1540,7 @@ class ApplicationController extends Controller
             'cast_crew.*.nationality' => ['nullable', 'string', 'max:255'],
             'cast_crew.*.gender' => ['nullable', Rule::in(['male', 'female'])],
             'cast_crew.*.birth_date' => ['nullable', 'date', 'before:today'],
-            'cast_crew.*.identity_number' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.identity_number' => ['nullable', 'string', 'max:255', $this->castCrewIdentityNumberRule($request)],
             'filming_locations' => ['nullable', 'array'],
             'filming_locations.*.governorate' => ['nullable', 'string', Rule::in($governorateCodes)],
             'filming_locations.*.location_name' => ['nullable', 'string', 'max:255'],
@@ -1397,33 +1552,25 @@ class ApplicationController extends Controller
             'filming_locations.*.support_requirements' => ['nullable', 'array'],
             'filming_locations.*.support_requirements.*.authority' => ['nullable', 'string', Rule::in(['public_security', 'military'])],
             'filming_locations.*.support_requirements.*.requirement' => ['nullable', 'string', 'max:255'],
-            'filming_locations.*.support_requirements.*.date' => ['nullable', 'date'],
+            'filming_locations.*.support_requirements.*.date' => ['nullable', 'date', $this->filmingLocationSupportDateWithinRangeRule($request)],
             'filming_locations.*.support_requirements.*.time_from' => ['nullable', 'date_format:H:i'],
             'filming_locations.*.support_requirements.*.time_to' => ['nullable', 'date_format:H:i'],
-            'filming_locations.*.support_requirements.*.notes' => ['nullable', 'string', 'max:1000'],
-            'filming_locations.*.start_date' => ['nullable', 'date'],
+            'filming_locations.*.support_requirements.*.notes' => [new SupportRequirementNotesRequired(), 'nullable', 'string', 'max:1000'],
+            'filming_locations.*.start_date' => ['nullable', 'date', 'after_or_equal:today', $this->filmingLocationStartRespectsApprovalLeadTimeRule($request, 'filming_locations', $locationTypeApprovalDays)],
             'filming_locations.*.end_date' => ['nullable', 'date'],
-            'filming_locations.*.notes' => ['nullable', 'string', 'max:1000'],
             'special_location_requirements' => ['nullable', 'array', $this->lookupArrayKeysRule($specialRequirementCodes)],
             'special_location_requirements.*.locations' => ['nullable', 'array'],
             'special_location_requirements.*.locations.*' => ['nullable', 'string', 'max:255'],
             'special_location_requirements.*.notes' => ['nullable', 'string', 'max:1000'],
             'safety_guidelines_acknowledged' => ['nullable', 'boolean'],
             'safety_guidelines_notes' => ['nullable', 'string', 'max:3000'],
-            'equipment_flights' => ['nullable', 'array'],
-            'equipment_flights.*.flight_type' => ['nullable', 'string', 'max:100'],
-            'equipment_flights.*.flight_number' => ['nullable', 'string', 'max:100'],
-            'equipment_flights.*.flight_date' => ['nullable', 'date'],
-            'equipment_flights.*.flight_time' => ['nullable', 'date_format:H:i'],
-            'equipment_flights.*.departure_city' => ['nullable', 'string', 'max:255'],
-            'equipment_flights.*.arrival_city' => ['nullable', 'string', 'max:255'],
             'equipment_travelers' => ['nullable', 'array'],
             'equipment_travelers.*.traveler_name' => ['nullable', 'string', 'max:255'],
             'equipment_travelers.*.arrival_date' => ['nullable', 'date'],
             'equipment_travelers.*.arrival_flight_number' => ['nullable', 'string', 'max:100'],
             'equipment_travelers.*.departure_date' => ['nullable', 'date'],
             'equipment_travelers.*.departure_flight_number' => ['nullable', 'string', 'max:100'],
-            'traveler_equipment_acknowledged' => ['nullable', 'boolean'],
+            'traveler_equipment_acknowledged' => $travelerEquipmentAcknowledgementRules,
             'imported_equipment' => ['nullable', 'array'],
             'imported_equipment.*.transport_group' => ['nullable', 'string', 'max:100'],
             'imported_equipment.*.item' => ['nullable', 'string', 'max:255'],
@@ -1437,30 +1584,18 @@ class ApplicationController extends Controller
             'imported_equipment.*.shipping_method' => ['nullable', 'string', 'max:255', Rule::in($equipmentShippingMethodCodes)],
             'imported_equipment.*.origin_country' => ['nullable', 'string', 'max:255'],
             'imported_equipment.*.entry_point' => ['nullable', 'string', 'max:255', Rule::in($equipmentEntryPointCodes)],
+            'imported_equipment.*.shipping_company_name' => ['nullable', 'string', 'max:255'],
+            'imported_equipment.*.invoice_number' => ['nullable', 'string', 'max:255'],
+            'imported_equipment.*.bill_of_lading_number' => ['nullable', 'string', 'max:255'],
             'imported_equipment.*.arrival_date' => ['nullable', 'date'],
-            'military_border_locations' => ['nullable', 'array'],
-            'military_border_locations.*.governorate' => ['nullable', 'string', Rule::in($governorateCodes)],
-            'military_border_locations.*.location_name' => ['nullable', 'string', 'max:255'],
-            'military_border_locations.*.address' => ['nullable', 'string', 'max:500'],
-            'military_border_locations.*.nature' => ['nullable', 'string', 'max:255'],
-            'military_border_locations.*.location_type' => ['nullable', 'string', 'max:255', Rule::in($militaryBorderLocationTypeCodes)],
-            'military_border_locations.*.start_date' => ['nullable', 'date'],
-            'military_border_locations.*.end_date' => ['nullable', 'date'],
-            'military_border_equipment' => ['nullable', 'array'],
-            'military_border_equipment.*.location_name' => ['nullable', 'string', 'max:255'],
-            'military_border_equipment.*.equipment' => ['nullable', 'string', 'max:255'],
-            'military_border_equipment.*.security_need' => ['nullable', 'string', 'max:255'],
-            'military_border_equipment.*.notes' => ['nullable', 'string', 'max:1000'],
-            'military_border_equipment.*.item' => ['nullable', 'string', 'max:255'],
-            'military_border_equipment.*.serial_number' => ['nullable', 'string', 'max:255'],
-            'military_border_equipment.*.location_reference' => ['nullable', 'string', 'max:255'],
-            'military_border_equipment.*.quantity' => ['nullable', 'integer', 'min:0', 'max:100000'],
-            'military_border_equipment.*.unit_value' => ['nullable', 'numeric', 'min:0', 'max:999999999.99'],
-            'military_border_equipment.*.total_value' => ['nullable', 'numeric', 'min:0', 'max:999999999.99'],
-            'military_border_equipment.*.classification' => ['nullable', 'string', 'max:255', Rule::in($equipmentCategoryCodes)],
-            'military_border_equipment.*.entry_method' => ['nullable', 'string', 'max:255'],
-            'military_border_equipment.*.entry_point' => ['nullable', 'string', 'max:255', Rule::in($equipmentEntryPointCodes)],
-            'military_border_equipment_acknowledged' => ['nullable', 'boolean'],
+            'imported_equipment.*.departure_date' => ['nullable', 'date'],
+            'imported_equipment.*.customs_center' => ['nullable', 'string', 'max:255', Rule::in($equipmentEntryPointCodes)],
+            'imported_equipment.*.attachment' => ['nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png'],
+            'imported_equipment.*.attachment_path' => ['nullable', 'string', 'max:1000'],
+            'imported_equipment.*.attachment_name' => ['nullable', 'string', 'max:255'],
+            'imported_equipment.*.attachment_mime_type' => ['nullable', 'string', 'max:255'],
+            'imported_equipment.*.attachment_size' => ['nullable', 'integer', 'min:0'],
+            'imported_equipment.*.attachment_uploaded_at' => ['nullable', 'string', 'max:255'],
             'public_security_support' => ['nullable', 'array'],
             'public_security_support.*.day' => ['nullable', 'string', 'max:255'],
             'public_security_support.*.date' => ['nullable', 'date'],
@@ -1484,9 +1619,13 @@ class ApplicationController extends Controller
             'airport_filming_notes' => ['nullable', 'string', 'max:3000'],
             'airport_people' => ['nullable', 'array'],
             'airport_people.*.full_name' => ['nullable', 'string', 'max:255'],
+            'airport_people.*.first_name' => ['nullable', 'string', 'max:255'],
+            'airport_people.*.second_name' => ['nullable', 'string', 'max:255'],
+            'airport_people.*.third_name' => ['nullable', 'string', 'max:255'],
+            'airport_people.*.family_name' => ['nullable', 'string', 'max:255'],
             'airport_people.*.nationality' => ['nullable', 'string', 'max:255'],
             'airport_people.*.mother_name' => ['nullable', 'string', 'max:255'],
-            'airport_people.*.identity_number' => ['nullable', 'string', 'max:255'],
+            'airport_people.*.identity_number' => ['nullable', 'string', 'max:255', $this->airportPeopleIdentityNumberRule($request)],
             'airport_people.*.profession' => ['nullable', 'string', 'max:255'],
             'airport_people.*.address_phone' => ['nullable', 'string', 'max:500'],
             'airport_people.*.entry_reason' => ['nullable', 'string', 'max:500'],
@@ -1538,6 +1677,22 @@ class ApplicationController extends Controller
                     continue;
                 }
 
+                if ($attribute === 'filming_locations.*.start_date' && $rule === 'after_or_equal:today') {
+                    continue;
+                }
+
+                if ($attribute === 'filming_locations.*.start_date' && $rule instanceof \Closure) {
+                    continue;
+                }
+
+                if ($attribute === 'filming_locations.*.support_requirements.*.date' && $rule instanceof \Closure) {
+                    continue;
+                }
+
+                if ($attribute === 'filming_locations.*.support_requirements.*.notes' && $rule instanceof SupportRequirementNotesRequired) {
+                    continue;
+                }
+
                 $relaxedRules[] = $rule;
             }
 
@@ -1578,10 +1733,6 @@ class ApplicationController extends Controller
             'contact_mobile' => null,
             'contact_fax' => null,
             'contact_email' => null,
-            'liaison_name' => null,
-            'liaison_position' => null,
-            'liaison_email' => null,
-            'liaison_mobile' => null,
             'director_name' => null,
             'director_nationality' => null,
             'director_email' => null,
@@ -1593,7 +1744,6 @@ class ApplicationController extends Controller
             'international_producer_profile_url' => null,
             'international_producer_address' => null,
             'international_producer_website' => null,
-            'international_liaison_name' => null,
             'international_liaison_email' => null,
             'international_liaison_mobile' => null,
             'international_account_exists' => false,
@@ -1708,10 +1858,6 @@ class ApplicationController extends Controller
             'contact_mobile' => data_get($metadata, 'producer.contact_mobile'),
             'contact_fax' => data_get($metadata, 'producer.contact_fax'),
             'contact_email' => data_get($metadata, 'producer.contact_email'),
-            'liaison_name' => data_get($metadata, 'producer.liaison_name'),
-            'liaison_position' => data_get($metadata, 'producer.liaison_position'),
-            'liaison_email' => data_get($metadata, 'producer.liaison_email'),
-            'liaison_mobile' => data_get($metadata, 'producer.liaison_mobile'),
             'director_name' => data_get($metadata, 'director.director_name'),
             'director_nationality' => data_get($metadata, 'director.director_nationality'),
             'director_email' => data_get($metadata, 'director.director_email'),
@@ -1723,7 +1869,6 @@ class ApplicationController extends Controller
             'international_producer_profile_url' => data_get($metadata, 'international.international_producer_profile_url'),
             'international_producer_address' => data_get($metadata, 'international.international_producer_address'),
             'international_producer_website' => data_get($metadata, 'international.international_producer_website'),
-            'international_liaison_name' => data_get($metadata, 'international.international_liaison_name'),
             'international_liaison_email' => data_get($metadata, 'international.international_liaison_email'),
             'international_liaison_mobile' => data_get($metadata, 'international.international_liaison_mobile'),
             'international_account_exists' => filled(data_get($metadata, 'international.account.user_id')) || filled(data_get($metadata, 'international.account.email')),
@@ -1735,13 +1880,9 @@ class ApplicationController extends Controller
             'special_location_requirements' => (array) data_get($annex, 'special_location_requirements', []),
             'safety_guidelines_acknowledged' => data_get($annex, 'safety_guidelines.acknowledged') ? '1' : '0',
             'safety_guidelines_notes' => data_get($annex, 'safety_guidelines.notes'),
-            'equipment_flights' => (array) data_get($annex, 'equipment_flights', []),
             'equipment_travelers' => (array) data_get($annex, 'equipment_travelers', []),
             'traveler_equipment_acknowledged' => data_get($annex, 'traveler_equipment_acknowledged') ? '1' : '0',
             'imported_equipment' => (array) data_get($annex, 'imported_equipment', []),
-            'military_border_locations' => (array) data_get($annex, 'military_border_locations', []),
-            'military_border_equipment' => (array) data_get($annex, 'military_border_equipment', []),
-            'military_border_equipment_acknowledged' => data_get($annex, 'military_border_equipment_acknowledged') ? '1' : '0',
             'public_security_support' => (array) data_get($annex, 'public_security_support', []),
             'military_support' => (array) data_get($annex, 'military_support', []),
             'airport_filming_airport_name' => data_get($annex, 'airport_filming.airport_name'),
@@ -1760,7 +1901,7 @@ class ApplicationController extends Controller
      * @param  array<string, mixed>  $validated
      * @return array<string, mixed>
      */
-    private function applicationAttributes(array $validated, ?Entity $entity = null, ?User $user = null): array
+    private function applicationAttributes(array $validated, ?Entity $entity = null, ?User $user = null, array $existingAnnex = []): array
     {
         $workCategory = $this->normalizedSingleWorkCategory($validated);
         $workCategories = $workCategory ? [$workCategory] : [];
@@ -1777,7 +1918,6 @@ class ApplicationController extends Controller
             'international_producer_profile_url' => ($validated['international_producer_profile_url'] ?? null) ?: null,
             'international_producer_address' => ($validated['international_producer_address'] ?? null) ?: null,
             'international_producer_website' => ($validated['international_producer_website'] ?? null) ?: null,
-            'international_liaison_name' => ($validated['international_liaison_name'] ?? null) ?: null,
             'international_liaison_email' => ($validated['international_liaison_email'] ?? null) ?: null,
             'international_liaison_mobile' => ($validated['international_liaison_mobile'] ?? null) ?: null,
             'account_email' => (($validated['international_liaison_email'] ?? null) ?: ($validated['international_producer_email'] ?? null)) ?: null,
@@ -1815,10 +1955,6 @@ class ApplicationController extends Controller
                     'contact_mobile' => $validated['contact_mobile'] ?: null,
                     'contact_fax' => $validated['contact_fax'] ?: null,
                     'contact_email' => $validated['contact_email'] ?? null,
-                    'liaison_name' => $validated['liaison_name'] ?? null,
-                    'liaison_position' => $validated['liaison_position'] ?? null,
-                    'liaison_email' => $validated['liaison_email'] ?? null,
-                    'liaison_mobile' => $validated['liaison_mobile'] ?? null,
                 ],
                 'director' => [
                     'director_name' => $validated['director_name'] ?? null,
@@ -1838,7 +1974,7 @@ class ApplicationController extends Controller
                     'required_approvals' => [],
                     'supporting_notes' => ($validated['supporting_notes'] ?? null) ?: null,
                 ],
-                'annex' => $this->annexMetadata($validated),
+                'annex' => $this->annexMetadata($validated, $existingAnnex),
             ],
         ];
     }
@@ -1847,7 +1983,7 @@ class ApplicationController extends Controller
      * @param  array<string, mixed>  $validated
      * @return array<string, mixed>
      */
-    private function annexMetadata(array $validated): array
+    private function annexMetadata(array $validated, array $existingAnnex = []): array
     {
         $filmingLocations = $this->filmingLocationRows((array) ($validated['filming_locations'] ?? []));
         $specialLocationRequirements = $this->specialLocationRequirementRows(
@@ -1872,13 +2008,12 @@ class ApplicationController extends Controller
                 'acknowledged' => (bool) ($validated['safety_guidelines_acknowledged'] ?? false),
                 'notes' => ($validated['safety_guidelines_notes'] ?? null) ?: null,
             ],
-            'equipment_flights' => $this->filledRows((array) ($validated['equipment_flights'] ?? []), ['flight_type', 'flight_number', 'flight_date', 'flight_time', 'departure_city', 'arrival_city']),
             'equipment_travelers' => $this->filledRows((array) ($validated['equipment_travelers'] ?? []), ['traveler_name', 'arrival_date', 'arrival_flight_number', 'departure_date', 'departure_flight_number']),
             'traveler_equipment_acknowledged' => (bool) ($validated['traveler_equipment_acknowledged'] ?? false),
-            'imported_equipment' => $this->filledRows((array) ($validated['imported_equipment'] ?? []), ['transport_group', 'item', 'serial_number', 'flight_reference', 'traveler_name', 'quantity', 'unit_value', 'total_value', 'classification', 'shipping_method', 'origin_country', 'entry_point', 'arrival_date']),
-            'military_border_locations' => $this->filledRows((array) ($validated['military_border_locations'] ?? []), ['governorate', 'location_name', 'address', 'nature', 'location_type', 'start_date', 'end_date']),
-            'military_border_equipment' => $this->filledRows((array) ($validated['military_border_equipment'] ?? []), ['location_name', 'equipment', 'security_need', 'notes', 'item', 'serial_number', 'location_reference', 'quantity', 'unit_value', 'total_value', 'classification', 'entry_method', 'entry_point']),
-            'military_border_equipment_acknowledged' => (bool) ($validated['military_border_equipment_acknowledged'] ?? false),
+            'imported_equipment' => $this->importedEquipmentRows(
+                (array) ($validated['imported_equipment'] ?? []),
+                (array) data_get($existingAnnex, 'imported_equipment', []),
+            ),
             'public_security_support' => $locationSupportRows['public_security_support'],
             'military_support' => $locationSupportRows['military_support'],
             'airport_filming' => [
@@ -1888,7 +2023,7 @@ class ApplicationController extends Controller
                 'crew_count' => ($validated['airport_filming_crew_count'] ?? null) ?: null,
                 'notes' => ($validated['airport_filming_notes'] ?? null) ?: null,
             ],
-            'airport_people' => $this->filledRows((array) ($validated['airport_people'] ?? []), ['full_name', 'nationality', 'mother_name', 'identity_number', 'profession', 'address_phone', 'entry_reason', 'target_area']),
+            'airport_people' => $this->airportPeopleRows((array) ($validated['airport_people'] ?? [])),
             'governmental_scenes' => $this->filledRows((array) ($validated['governmental_scenes'] ?? []), ['site_name', 'authority', 'scene_description', 'filming_date']),
             'governmental_scenes_confirmed' => (bool) ($validated['governmental_scenes_confirmed'] ?? false),
         ];
@@ -1919,13 +2054,137 @@ class ApplicationController extends Controller
             ->all();
     }
 
+    private function travelerEquipmentAcknowledgementRequired(Request $request): bool
+    {
+        $travelerRowsHaveData = collect((array) $request->input('equipment_travelers', []))
+            ->contains(fn ($row): bool => is_array($row) && collect($row)
+                ->filter(fn ($value): bool => filled($value))
+                ->isNotEmpty());
+
+        $travelerEquipmentRowsHaveData = collect((array) $request->input('imported_equipment', []))
+            ->contains(function ($row): bool {
+                if (! is_array($row) || ($row['transport_group'] ?? null) !== 'traveler') {
+                    return false;
+                }
+
+                return collect(Arr::except($row, ['transport_group']))
+                    ->filter(fn ($value): bool => filled($value))
+                    ->isNotEmpty();
+            });
+
+        return $travelerRowsHaveData || $travelerEquipmentRowsHaveData;
+    }
+
+    /**
+     * @param  array<int|string, array<string, mixed>>  $rows
+     * @param  array<int|string, array<string, mixed>>  $existingRows
+     * @return array<int, array<string, mixed>>
+     */
+    private function importedEquipmentRows(array $rows, array $existingRows = []): array
+    {
+        $existingValues = array_values($existingRows);
+        $normalizedRows = [];
+        $position = 0;
+
+        foreach ($rows as $key => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $existingRow = (array) ($existingRows[$key] ?? $existingValues[$position] ?? []);
+            $transportGroup = $this->nullableTrimmedString($row['transport_group'] ?? data_get($existingRow, 'transport_group')) ?: 'shipping';
+            $hasNewShipmentFields = collect(['shipping_company_name', 'invoice_number', 'bill_of_lading_number', 'arrival_date', 'departure_date', 'customs_center', 'attachment'])
+                ->contains(fn (string $field): bool => filled($row[$field] ?? null));
+            $hasLegacyEquipmentFields = collect(['item', 'serial_number', 'flight_reference', 'traveler_name', 'quantity', 'unit_value', 'total_value', 'classification', 'shipping_method', 'origin_country', 'entry_point'])
+                ->contains(fn (string $field): bool => filled($row[$field] ?? null));
+
+            if ($transportGroup === 'traveler' || ($hasLegacyEquipmentFields && ! $hasNewShipmentFields)) {
+                $normalized = [
+                    'transport_group' => $transportGroup === 'traveler' ? 'traveler' : 'shipping',
+                    'item' => $this->nullableTrimmedString($row['item'] ?? null),
+                    'serial_number' => $this->nullableTrimmedString($row['serial_number'] ?? null),
+                    'flight_reference' => $this->nullableTrimmedString($row['flight_reference'] ?? null),
+                    'traveler_name' => $this->nullableTrimmedString($row['traveler_name'] ?? null),
+                    'quantity' => $row['quantity'] ?? null,
+                    'unit_value' => $row['unit_value'] ?? null,
+                    'total_value' => $row['total_value'] ?? null,
+                    'classification' => $this->nullableTrimmedString($row['classification'] ?? null),
+                    'shipping_method' => $this->nullableTrimmedString($row['shipping_method'] ?? null),
+                    'origin_country' => $this->nullableTrimmedString($row['origin_country'] ?? null),
+                    'entry_point' => $this->nullableTrimmedString($row['entry_point'] ?? null),
+                ];
+            } else {
+                $attachment = $this->importedEquipmentAttachmentMetadata($row, $existingRow);
+                $normalized = [
+                    'transport_group' => 'shipping',
+                    'shipping_company_name' => $this->nullableTrimmedString($row['shipping_company_name'] ?? null),
+                    'invoice_number' => $this->nullableTrimmedString($row['invoice_number'] ?? null),
+                    'bill_of_lading_number' => $this->nullableTrimmedString($row['bill_of_lading_number'] ?? null),
+                    'arrival_date' => $row['arrival_date'] ?? null,
+                    'departure_date' => $row['departure_date'] ?? null,
+                    'customs_center' => $this->nullableTrimmedString($row['customs_center'] ?? ($row['entry_point'] ?? null)),
+                    ...$attachment,
+                ];
+            }
+
+            if (collect(Arr::except($normalized, ['transport_group']))->contains(fn ($value): bool => filled($value))) {
+                $normalizedRows[] = $normalized;
+            }
+
+            $position++;
+        }
+
+        return $normalizedRows;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $existingRow
+     * @return array<string, mixed>
+     */
+    private function importedEquipmentAttachmentMetadata(array $row, array $existingRow = []): array
+    {
+        $file = $row['attachment'] ?? null;
+
+        if ($file instanceof UploadedFile) {
+            $path = $file->store('application-annex/imported-equipment', 'local');
+
+            return [
+                'attachment_path' => $path,
+                'attachment_name' => $file->getClientOriginalName(),
+                'attachment_mime_type' => $file->getClientMimeType(),
+                'attachment_size' => $file->getSize(),
+                'attachment_uploaded_at' => now()->toDateTimeString(),
+            ];
+        }
+
+        return [
+            'attachment_path' => $this->nullableTrimmedString($row['attachment_path'] ?? data_get($existingRow, 'attachment_path')),
+            'attachment_name' => $this->nullableTrimmedString($row['attachment_name'] ?? data_get($existingRow, 'attachment_name')),
+            'attachment_mime_type' => $this->nullableTrimmedString($row['attachment_mime_type'] ?? data_get($existingRow, 'attachment_mime_type')),
+            'attachment_size' => $row['attachment_size'] ?? data_get($existingRow, 'attachment_size'),
+            'attachment_uploaded_at' => $this->nullableTrimmedString($row['attachment_uploaded_at'] ?? data_get($existingRow, 'attachment_uploaded_at')),
+        ];
+    }
+
+    private function nullableTrimmedString(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $trimmed = trim((string) $value);
+
+        return filled($trimmed) ? $trimmed : null;
+    }
+
     /**
      * @param  array<int, array<string, mixed>>  $rows
      * @return array<int, array<string, mixed>>
      */
     private function filmingLocationRows(array $rows): array
     {
-        return collect($this->filledRows($rows, ['governorate', 'location_name', 'address', 'nature', 'location_type', 'special_requirements', 'support_requirements', 'start_date', 'end_date', 'notes']))
+        return collect($this->filledRows($rows, ['governorate', 'location_name', 'address', 'nature', 'location_type', 'special_requirements', 'support_requirements', 'start_date', 'end_date']))
             ->map(function (array $row): array {
                 $row['special_requirements'] = collect((array) ($row['special_requirements'] ?? []))
                     ->map(fn ($value): string => trim((string) $value))
@@ -2053,6 +2312,31 @@ class ApplicationController extends Controller
     }
 
     /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function airportPeopleRows(array $rows): array
+    {
+        $rows = collect($rows)
+            ->map(function (array $row): array {
+                $nameParts = collect(['first_name', 'second_name', 'third_name', 'family_name'])
+                    ->map(fn (string $key): string => trim((string) ($row[$key] ?? '')))
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                if (blank($row['full_name'] ?? null) && $nameParts !== []) {
+                    $row['full_name'] = implode(' ', $nameParts);
+                }
+
+                return $row;
+            })
+            ->all();
+
+        return $this->filledRows($rows, ['full_name', 'first_name', 'second_name', 'third_name', 'family_name', 'nationality', 'mother_name', 'identity_number', 'profession', 'address_phone', 'entry_reason', 'target_area']);
+    }
+
+    /**
      * @param  array<string, array<string, mixed>>  $rows
      * @param  array<int, string>  $keys
      * @return array<string, array<string, mixed>>
@@ -2127,8 +2411,8 @@ class ApplicationController extends Controller
 
         $phone = ($validated['international_liaison_mobile'] ?? null) ?: null;
         $attributes = [
-            'name' => ($validated['international_liaison_name'] ?? null)
-                ?: ($validated['international_producer_name'] ?? null)
+            'name' => ($validated['international_producer_name'] ?? null)
+                ?: ($validated['international_producer_company'] ?? null)
                 ?: $email,
             'email' => $email,
             'status' => 'active',

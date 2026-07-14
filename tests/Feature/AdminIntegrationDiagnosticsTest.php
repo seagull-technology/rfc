@@ -104,21 +104,22 @@ class AdminIntegrationDiagnosticsTest extends TestCase
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
 
-        Cache::forget('gsb:mohe_sanad:current:9876543210');
+        Cache::forget('gsb:mohe_sanad:current:9876543210:2001-01-02');
 
         config()->set('services.gsb.enabled', true);
         config()->set('services.gsb.client_id', 'client-id');
         config()->set('services.gsb.client_secret', 'client-secret');
         config()->set('services.gsb.services.mohe_sanad.enabled', true);
-        config()->set('services.gsb.services.mohe_sanad.base_url', 'https://api-gateway.g2b.gsb.gov.jo:9443');
-        config()->set('services.gsb.services.mohe_sanad.path', '/porg-gsb/g2b-catalog/api/mohe-sanad');
+        config()->set('services.gsb.services.mohe_sanad.base_url', 'https://api-gateway.stg.gsb.gov.jo:9443');
+        config()->set('services.gsb.services.mohe_sanad.path', '/porg-g2g/g2g/newstandard/api/MoheStandard');
 
         Http::fake([
-            'https://api-gateway.g2b.gsb.gov.jo:9443/porg-gsb/g2b-catalog/api/mohe-sanad' => Http::response([
-                'code' => null,
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/newstandard/api/MoheStandard' => Http::response([
+                'code' => 200,
+                'message' => 'Success',
                 'data' => [[
                     'STUDENT_NAME' => 'RFC Student',
-                    'BIRTH_DATE' => '2001-04-05',
+                    'BIRTH_DATE' => '2001-01-02',
                     'gender_desc' => 'Male',
                     'NATIONALITY' => 'Jordanian',
                     'INSTITUTE_NAME' => 'University of Jordan',
@@ -133,6 +134,7 @@ class AdminIntegrationDiagnosticsTest extends TestCase
 
         $response = $this->actingAs($admin)->post(route('admin.integrations.mohe-student-test'), [
             'national_id' => '9876543210',
+            'birth_date' => '2001-01-02',
         ]);
 
         $response
@@ -142,7 +144,7 @@ class AdminIntegrationDiagnosticsTest extends TestCase
 
         Http::assertSent(fn ($request): bool => $request->hasHeader('X-MODEE-Client-Id', 'client-id')
             && $request->hasHeader('X-MODEE-Client-Secret', 'client-secret')
-            && $request['NationalNo'] === '9876543210'
-            && $request['Check'] === 1);
+            && $request['nationalNo'] === '9876543210'
+            && $request['birthDate'] === '2001-01-02');
     }
 }

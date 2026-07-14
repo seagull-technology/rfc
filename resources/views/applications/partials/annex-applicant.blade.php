@@ -10,20 +10,13 @@
     $locationTypeLabels = (array) data_get($locationLookupOptions ?? [], 'location_type_labels', []);
     $formLookupOptions = $formLookupOptions ?? [];
     $specialLocationRequirementOptions = collect(data_get($formLookupOptions, 'special_location_requirements', []));
-    $militaryBorderLocationTypeOptions = collect(data_get($formLookupOptions, 'military_border_location_types', []));
-    $militaryLocationTypeOptions = $militaryBorderLocationTypeOptions->pluck('code')->all() ?: ['military_area', 'border_area'];
-    $militaryLocationTypeLabels = $militaryBorderLocationTypeOptions->mapWithKeys(fn ($option) => [$option->code => $option->displayName()])->all();
     $flightTypeOptions = ['arrival', 'departure'];
     $locationRequirementOptions = $specialLocationRequirementOptions->pluck('code')->all() ?: ['road_closures', 'police_presence', 'armed_forces', 'regular_aerial_filming', 'drone_filming', 'special_effects', 'construction_work', 'animals', 'weapons', 'other'];
     $locationRequirementLabels = $specialLocationRequirementOptions->mapWithKeys(fn ($option) => [$option->code => $option->displayName()])->all();
     $castCrewRows = old('cast_crew', data_get($annex, 'cast_crew', [['name' => '', 'role' => '', 'nationality' => '', 'gender' => '', 'birth_date' => '', 'identity_number' => '']]));
     $filmingLocationRows = old('filming_locations', data_get($annex, 'filming_locations', [['governorate' => '', 'location_name' => '', 'address' => '', 'nature' => '', 'location_type' => '', 'start_date' => '', 'end_date' => '']]));
     $specialLocationRequirementRows = old('special_location_requirements', data_get($annex, 'special_location_requirements', collect($locationRequirementOptions)->mapWithKeys(fn ($option) => [$option => ['locations' => [], 'notes' => '']])->all()));
-    $equipmentFlightRows = old('equipment_flights', data_get($annex, 'equipment_flights', [['flight_type' => '', 'flight_number' => '', 'flight_date' => '', 'flight_time' => '', 'departure_city' => '', 'arrival_city' => '']]));
-    $equipmentTravelerRows = old('equipment_travelers', data_get($annex, 'equipment_travelers', [['traveler_name' => '', 'arrival_date' => '', 'arrival_flight_number' => '', 'departure_date' => '', 'departure_flight_number' => '']]));
-    $importedEquipmentRows = old('imported_equipment', data_get($annex, 'imported_equipment', [['transport_group' => 'shipping', 'item' => '', 'serial_number' => '', 'flight_reference' => '', 'traveler_name' => '', 'quantity' => '', 'unit_value' => '', 'total_value' => '', 'classification' => '', 'shipping_method' => '', 'entry_point' => '', 'arrival_date' => '', 'origin_country' => '']]));
-    $militaryBorderLocationRows = old('military_border_locations', data_get($annex, 'military_border_locations', [['governorate' => '', 'location_name' => '', 'address' => '', 'nature' => '', 'location_type' => '', 'start_date' => '', 'end_date' => '']]));
-    $militaryBorderEquipmentRows = old('military_border_equipment', data_get($annex, 'military_border_equipment', [['item' => '', 'serial_number' => '', 'location_reference' => '', 'quantity' => '', 'unit_value' => '', 'total_value' => '', 'classification' => '', 'entry_method' => '', 'entry_point' => '', 'location_name' => '', 'equipment' => '', 'security_need' => '', 'notes' => '']]));
+    $importedEquipmentRows = old('imported_equipment', data_get($annex, 'imported_equipment', [['shipping_company_name' => '', 'invoice_number' => '', 'bill_of_lading_number' => '', 'arrival_date' => '', 'departure_date' => '', 'customs_center' => '', 'attachment_path' => '', 'attachment_name' => '']]));
     $publicSecuritySupportRows = old('public_security_support', data_get($annex, 'public_security_support', [['day' => '', 'date' => '', 'time_from' => '', 'time_to' => '', 'location' => '', 'requirement' => '', 'notes' => '']]));
     $militarySupportRows = old('military_support', data_get($annex, 'military_support', [['day' => '', 'date' => '', 'time_from' => '', 'time_to' => '', 'location' => '', 'requirement' => '', 'notes' => '']]));
     $airportPeopleRows = old('airport_people', data_get($annex, 'airport_people', [['full_name' => '', 'nationality' => '', 'mother_name' => '', 'identity_number' => '', 'profession' => '', 'address_phone' => '', 'entry_reason' => '', 'target_area' => '']]));
@@ -66,12 +59,7 @@
         [
             'label' => __('app.applications.annex_sections.imported_equipment'),
             'target' => 'EquipmentList',
-            'filled' => $rowsHaveData(data_get($annex, 'equipment_flights', [])) || $rowsHaveData(data_get($annex, 'equipment_travelers', [])) || $rowsHaveData(data_get($annex, 'imported_equipment', [])),
-        ],
-        [
-            'label' => __('app.applications.annex_sections.military_border_equipment'),
-            'target' => 'EquipmentMilitaryBorder',
-            'filled' => $rowsHaveData(data_get($annex, 'military_border_locations', [])) || $rowsHaveData(data_get($annex, 'military_border_equipment', [])),
+            'filled' => $rowsHaveData(data_get($annex, 'imported_equipment', [])) || $rowsHaveData(data_get($annex, 'equipment_travelers', [])),
         ],
         [
             'label' => __('app.applications.annex_sections.airport_filming'),
@@ -120,7 +108,7 @@
     @endpush
 @endonce
 
-<form id="applicant-annex-form" method="POST" action="{{ route('applications.annex.update', $application) }}">
+<form id="applicant-annex-form" method="POST" action="{{ route('applications.annex.update', $application) }}" enctype="multipart/form-data">
     @csrf
     <div class="card">
         <div class="card-body">

@@ -5,7 +5,8 @@
     $currentPortalUserRegistrationType = $currentPortalUser?->registration_type;
     $currentPortalRegistrationType = $currentPortalEntity?->registration_type ?? $currentPortalUserRegistrationType;
     $portalAvailableEntities = $currentPortalUser?->availableEntities() ?? collect();
-    $portalAvatar = asset('images/OIP.jpeg');
+    $portalAvatar = \App\Support\EntityLogo::url($currentPortalEntity, 'images/OIP.jpeg');
+    $currentPortalCanViewCompanyUsers = $currentPortalUser?->canViewCompanyEmployees($currentPortalEntity) ?? false;
     $portalUnreadNotifications = $currentPortalUser?->unreadNotifications ?? collect();
     $portalInboxNotificationCount = $portalUnreadNotifications
         ->filter(fn ($notification) => \App\Support\NotificationPresenter::isInbox($notification))
@@ -42,6 +43,13 @@
                 : __('app.portal.profile_links.organization'),
             'url' => $currentPortalProfileUrl,
         ]);
+
+        if ($currentPortalRegistrationType === 'company' && $currentPortalCanViewCompanyUsers) {
+            $portalProfileLinks->push([
+                'label' => __('app.portal.profile_links.company_employees'),
+                'url' => route('company.employees.index'),
+            ]);
+        }
     } else {
         $currentPortalProfileUrl = route('profile.show');
         $portalProfileLinks->push([

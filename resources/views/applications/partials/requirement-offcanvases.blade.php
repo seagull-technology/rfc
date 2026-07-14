@@ -13,8 +13,6 @@
     $specialLocationRequirementOptions = $specialLocationRequirementOptions ?? collect(data_get($formLookupOptions, 'special_location_requirements', []));
     $locationRequirementOptions = $locationRequirementOptions ?? ($specialLocationRequirementOptions->pluck('code')->all() ?: ['road_closures', 'police_presence', 'armed_forces', 'regular_aerial_filming', 'drone_filming', 'special_effects', 'construction_work', 'animals', 'weapons', 'other']);
     $locationRequirementLabels = $locationRequirementLabels ?? $specialLocationRequirementOptions->mapWithKeys(fn ($option) => [$option->code => $option->displayName()])->all();
-    $militaryBorderLocationTypeOptions = $militaryBorderLocationTypeOptions ?? collect(data_get($formLookupOptions, 'military_border_location_types', []));
-    $militaryLocationTypeLabels = $militaryLocationTypeLabels ?? $militaryBorderLocationTypeOptions->mapWithKeys(fn ($option) => [$option->code => $option->displayName()])->all();
     $maxCrewBirthDate = $maxCrewBirthDate ?? now()->subDay()->toDateString();
     $specialLocationRequirementRows = $specialLocationRequirementRows ?? old('special_location_requirements', data_get($annex ?? [], 'special_location_requirements', collect($locationRequirementOptions)->mapWithKeys(fn ($option) => [$option => ['locations' => [], 'notes' => '']])->all()));
     $locationRequirementSelectionForRow = $locationRequirementSelectionForRow ?? static function (array $row) use ($specialLocationRequirementRows): array {
@@ -91,16 +89,26 @@
         return $legacyRows->isNotEmpty() ? $legacyRows->values()->all() : [$emptyLocationSupportRequirement];
     };
     $locationSupportRequirementForRow = $locationSupportRequirementForRow ?? static fn (array $row, int $index = 0): array => $locationSupportRequirementsForRow($row, $index)[0] ?? $emptyLocationSupportRequirement;
+    $equipmentFlightRows = collect($equipmentFlightRows ?? old('equipment_flights', data_get($annex ?? [], 'equipment_flights', [['flight_type' => '', 'flight_number' => '', 'flight_date' => '', 'flight_time' => '', 'departure_city' => '', 'arrival_city' => '']])))
+        ->values()
+        ->whenEmpty(fn ($rows) => $rows->push(['flight_type' => '', 'flight_number' => '', 'flight_date' => '', 'flight_time' => '', 'departure_city' => '', 'arrival_city' => '']));
+    $equipmentTravelerRows = collect($equipmentTravelerRows ?? old('equipment_travelers', data_get($annex ?? [], 'equipment_travelers', [['traveler_name' => '', 'arrival_date' => '', 'arrival_flight_number' => '', 'departure_date' => '', 'departure_flight_number' => '']])))
+        ->values()
+        ->whenEmpty(fn ($rows) => $rows->push(['traveler_name' => '', 'arrival_date' => '', 'arrival_flight_number' => '', 'departure_date' => '', 'departure_flight_number' => '']));
+    $importedEquipmentRows = collect($importedEquipmentRows)
+        ->values()
+        ->whenEmpty(fn ($rows) => $rows->push(['transport_group' => 'shipping', 'shipping_company_name' => '', 'invoice_number' => '', 'bill_of_lading_number' => '', 'arrival_date' => '', 'departure_date' => '', 'customs_center' => '', 'attachment_path' => '', 'attachment_name' => '']));
     $shippingEquipmentRows = collect($importedEquipmentRows)
         ->filter(fn ($row) => data_get($row, 'transport_group', 'shipping') !== 'traveler')
         ->values()
-        ->whenEmpty(fn ($rows) => $rows->push(['transport_group' => 'shipping', 'item' => '', 'serial_number' => '', 'flight_reference' => '', 'quantity' => '', 'unit_value' => '', 'total_value' => '', 'classification' => '', 'shipping_method' => '', 'entry_point' => '']));
+        ->whenEmpty(fn ($rows) => $rows->push(['transport_group' => 'shipping', 'shipping_company_name' => '', 'invoice_number' => '', 'bill_of_lading_number' => '', 'arrival_date' => '', 'departure_date' => '', 'customs_center' => '', 'attachment_path' => '', 'attachment_name' => '']));
     $travelerEquipmentRows = collect($importedEquipmentRows)
         ->filter(fn ($row) => data_get($row, 'transport_group') === 'traveler')
         ->values()
         ->whenEmpty(fn ($rows) => $rows->push(['transport_group' => 'traveler', 'item' => '', 'serial_number' => '', 'traveler_name' => '', 'quantity' => '', 'unit_value' => '', 'total_value' => '', 'classification' => '', 'shipping_method' => '', 'entry_point' => '']));
     $castCrewNationalityOptions = collect($directorNationalityOptions ?? data_get($nationalityOptions ?? [], 'director', []));
     $airportPeopleNationalityOptions = $castCrewNationalityOptions;
+    $travelerCustomsProjectName = old('project_name', data_get($application ?? null, 'project_name', ''));
 @endphp
 
 @once
@@ -236,6 +244,14 @@
         .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(8) {
             min-width: 7rem;
             width: 7rem;
+        }
+
+        .offcanvas.application-annex-offcanvas #airportPeopleTable {
+            min-width: 1680px;
+        }
+
+        .offcanvas.application-annex-offcanvas .airport-person-name-cell {
+            min-width: 34rem;
         }
 
         .offcanvas.application-annex-offcanvas #filmingLocationsRequestTable {
@@ -504,141 +520,83 @@
         </ul>
         <div class="tab-content">
             <div class="tab-pane fade show active border px-4 py-3" id="equipment-shipping-pane" role="tabpanel">
-                <h2 class="episode-playlist-title wp-heading-inline py-4 fontSize20"><span class="position-relative">{{ __('app.applications.flight_details_title') }}</span></h2>
-                <div class="d-flex justify-content-end mb-2">
-                    <button type="button" class="btn btn-success" onclick="addApplicationAnnexRow('equipmentFlightsTable', 'equipment_flights')"><i class="fa fa-plus me-2"></i>{{ __('app.add') }}</button>
-                </div>
-                <div class="table-responsive">
-                    <table class="table align-middle" id="equipmentFlightsTable">
-                        <thead class="table-light">
-                            <tr>
-                                <th>#</th>
-                                <th>{{ __('app.applications.annex_fields.flight_type') }}</th>
-                                <th>{{ __('app.applications.annex_fields.flight_number') }}</th>
-                                <th>{{ __('app.applications.annex_fields.date') }}</th>
-                                <th>{{ __('app.applications.annex_fields.time') }}</th>
-                                <th>{{ __('app.applications.annex_fields.departure_city') }}</th>
-                                <th>{{ __('app.applications.annex_fields.arrival_city') }}</th>
-                                <th>{{ __('app.applications.actions') }}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($equipmentFlightRows as $index => $row)
+                <div class="section-form">
+                    <div class="d-flex justify-content-end mb-3">
+                        <button type="button" class="btn btn-success" onclick="addApplicationAnnexRow('importedEquipmentShipmentTable', 'imported_equipment')">
+                            <i class="fa fa-plus me-2"></i>{{ __('app.add') }}
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table align-middle" id="importedEquipmentShipmentTable">
+                            <thead class="table-light">
                                 <tr>
-                                    <td class="row-number">{{ $loop->iteration }}</td>
-                                    <td>
-                                        <select class="form-select" name="equipment_flights[{{ $index }}][flight_type]">
-                                            <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                            @foreach ($flightTypeOptions as $option)
-                                                <option value="{{ $option }}" @selected(($row['flight_type'] ?? '') === $option)>{{ __('app.applications.flight_types.'.$option) }}</option>
-                                            @endforeach
-                                        </select>
-                                    </td>
-                                    <td><input type="text" class="form-control" name="equipment_flights[{{ $index }}][flight_number]" value="{{ $row['flight_number'] ?? '' }}"></td>
-                                    <td><input type="date" class="form-control" name="equipment_flights[{{ $index }}][flight_date]" value="{{ $row['flight_date'] ?? '' }}"></td>
-                                    <td><input type="time" class="form-control" name="equipment_flights[{{ $index }}][flight_time]" value="{{ $row['flight_time'] ?? '' }}"></td>
-                                    <td><input type="text" class="form-control" name="equipment_flights[{{ $index }}][departure_city]" value="{{ $row['departure_city'] ?? '' }}"></td>
-                                    <td><input type="text" class="form-control" name="equipment_flights[{{ $index }}][arrival_city]" value="{{ $row['arrival_city'] ?? '' }}"></td>
-                                    <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeApplicationAnnexRow(this, '#equipmentFlightsTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
+                                    <th>#</th>
+                                    <th>{{ __('app.applications.annex_fields.shipping_company_name') }}</th>
+                                    <th>{{ __('app.applications.annex_fields.invoice_number') }}</th>
+                                    <th>{{ __('app.applications.annex_fields.bill_of_lading_number') }}</th>
+                                    <th>{{ __('app.applications.annex_fields.arrival_date') }}</th>
+                                    <th>{{ __('app.applications.annex_fields.departure_date') }}</th>
+                                    <th>{{ __('app.applications.annex_fields.customs_center') }}</th>
+                                    <th>{{ __('app.applications.annex_fields.attachment') }}</th>
+                                    <th>{{ __('app.applications.actions') }}</th>
                                 </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                @foreach ($shippingEquipmentRows as $index => $row)
+                                    @php
+                                        $rowKey = is_string($index) ? $index : 'shipping_'.$index;
+                                    @endphp
+                                    <tr>
+                                        <td class="row-number">{{ $loop->iteration }}</td>
+                                        <td><input type="hidden" name="imported_equipment[{{ $rowKey }}][transport_group]" value="shipping"><input type="text" class="form-control" name="imported_equipment[{{ $rowKey }}][shipping_company_name]" value="{{ $row['shipping_company_name'] ?? '' }}"></td>
+                                        <td><input type="text" class="form-control" name="imported_equipment[{{ $rowKey }}][invoice_number]" value="{{ $row['invoice_number'] ?? '' }}"></td>
+                                        <td><input type="text" class="form-control" name="imported_equipment[{{ $rowKey }}][bill_of_lading_number]" value="{{ $row['bill_of_lading_number'] ?? '' }}"></td>
+                                        <td><input type="date" class="form-control" name="imported_equipment[{{ $rowKey }}][arrival_date]" value="{{ $row['arrival_date'] ?? '' }}"></td>
+                                        <td><input type="date" class="form-control" name="imported_equipment[{{ $rowKey }}][departure_date]" value="{{ $row['departure_date'] ?? '' }}"></td>
+                                        <td>
+                                            @php
+                                                $selectedCustomsCenter = (string) ($row['customs_center'] ?? ($row['entry_point'] ?? ''));
+                                            @endphp
+                                            <select class="form-select" name="imported_equipment[{{ $rowKey }}][customs_center]">
+                                                <option value="">{{ __('app.admin.select_placeholder') }}</option>
+                                                @if (filled($selectedCustomsCenter) && ! $equipmentEntryPointOptions->contains('code', $selectedCustomsCenter))
+                                                    <option value="{{ $selectedCustomsCenter }}" selected>{{ $selectedCustomsCenter }}</option>
+                                                @endif
+                                                @foreach ($equipmentEntryPointOptions as $option)
+                                                    <option value="{{ $option->code }}" @selected($selectedCustomsCenter === $option->code)>{{ $option->displayName() }}</option>
+                                                @endforeach
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <input type="file" class="form-control" name="imported_equipment[{{ $rowKey }}][attachment]" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png">
+                                            @foreach (['attachment_path', 'attachment_name', 'attachment_mime_type', 'attachment_size', 'attachment_uploaded_at'] as $attachmentField)
+                                                <input type="hidden" name="imported_equipment[{{ $rowKey }}][{{ $attachmentField }}]" value="{{ $row[$attachmentField] ?? '' }}">
+                                            @endforeach
+                                            @if (filled($row['attachment_name'] ?? null))
+                                                <div class="small text-muted mt-1">{{ $row['attachment_name'] }}</div>
+                                            @endif
+                                        </td>
+                                        <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeApplicationAnnexRow(this, '#importedEquipmentShipmentTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="d-flex justify-content-end mt-3">
+                        <button type="button" class="btn btn-success" onclick="addApplicationAnnexRow('importedEquipmentShipmentTable', 'imported_equipment')">
+                            <i class="fa fa-plus me-2"></i>{{ __('app.add') }}
+                        </button>
+                    </div>
                 </div>
-
-                <h2 class="episode-playlist-title wp-heading-inline py-4 fontSize20"><span class="position-relative">{{ __('app.applications.equipment_list_title') }}</span></h2>
-                <div class="d-flex justify-content-end py-3">
-                    <button type="button" class="btn btn-success" onclick="addApplicationAnnexRow('importedEquipmentShippingTable', 'imported_equipment_shipping')"><i class="fa-solid fa-plus me-2"></i>{{ __('app.add') }}</button>
-                </div>
-                <div class="table-responsive">
-                    <table class="table align-middle" id="importedEquipmentShippingTable">
-                        <thead class="table-light">
-                            <tr>
-                                <th>#</th>
-                                <th>{{ __('app.applications.annex_fields.equipment_item') }}</th>
-                                <th>{{ __('app.applications.annex_fields.serial_number') }}</th>
-                                <th>{{ __('app.applications.annex_fields.flight') }}</th>
-                                <th>{{ __('app.applications.annex_fields.quantity') }}</th>
-                                <th>{{ __('app.applications.annex_fields.unit_value_usd') }}</th>
-                                <th>{{ __('app.applications.annex_fields.total_value') }}</th>
-                                <th>{{ __('app.applications.annex_fields.classification') }}</th>
-                                <th>{{ __('app.applications.annex_fields.shipping_method') }}</th>
-                                <th>{{ __('app.applications.annex_fields.entry_point') }}</th>
-                                <th>{{ __('app.applications.actions') }}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($shippingEquipmentRows as $index => $row)
-                                @php
-                                    $rowKey = 'shipping_'.$index;
-                                @endphp
-                                <tr>
-                                    <td class="row-number">{{ $loop->iteration }}</td>
-                                    <td><input type="hidden" name="imported_equipment[{{ $rowKey }}][transport_group]" value="shipping"><input type="text" class="form-control" name="imported_equipment[{{ $rowKey }}][item]" value="{{ $row['item'] ?? '' }}"></td>
-                                    <td><input type="text" class="form-control" name="imported_equipment[{{ $rowKey }}][serial_number]" value="{{ $row['serial_number'] ?? '' }}"></td>
-                                    <td><input type="text" class="form-control" name="imported_equipment[{{ $rowKey }}][flight_reference]" value="{{ $row['flight_reference'] ?? '' }}"></td>
-                                    <td><input type="number" min="0" class="form-control" name="imported_equipment[{{ $rowKey }}][quantity]" value="{{ $row['quantity'] ?? '' }}"></td>
-                                    <td><input type="number" step="0.01" min="0" class="form-control" name="imported_equipment[{{ $rowKey }}][unit_value]" value="{{ $row['unit_value'] ?? '' }}"></td>
-                                    <td><input type="number" step="0.01" min="0" class="form-control" name="imported_equipment[{{ $rowKey }}][total_value]" value="{{ $row['total_value'] ?? '' }}"></td>
-                                    <td>
-                                        @php
-                                            $selectedClassification = (string) ($row['classification'] ?? '');
-                                        @endphp
-                                        <select class="form-select" name="imported_equipment[{{ $rowKey }}][classification]">
-                                            <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                            @if (filled($selectedClassification) && ! $equipmentClassificationOptions->contains('code', $selectedClassification))
-                                                <option value="{{ $selectedClassification }}" selected>{{ $selectedClassification }}</option>
-                                            @endif
-                                            @foreach ($equipmentClassificationOptions as $option)
-                                                <option value="{{ $option->code }}" @selected($selectedClassification === $option->code)>{{ $option->displayName() }}</option>
-                                            @endforeach
-                                        </select>
-                                    </td>
-                                    <td>
-                                        @php
-                                            $selectedShippingMethod = (string) ($row['shipping_method'] ?? '');
-                                        @endphp
-                                        <select class="form-select" name="imported_equipment[{{ $rowKey }}][shipping_method]">
-                                            <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                            @if (filled($selectedShippingMethod) && ! $equipmentShippingMethodOptions->contains('code', $selectedShippingMethod))
-                                                <option value="{{ $selectedShippingMethod }}" selected>{{ $selectedShippingMethod }}</option>
-                                            @endif
-                                            @foreach ($equipmentShippingMethodOptions as $option)
-                                                <option value="{{ $option->code }}" @selected($selectedShippingMethod === $option->code)>{{ $option->displayName() }}</option>
-                                            @endforeach
-                                        </select>
-                                    </td>
-                                    <td>
-                                        @php
-                                            $selectedEntryPoint = (string) ($row['entry_point'] ?? '');
-                                        @endphp
-                                        <select class="form-select" name="imported_equipment[{{ $rowKey }}][entry_point]">
-                                            <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                            @if (filled($selectedEntryPoint) && ! $equipmentEntryPointOptions->contains('code', $selectedEntryPoint))
-                                                <option value="{{ $selectedEntryPoint }}" selected>{{ $selectedEntryPoint }}</option>
-                                            @endif
-                                            @foreach ($equipmentEntryPointOptions as $option)
-                                                <option value="{{ $option->code }}" @selected($selectedEntryPoint === $option->code)>{{ $option->displayName() }}</option>
-                                            @endforeach
-                                        </select>
-                                    </td>
-                                    <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeApplicationAnnexRow(this, '#importedEquipmentShippingTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-	                    </table>
-	                </div>
-	                <div class="d-flex justify-content-end align-items-center gap-2 fw-600 mt-2">
-	                    <span>{{ __('app.applications.equipment_total_label') }}</span>
-	                    <span data-equipment-total="#importedEquipmentShippingTable">0</span>
-	                    <span>{{ __('app.applications.usd') }}</span>
-	                </div>
-	            </div>
-	            <div class="tab-pane fade border px-4 py-3" id="equipment-traveler-pane" role="tabpanel">
-	                @foreach (trans('app.applications.traveler_customs_instructions') as $instruction)
-	                    <p class="text-danger fontSize13 fw-600 mb-2"><i class="ph ph-info fa-xl me-2 lh-lg"></i><span>{{ $instruction }}</span></p>
-	                @endforeach
-	                <h2 class="episode-playlist-title wp-heading-inline py-4 fontSize20"><span class="position-relative">{{ __('app.applications.travelers_list_title') }}</span></h2>
+            </div>
+            <div class="tab-pane fade border px-4 py-3" id="equipment-traveler-pane" role="tabpanel">
+                <p class="text-danger fontSize13 fw-600 mb-2 lh-lg">
+                    <i class="ph ph-info fa-xl me-2 lh-lg"></i>
+                    <span>{{ __('app.applications.traveler_customs_instruction_before_project') }}</span>
+                    <strong class="fw-bold" data-traveler-customs-project-name>{{ $travelerCustomsProjectName }}</strong>
+                    <span>{{ __('app.applications.traveler_customs_instruction_after_project') }}</span>
+                </p>
+                <h2 class="episode-playlist-title wp-heading-inline py-4 fontSize20"><span class="position-relative">{{ __('app.applications.travelers_list_title') }}</span></h2>
                 <div class="d-flex justify-content-end py-3">
                     <button type="button" class="btn btn-success" onclick="addApplicationAnnexRow('equipmentTravelersTable', 'equipment_travelers')"><i class="fa-solid fa-plus me-2"></i>{{ __('app.add') }}</button>
                 </div>
@@ -695,7 +653,7 @@
                         <tbody>
                             @foreach ($travelerEquipmentRows as $index => $row)
                                 @php
-                                    $rowKey = 'traveler_'.$index;
+                                    $rowKey = is_string($index) ? $index : 'traveler_'.$index;
                                     $selectedTravelerName = $row['traveler_name'] ?? '';
                                     $travelerNameOptions = collect($equipmentTravelerRows)
                                         ->map(function ($travelerRow, $travelerIndex) {
@@ -771,163 +729,18 @@
                                 </tr>
                             @endforeach
                         </tbody>
-	                    </table>
-	                </div>
-	                <div class="d-flex justify-content-end align-items-center gap-2 fw-600 mt-2">
-	                    <span>{{ __('app.applications.equipment_total_label') }}</span>
-	                    <span data-equipment-total="#importedEquipmentTravelerTable">0</span>
-	                    <span>{{ __('app.applications.usd') }}</span>
-	                </div>
-	                <div class="form-check form-group">
+                    </table>
+                </div>
+                <div class="d-flex justify-content-end align-items-center gap-2 fw-600 mt-2">
+                    <span>{{ __('app.applications.equipment_total_label') }}</span>
+                    <span data-equipment-total="#importedEquipmentTravelerTable">0</span>
+                    <span>{{ __('app.applications.usd') }}</span>
+                </div>
+                <div class="form-check form-group">
                     <input type="hidden" name="traveler_equipment_acknowledged" value="0">
                     <input type="checkbox" class="form-check-input" id="traveler_equipment_acknowledged" name="traveler_equipment_acknowledged" value="1" @checked(old('traveler_equipment_acknowledged', data_get($annex, 'traveler_equipment_acknowledged', false)))>
-                    <label class="form-label" for="traveler_equipment_acknowledged">{{ __('app.applications.traveler_equipment_acknowledgement') }}</label>
+                    <label class="form-label" for="traveler_equipment_acknowledged">{{ __('app.applications.traveler_equipment_acknowledgement') }} <span class="text-danger">*</span></label>
                 </div>
-            </div>
-        </div>
-    </div>
-    <div class="offcanvas-footer border-top">
-        <div class="d-flex gap-3 p-3 justify-content-end">
-            <button {!! $annexSaveButtonAttributes !!} class="btn btn-danger d-flex align-items-center gap-2"><i class="ph-fill ph-floppy-disk-back"></i>{{ __('app.save') }}</button>
-            <button type="button" class="btn btn-outline-primary d-flex align-items-center gap-2" data-bs-dismiss="offcanvas"><i class="ph ph-caret-double-left"></i>{{ __('app.close') }}</button>
-        </div>
-    </div>
-</div>
-
-<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="EquipmentMilitaryBorder">
-    <div class="offcanvas-header">
-        <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.military_border_equipment') }}</span></h2>
-        <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
-    </div>
-    <div class="offcanvas-body">
-        <div class="section-form">
-            <h2 class="episode-playlist-title wp-heading-inline py-4 fontSize20"><span class="position-relative">{{ __('app.applications.military_border_locations_title') }}</span></h2>
-            <div class="d-flex justify-content-end py-3">
-                <button type="button" class="btn btn-success" onclick="addApplicationAnnexRow('militaryBorderLocationsTable', 'military_border_locations')"><i class="fa-solid fa-plus me-2"></i>{{ __('app.add') }}</button>
-            </div>
-            <div class="table-responsive">
-                <table class="table align-middle" id="militaryBorderLocationsTable">
-                    <thead class="table-light">
-                        <tr>
-                            <th>#</th>
-                            <th>{{ __('app.scouting.governorate') }}</th>
-                            <th>{{ __('app.applications.annex_fields.location_exact_name') }}</th>
-                            <th>{{ __('app.applications.annex_fields.location_address') }}</th>
-                            <th>{{ __('app.applications.annex_fields.location_nature') }}</th>
-                            <th>{{ __('app.applications.annex_fields.location_type') }}</th>
-                            <th>{{ __('app.scouting.start_date') }}</th>
-                            <th>{{ __('app.scouting.end_date') }}</th>
-                            <th>{{ __('app.applications.actions') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($militaryBorderLocationRows as $index => $row)
-                            @php
-                                $selectedMilitaryGovernorate = (string) ($row['governorate'] ?? '');
-                            @endphp
-                            <tr>
-                                <td class="row-number">{{ $loop->iteration }}</td>
-                                <td>
-                                    <select class="form-select" name="military_border_locations[{{ $index }}][governorate]">
-                                        <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                        @if (filled($selectedMilitaryGovernorate) && ! $governorateOptions->contains('code', $selectedMilitaryGovernorate))
-                                            <option value="{{ $selectedMilitaryGovernorate }}" selected>{{ \App\Models\Governorate::labelFor($selectedMilitaryGovernorate) }}</option>
-                                        @endif
-                                        @foreach ($governorateOptions as $governorate)
-                                            <option value="{{ $governorate->code }}" @selected($selectedMilitaryGovernorate === $governorate->code)>{{ $governorate->displayName() }}</option>
-                                        @endforeach
-                                    </select>
-                                </td>
-                                <td><input type="text" class="form-control" name="military_border_locations[{{ $index }}][location_name]" value="{{ $row['location_name'] ?? '' }}"></td>
-                                <td><input type="text" class="form-control" name="military_border_locations[{{ $index }}][address]" value="{{ $row['address'] ?? '' }}"></td>
-                                <td><textarea class="form-control" name="military_border_locations[{{ $index }}][nature]" rows="2">{{ $row['nature'] ?? '' }}</textarea></td>
-                                <td>
-                                    <select class="form-select" name="military_border_locations[{{ $index }}][location_type]">
-                                        <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                        @foreach ($militaryLocationTypeOptions as $option)
-                                            <option value="{{ $option }}" @selected(($row['location_type'] ?? '') === $option)>{{ $militaryLocationTypeLabels[$option] ?? __('app.applications.military_location_types.'.$option) }}</option>
-                                        @endforeach
-                                    </select>
-                                </td>
-                                <td><input type="date" class="form-control" name="military_border_locations[{{ $index }}][start_date]" value="{{ $row['start_date'] ?? '' }}"></td>
-                                <td><input type="date" class="form-control" name="military_border_locations[{{ $index }}][end_date]" value="{{ $row['end_date'] ?? '' }}"></td>
-                                <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeApplicationAnnexRow(this, '#militaryBorderLocationsTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-
-            <h2 class="episode-playlist-title wp-heading-inline py-4 fontSize20"><span class="position-relative">{{ __('app.applications.equipment_list_title') }}</span></h2>
-            <div class="d-flex justify-content-end py-3">
-                <button type="button" class="btn btn-success" onclick="addApplicationAnnexRow('militaryBorderEquipmentRequestTable', 'military_border_equipment')"><i class="fa-solid fa-plus me-2"></i>{{ __('app.add') }}</button>
-            </div>
-            <div class="table-responsive">
-                <table class="table align-middle" id="militaryBorderEquipmentRequestTable">
-                    <thead class="table-light">
-                        <tr>
-                            <th>#</th>
-                            <th>{{ __('app.applications.annex_fields.equipment_item') }}</th>
-                            <th>{{ __('app.applications.annex_fields.serial_number') }}</th>
-                            <th>{{ __('app.scouting.location_name') }}</th>
-                            <th>{{ __('app.applications.annex_fields.quantity') }}</th>
-                            <th>{{ __('app.applications.annex_fields.unit_value_usd') }}</th>
-                            <th>{{ __('app.applications.annex_fields.total_value') }}</th>
-                            <th>{{ __('app.applications.annex_fields.classification') }}</th>
-                            <th>{{ __('app.applications.annex_fields.entry_method') }}</th>
-                            <th>{{ __('app.applications.annex_fields.entry_point') }}</th>
-                            <th>{{ __('app.applications.actions') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($militaryBorderEquipmentRows as $index => $row)
-                            <tr>
-                                <td class="row-number">{{ $loop->iteration }}</td>
-                                <td><input type="text" class="form-control" name="military_border_equipment[{{ $index }}][item]" value="{{ $row['item'] ?? ($row['equipment'] ?? '') }}"></td>
-                                <td><input type="text" class="form-control" name="military_border_equipment[{{ $index }}][serial_number]" value="{{ $row['serial_number'] ?? '' }}"></td>
-                                <td><input type="text" class="form-control" name="military_border_equipment[{{ $index }}][location_reference]" value="{{ $row['location_reference'] ?? ($row['location_name'] ?? '') }}"></td>
-                                <td><input type="number" min="0" class="form-control" name="military_border_equipment[{{ $index }}][quantity]" value="{{ $row['quantity'] ?? '' }}"></td>
-                                <td><input type="number" step="0.01" min="0" class="form-control" name="military_border_equipment[{{ $index }}][unit_value]" value="{{ $row['unit_value'] ?? '' }}"></td>
-                                <td><input type="number" step="0.01" min="0" class="form-control" name="military_border_equipment[{{ $index }}][total_value]" value="{{ $row['total_value'] ?? '' }}"></td>
-                                <td>
-                                    @php
-                                        $selectedClassification = (string) ($row['classification'] ?? '');
-                                    @endphp
-                                    <select class="form-select" name="military_border_equipment[{{ $index }}][classification]">
-                                        <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                        @if (filled($selectedClassification) && ! $equipmentClassificationOptions->contains('code', $selectedClassification))
-                                            <option value="{{ $selectedClassification }}" selected>{{ $selectedClassification }}</option>
-                                        @endif
-                                        @foreach ($equipmentClassificationOptions as $option)
-                                            <option value="{{ $option->code }}" @selected($selectedClassification === $option->code)>{{ $option->displayName() }}</option>
-                                        @endforeach
-                                    </select>
-                                </td>
-                                <td><input type="text" class="form-control" name="military_border_equipment[{{ $index }}][entry_method]" value="{{ $row['entry_method'] ?? '' }}"></td>
-                                <td>
-                                    @php
-                                        $selectedEntryPoint = (string) ($row['entry_point'] ?? '');
-                                    @endphp
-                                    <select class="form-select" name="military_border_equipment[{{ $index }}][entry_point]">
-                                        <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                        @if (filled($selectedEntryPoint) && ! $equipmentEntryPointOptions->contains('code', $selectedEntryPoint))
-                                            <option value="{{ $selectedEntryPoint }}" selected>{{ $selectedEntryPoint }}</option>
-                                        @endif
-                                        @foreach ($equipmentEntryPointOptions as $option)
-                                            <option value="{{ $option->code }}" @selected($selectedEntryPoint === $option->code)>{{ $option->displayName() }}</option>
-                                        @endforeach
-                                    </select>
-                                </td>
-                                <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeApplicationAnnexRow(this, '#militaryBorderEquipmentRequestTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-            <div class="form-check form-group">
-                <input type="hidden" name="military_border_equipment_acknowledged" value="0">
-                <input type="checkbox" class="form-check-input" id="military_border_equipment_acknowledged" name="military_border_equipment_acknowledged" value="1" @checked(old('military_border_equipment_acknowledged', data_get($annex, 'military_border_equipment_acknowledged', false)))>
-                <label class="form-label" for="military_border_equipment_acknowledged">{{ __('app.applications.military_border_equipment_acknowledgement') }}</label>
             </div>
         </div>
     </div>
@@ -983,8 +796,8 @@
                     <thead class="table-light">
                         <tr>
                             <th>#</th>
-                            <th>{{ __('app.applications.annex_fields.person_name') }}</th>
                             <th>{{ __('app.applications.annex_fields.nationality') }}</th>
+                            <th>{{ __('app.applications.annex_fields.person_name') }}</th>
                             <th>{{ __('app.applications.annex_fields.mother_name') }}</th>
                             <th>{{ __('app.applications.annex_fields.identity_number') }}</th>
                             <th>{{ __('app.applications.annex_fields.profession') }}</th>
@@ -996,22 +809,51 @@
                     </thead>
                     <tbody>
                         @foreach ($airportPeopleRows as $index => $row)
+                            @php
+                                $airportPersonNationalityText = trim((string) ($row['nationality'] ?? ''));
+                                $legacyJordanianNationalities = ['jordanian', 'Jordanian', 'أردني', 'اردني'];
+                                $airportPersonNationalityValue = in_array($airportPersonNationalityText, $legacyJordanianNationalities, true) ? 'jordanian' : $airportPersonNationalityText;
+                                $airportPersonIsJordanian = $airportPersonNationalityValue === 'jordanian';
+                                $airportPersonNameParts = [
+                                    'first_name' => (string) ($row['first_name'] ?? ''),
+                                    'second_name' => (string) ($row['second_name'] ?? ''),
+                                    'third_name' => (string) ($row['third_name'] ?? ''),
+                                    'family_name' => (string) ($row['family_name'] ?? ''),
+                                ];
+
+                                if ($airportPersonIsJordanian && ! collect($airportPersonNameParts)->filter(fn ($part) => filled($part))->isNotEmpty() && filled($row['full_name'] ?? null)) {
+                                    $splitNameParts = preg_split('/\s+/', trim((string) $row['full_name'])) ?: [];
+                                    $airportPersonNameParts['first_name'] = $splitNameParts[0] ?? '';
+                                    $airportPersonNameParts['second_name'] = $splitNameParts[1] ?? '';
+                                    $airportPersonNameParts['third_name'] = $splitNameParts[2] ?? '';
+                                    $airportPersonNameParts['family_name'] = implode(' ', array_slice($splitNameParts, 3));
+                                }
+                            @endphp
                             <tr>
                                 <td class="row-number">{{ $loop->iteration }}</td>
-                                <td><input type="text" class="form-control" name="airport_people[{{ $index }}][full_name]" value="{{ $row['full_name'] ?? '' }}"></td>
                                 <td>
-                                    <select class="form-select" name="airport_people[{{ $index }}][nationality]">
+                                    <select class="form-select" name="airport_people[{{ $index }}][nationality]" data-airport-person-nationality>
                                         <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                        @if (filled($row['nationality'] ?? null) && ! $airportPeopleNationalityOptions->contains('code', $row['nationality']))
-                                            <option value="{{ $row['nationality'] }}" selected>{{ \App\Models\Nationality::labelFor($row['nationality']) }}</option>
+                                        @if (filled($airportPersonNationalityValue) && ! $airportPeopleNationalityOptions->contains('code', $airportPersonNationalityValue))
+                                            <option value="{{ $airportPersonNationalityValue }}" selected>{{ \App\Models\Nationality::labelFor($airportPersonNationalityValue) }}</option>
                                         @endif
                                         @foreach ($airportPeopleNationalityOptions as $nationality)
-                                            <option value="{{ $nationality->code }}" @selected(($row['nationality'] ?? '') === $nationality->code)>{{ $nationality->displayName() }}</option>
+                                            <option value="{{ $nationality->code }}" @selected($airportPersonNationalityValue === $nationality->code)>{{ $nationality->displayName() }}</option>
                                         @endforeach
                                     </select>
                                 </td>
+                                <td class="airport-person-name-cell">
+                                    <input type="hidden" name="airport_people[{{ $index }}][full_name]" value="{{ $row['full_name'] ?? '' }}" data-airport-person-name-output>
+                                    <div class="row g-2 airport-person-jordanian-name {{ $airportPersonIsJordanian ? '' : 'd-none' }}" data-airport-person-jordanian-name>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="airport_people[{{ $index }}][first_name]" value="{{ $airportPersonNameParts['first_name'] }}" placeholder="{{ __('app.applications.annex_fields.first_name') }}" data-airport-person-name-part @disabled(! $airportPersonIsJordanian)></div>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="airport_people[{{ $index }}][second_name]" value="{{ $airportPersonNameParts['second_name'] }}" placeholder="{{ __('app.applications.annex_fields.second_name') }}" data-airport-person-name-part @disabled(! $airportPersonIsJordanian)></div>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="airport_people[{{ $index }}][third_name]" value="{{ $airportPersonNameParts['third_name'] }}" placeholder="{{ __('app.applications.annex_fields.third_name') }}" data-airport-person-name-part @disabled(! $airportPersonIsJordanian)></div>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="airport_people[{{ $index }}][family_name]" value="{{ $airportPersonNameParts['family_name'] }}" placeholder="{{ __('app.applications.annex_fields.family_name') }}" data-airport-person-name-part @disabled(! $airportPersonIsJordanian)></div>
+                                    </div>
+                                    <input type="text" class="form-control {{ $airportPersonIsJordanian ? 'd-none' : '' }}" value="{{ $row['full_name'] ?? '' }}" data-airport-person-full-name-input>
+                                </td>
                                 <td><input type="text" class="form-control" name="airport_people[{{ $index }}][mother_name]" value="{{ $row['mother_name'] ?? '' }}"></td>
-                                <td><input type="text" class="form-control" name="airport_people[{{ $index }}][identity_number]" value="{{ $row['identity_number'] ?? '' }}"></td>
+                                <td><input type="text" class="form-control" name="airport_people[{{ $index }}][identity_number]" value="{{ $row['identity_number'] ?? '' }}" placeholder="{{ $airportPersonIsJordanian ? __('app.applications.annex_fields.national_id') : __('app.applications.annex_fields.passport_number') }}" inputmode="{{ $airportPersonIsJordanian ? 'numeric' : 'text' }}" @if ($airportPersonIsJordanian) maxlength="10" pattern="\d{10}" @endif data-airport-person-identity></td>
                                 <td><input type="text" class="form-control" name="airport_people[{{ $index }}][profession]" value="{{ $row['profession'] ?? '' }}"></td>
                                 <td><input type="text" class="form-control" name="airport_people[{{ $index }}][address_phone]" value="{{ $row['address_phone'] ?? '' }}"></td>
                                 <td><input type="text" class="form-control" name="airport_people[{{ $index }}][entry_reason]" value="{{ $row['entry_reason'] ?? '' }}"></td>

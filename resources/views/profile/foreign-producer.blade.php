@@ -97,7 +97,7 @@
         <div class="card-body">
             <div class="text-center">
                 <div>
-                    <img src="{{ asset('images/OIP.jpeg') }}" alt="profile-img" class="rounded-pill avatar-130 img-fluid" loading="lazy">
+                    <img src="{{ $profileLogoUrl }}" alt="profile-img" class="rounded-pill avatar-130 img-fluid" loading="lazy">
                 </div>
                 <div class="mt-3">
                     <h3 class="d-inline-block text-white">{{ $entity->displayName() }} - {{ __('app.profile.foreign_producer_suffix') }}</h3>

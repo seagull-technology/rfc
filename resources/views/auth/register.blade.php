@@ -7,6 +7,11 @@
 @php
     $studentLookupCompleted = old('registration_type') === 'student' && old('student_lookup_verified') === '1';
     $companyLookupCompleted = old('registration_type') === 'company' && old('company_lookup_verified') === '1';
+    $studentBirthDateValue = old('registration_type') === 'student' ? (string) old('birth_date', '') : '';
+
+    if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $studentBirthDateValue, $studentBirthDateParts)) {
+        $studentBirthDateValue = $studentBirthDateParts[3].'/'.$studentBirthDateParts[2].'/'.$studentBirthDateParts[1];
+    }
 @endphp
 
 @section('content')
@@ -55,21 +60,51 @@
                                                 <input type="hidden" name="student_lookup_verified" value="{{ $studentLookupCompleted ? '1' : '0' }}" data-student-lookup-verified>
 
                                                 <div class="row">
-                                                    <div class="col-md-12">
-                                                        <div class="mb-3">
-                                                            <label class="form-label">{{ __('app.auth.national_id') }}</label>
-                                                            <div class="registration-lookup-control">
+                                                    <div class="col-12">
+                                                        <div class="registration-identity-lookup registration-identity-lookup--student">
+                                                            <div class="registration-identity-field">
+                                                                <label class="form-label">{{ __('app.auth.national_id') }}</label>
                                                                 <input type="text" name="national_id" class="form-control @error('national_id') is-invalid @enderror" placeholder="{{ __('app.auth.national_id_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('national_id') : '' }}" inputmode="numeric" pattern="\d{10}" maxlength="10" autocomplete="off" data-student-national-id required>
-                                                                <button type="button" class="btn btn-danger registration-lookup-button" data-student-lookup-check>
-                                                                    <i class="ph ph-magnifying-glass"></i>
-                                                                    <span>{{ __('app.auth.check_national_id') }}</span>
-                                                                </button>
+                                                                @error('national_id')
+                                                                    <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                @enderror
                                                             </div>
-                                                            <div class="registration-inline-feedback" data-student-lookup-message>{{ $errors->first('national_id') }}</div>
-                                                            @error('national_id')
-                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                            @enderror
+
+                                                            <div class="registration-identity-field">
+                                                                <label class="form-label">{{ __('app.auth.birth_date') }}</label>
+                                                                <div class="registration-date-control">
+                                                                    <input
+                                                                        type="text"
+                                                                        name="birth_date"
+                                                                        class="form-control @error('birth_date') is-invalid @enderror"
+                                                                        value="{{ $studentBirthDateValue }}"
+                                                                        placeholder="{{ __('app.auth.birth_date_placeholder') }}"
+                                                                        inputmode="numeric"
+                                                                        pattern="\d{2}/\d{2}/\d{4}"
+                                                                        maxlength="10"
+                                                                        autocomplete="bday"
+                                                                        data-student-birth-date
+                                                                        data-student-birth-date-max="{{ now()->subDay()->toDateString() }}"
+                                                                        required
+                                                                    >
+                                                                    <button type="button" class="registration-date-toggle" data-student-birth-date-open aria-label="{{ __('app.auth.open_date_picker') }}" title="{{ __('app.auth.open_date_picker') }}">
+                                                                        <i class="ph ph-calendar-blank"></i>
+                                                                    </button>
+                                                                </div>
+                                                                @error('birth_date')
+                                                                    <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                @enderror
+                                                            </div>
+
+                                                            <button type="button" class="btn btn-danger registration-lookup-button registration-identity-submit" data-student-lookup-check>
+                                                                <i class="ph ph-magnifying-glass"></i>
+                                                                <span>{{ __('app.auth.check_national_id') }}</span>
+                                                            </button>
                                                         </div>
+                                                    </div>
+
+                                                    <div class="col-12">
+                                                        <div class="registration-inline-feedback mb-3" data-student-lookup-message>{{ $errors->first('national_id') ?: $errors->first('birth_date') }}</div>
                                                     </div>
 
                                                     <div class="col-12 student-lookup-fields" data-student-lookup-fields @unless($studentLookupCompleted) hidden @endunless>
@@ -80,17 +115,6 @@
                                                                     <input type="hidden" name="full_name" value="{{ old('registration_type') === 'student' ? old('full_name') : '' }}" data-student-lookup-hidden="full_name">
                                                                     <input type="text" class="form-control @error('full_name') is-invalid @enderror" placeholder="{{ __('app.auth.full_name_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('full_name') : '' }}" data-student-lookup-field="full_name" disabled>
                                                                     @error('full_name')
-                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                                    @enderror
-                                                                </div>
-                                                            </div>
-
-                                                            <div class="col-md-6">
-                                                                <div class="mb-3">
-                                                                    <label class="form-label">{{ __('app.auth.birth_date') }}</label>
-                                                                    <input type="hidden" name="birth_date" value="{{ old('registration_type') === 'student' ? old('birth_date') : '' }}" data-student-lookup-hidden="birth_date">
-                                                                    <input type="date" class="form-control @error('birth_date') is-invalid @enderror" value="{{ old('registration_type') === 'student' ? old('birth_date') : '' }}" data-student-lookup-field="birth_date" disabled>
-                                                                    @error('birth_date')
                                                                         <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                     @enderror
                                                                 </div>
@@ -162,7 +186,7 @@
                                                             <div class="col-md-6">
                                                                 <div class="mb-3">
                                                                     <label class="form-label">{{ __('app.auth.mobile_number') }}</label>
-                                                                    <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror" placeholder="{{ __('app.auth.phone_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('phone') : '' }}" inputmode="numeric" pattern="\d{10}" maxlength="10" data-student-account-input @if($studentLookupCompleted) required @endif>
+                                                                    <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror" placeholder="{{ __('app.auth.phone_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('phone') : '' }}" inputmode="numeric" pattern="\d{10}" maxlength="10" data-student-account-input data-student-account-field="phone" @if($studentLookupCompleted) required @endif>
                                                                     @error('phone')
                                                                         <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                     @enderror
@@ -238,21 +262,24 @@
 
                                                     <div class="row">
                                                         @if ($type === 'company')
-                                                            <div class="col-md-12">
-                                                                <div class="mb-3">
-                                                                    <label class="form-label">{{ __('app.auth.registration_number_labels.company') }}</label>
-                                                                    <div class="registration-lookup-control">
-                                                                        <input type="text" name="registration_number" class="form-control @error('registration_number') is-invalid @enderror" placeholder="{{ __('app.auth.registration_number_placeholders.company') }}" value="{{ old('registration_type') === 'company' ? old('registration_number') : '' }}" autocomplete="off" data-company-registration-number required>
-                                                                        <button type="button" class="btn btn-danger registration-lookup-button" data-company-lookup-check>
+                                                            <div class="col-12">
+                                                                <div class="registration-identity-lookup registration-identity-lookup--company">
+                                                                    <div class="registration-identity-field">
+                                                                        <label class="form-label">{{ __('app.auth.organization_national_id') }}</label>
+                                                                        <input type="text" name="registration_number" class="form-control @error('registration_number') is-invalid @enderror" placeholder="{{ __('app.auth.organization_national_id_placeholder') }}" value="{{ old('registration_type') === 'company' ? old('registration_number') : '' }}" inputmode="numeric" pattern="\d{1,10}" maxlength="10" autocomplete="off" data-company-registration-number required>
+                                                                    </div>
+                                                                    <button type="button" class="btn btn-danger registration-lookup-button registration-identity-submit" data-company-lookup-check>
                                                                             <i class="ph ph-magnifying-glass"></i>
                                                                             <span>{{ __('app.auth.check_registration_number') }}</span>
-                                                                        </button>
-                                                                    </div>
-                                                                    <div class="registration-inline-feedback" data-company-lookup-message>{{ $errors->first('registration_number') }}</div>
-                                                                    @error('registration_number')
-                                                                        <div class="invalid-feedback d-block">{{ $message }}</div>
-                                                                    @enderror
+                                                                    </button>
                                                                 </div>
+                                                            </div>
+
+                                                            <div class="col-12">
+                                                                <div class="registration-inline-feedback mb-3" data-company-lookup-message>{{ $errors->first('registration_number') }}</div>
+                                                                @error('registration_number')
+                                                                    <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                @enderror
                                                             </div>
 
                                                             <div class="col-12 company-lookup-fields" data-company-lookup-fields @unless($companyLookupCompleted) hidden @endunless>
@@ -287,6 +314,22 @@
                                                                             @error('company_capital')
                                                                                 <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                             @enderror
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div class="col-md-6">
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">{{ __('app.auth.organization_type') }}</label>
+                                                                            <input type="hidden" name="organization_type" value="{{ old('registration_type') === 'company' ? old('organization_type') : '' }}" data-company-lookup-hidden="organization_type">
+                                                                            <input type="text" class="form-control" value="{{ old('registration_type') === 'company' ? old('organization_type') : '' }}" data-company-lookup-field="organization_type" disabled>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div class="col-md-6">
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">{{ __('app.auth.governorate') }}</label>
+                                                                            <input type="hidden" name="governorate" value="{{ old('registration_type') === 'company' ? old('governorate') : '' }}" data-company-lookup-hidden="governorate">
+                                                                            <input type="text" class="form-control" value="{{ old('registration_type') === 'company' ? old('governorate') : '' }}" data-company-lookup-field="governorate" disabled>
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -519,11 +562,14 @@
             const registerMessages = {
                 checkingNationalId: @json(__('app.auth.checking_national_id')),
                 nationalIdDigits: @json(__('app.auth.national_id_digits')),
+                birthDateRequired: @json(__('app.auth.student_birth_date_required')),
+                birthDateInvalid: @json(__('app.auth.student_birth_date_invalid')),
                 studentLookupSuccess: @json(__('app.auth.student_lookup_success')),
                 studentLookupFailed: @json(__('app.auth.student_lookup_failed')),
                 studentLookupRequired: @json(__('app.auth.student_lookup_required')),
                 checkingRegistrationNumber: @json(__('app.auth.checking_registration_number')),
                 registrationNumberRequired: @json(__('app.auth.registration_number_required')),
+                organizationNationalIdDigits: @json(__('app.auth.organization_national_id_digits')),
                 companyLookupSuccess: @json(__('app.auth.company_lookup_success')),
                 companyLookupFailed: @json(__('app.auth.company_lookup_failed')),
                 companyLookupRequired: @json(__('app.auth.company_lookup_required')),
@@ -565,6 +611,45 @@
             };
 
             document.querySelectorAll('input[pattern="\\d{10}"]').forEach(digitsOnly);
+
+            const setupStudentBirthDateInput = function () {
+                const input = document.querySelector('[data-student-birth-date]');
+                const openButton = document.querySelector('[data-student-birth-date-open]');
+
+                if (!input) {
+                    return;
+                }
+
+                input.addEventListener('input', function () {
+                    const digits = input.value.replace(/\D+/g, '').slice(0, 8);
+                    const parts = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean);
+                    const formatted = parts.join('/');
+
+                    if (input.value !== formatted) {
+                        input.value = formatted;
+                    }
+                });
+
+                if (typeof window.flatpickr === 'function') {
+                    window.flatpickr(input, {
+                        allowInput: true,
+                        dateFormat: 'd/m/Y',
+                        disableMobile: true,
+                        maxDate: input.dataset.studentBirthDateMax,
+                    });
+                }
+
+                openButton?.addEventListener('click', function () {
+                    if (input._flatpickr) {
+                        input._flatpickr.open();
+                        return;
+                    }
+
+                    input.focus();
+                });
+            };
+
+            setupStudentBirthDateInput();
 
             const bindPasswordStrength = function (input) {
                 const rules = input.closest('.mb-3')?.querySelector('[data-password-rules]');
@@ -635,6 +720,7 @@
                 }
 
                 const nationalId = form.querySelector('[data-student-national-id]');
+                const birthDate = form.querySelector('[data-student-birth-date]');
                 const checkButton = form.querySelector('[data-student-lookup-check]');
                 const message = form.querySelector('[data-student-lookup-message]');
                 const verifiedInput = form.querySelector('[data-student-lookup-verified]');
@@ -643,6 +729,37 @@
                 const submitButton = form.querySelector('[data-register-submit="student"]');
                 const accountInputs = form.querySelectorAll('[data-student-account-input]');
                 let verifiedNationalId = verifiedInput?.value === '1' ? nationalId?.value : '';
+                let verifiedBirthDate = verifiedInput?.value === '1' ? birthDate?.value : '';
+                let lookupFilledPhone = '';
+
+                const focusBirthDate = function () {
+                    if (birthDate?._flatpickr) {
+                        birthDate._flatpickr.open();
+                        return;
+                    }
+
+                    birthDate?.focus();
+                };
+
+                const hasValidBirthDate = function (value) {
+                    const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value || '');
+
+                    if (!match) {
+                        return false;
+                    }
+
+                    const day = Number(match[1]);
+                    const month = Number(match[2]);
+                    const year = Number(match[3]);
+                    const date = new Date(year, month - 1, day);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+
+                    return date.getFullYear() === year
+                        && date.getMonth() === month - 1
+                        && date.getDate() === day
+                        && date < today;
+                };
 
                 const setMessage = function (text, state) {
                     if (!message) {
@@ -675,10 +792,27 @@
                             field.disabled = true;
                         }
                     });
+
+                    const phone = form.querySelector('[data-student-account-field="phone"]');
+                    const apiPhone = data?.student_phone || '';
+
+                    if (phone && apiPhone && (!phone.value || phone.value === lookupFilledPhone)) {
+                        phone.value = apiPhone;
+                        lookupFilledPhone = apiPhone;
+                    }
                 };
 
                 const resetLookup = function () {
                     verifiedNationalId = '';
+                    verifiedBirthDate = '';
+
+                    const phone = form.querySelector('[data-student-account-field="phone"]');
+
+                    if (phone && lookupFilledPhone && phone.value === lookupFilledPhone) {
+                        phone.value = '';
+                    }
+
+                    lookupFilledPhone = '';
 
                     if (verifiedInput) {
                         verifiedInput.value = '0';
@@ -694,7 +828,6 @@
 
                     fillLookupFields({
                         full_name: '',
-                        birth_date: '',
                         gender: '',
                         nationality: '',
                         university_name: '',
@@ -721,6 +854,16 @@
                     }
                 });
 
+                const handleBirthDateChange = function () {
+                    if (verifiedInput?.value === '1' && birthDate.value !== verifiedBirthDate) {
+                        resetLookup();
+                        setMessage('', null);
+                    }
+                };
+
+                birthDate?.addEventListener('input', handleBirthDateChange);
+                birthDate?.addEventListener('change', handleBirthDateChange);
+
                 checkButton?.addEventListener('click', async function () {
                     const value = nationalId?.value || '';
 
@@ -728,6 +871,20 @@
                         resetLookup();
                         setMessage(registerMessages.nationalIdDigits, 'error');
                         nationalId?.focus();
+                        return;
+                    }
+
+                    if (!birthDate?.value) {
+                        resetLookup();
+                        setMessage(registerMessages.birthDateRequired, 'error');
+                        focusBirthDate();
+                        return;
+                    }
+
+                    if (!hasValidBirthDate(birthDate.value)) {
+                        resetLookup();
+                        setMessage(registerMessages.birthDateInvalid, 'error');
+                        focusBirthDate();
                         return;
                     }
 
@@ -742,7 +899,10 @@
                                 'Content-Type': 'application/json',
                                 'X-CSRF-TOKEN': csrfToken,
                             },
-                            body: JSON.stringify({ national_id: value }),
+                            body: JSON.stringify({
+                                national_id: value,
+                                birth_date: birthDate.value,
+                            }),
                         });
                         const payload = await response.json();
 
@@ -759,6 +919,7 @@
                         }
 
                         verifiedNationalId = value;
+                        verifiedBirthDate = birthDate.value;
                         profileSection.hidden = false;
                         accountSection.hidden = false;
                         setAccountRequired(true);
@@ -777,7 +938,11 @@
                 });
 
                 form.addEventListener('submit', function (event) {
-                    if (verifiedInput?.value !== '1') {
+                    if (
+                        verifiedInput?.value !== '1'
+                        || nationalId?.value !== verifiedNationalId
+                        || birthDate?.value !== verifiedBirthDate
+                    ) {
                         event.preventDefault();
                         resetLookup();
                         setMessage(registerMessages.studentLookupRequired, 'error');
@@ -806,7 +971,7 @@
                 let verifiedRegistrationNumber = verifiedInput?.value === '1' ? registrationNumber?.value : '';
 
                 const normalizeRegistrationNumber = function (value) {
-                    return (value || '').replace(/\s+/g, '').toUpperCase();
+                    return (value || '').replace(/\D+/g, '');
                 };
 
                 const setMessage = function (text, state) {
@@ -861,6 +1026,8 @@
                         entity_name: '',
                         company_registration_date: '',
                         company_capital: '',
+                        organization_type: '',
+                        governorate: '',
                     });
 
                     setAccountRequired(false);
@@ -887,13 +1054,24 @@
                 });
 
                 checkButton?.addEventListener('click', async function () {
-                    const value = registrationNumber?.value || '';
+                    const value = normalizeRegistrationNumber(registrationNumber?.value || '');
 
-                    if (!normalizeRegistrationNumber(value)) {
+                    if (!value) {
                         resetLookup();
                         setMessage(registerMessages.registrationNumberRequired, 'error');
                         registrationNumber?.focus();
                         return;
+                    }
+
+                    if (!/^\d{1,10}$/.test(value)) {
+                        resetLookup();
+                        setMessage(registerMessages.organizationNationalIdDigits, 'error');
+                        registrationNumber?.focus();
+                        return;
+                    }
+
+                    if (registrationNumber) {
+                        registrationNumber.value = value;
                     }
 
                     checkButton.disabled = true;

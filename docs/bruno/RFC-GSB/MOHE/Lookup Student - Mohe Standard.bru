@@ -1,0 +1,39 @@
+meta {
+  name: Lookup Student - Mohe Standard
+  type: http
+  seq: 1
+}
+
+post {
+  url: https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/newstandard/api/MoheStandard
+  body: json
+  auth: none
+}
+
+headers {
+  X-MODEE-Client-Id: {{gsb_client_id}}
+  X-MODEE-Client-Secret: {{gsb_client_secret}}
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "nationalNo": "{{test_national_no}}",
+    "birthDate": "{{test_birth_date}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  MOHE Standard student verification through the Government Service Bus staging gateway.
+
+  Select the STG environment before sending and configure:
+  - gsb_client_id
+  - gsb_client_secret
+  - test_national_no (exactly 10 digits)
+  - test_birth_date (YYYY-MM-DD)
+}

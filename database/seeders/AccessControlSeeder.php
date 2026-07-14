@@ -143,17 +143,23 @@ class AccessControlSeeder extends Seeder
     {
         $adminEntity = Entity::query()->where('code', 'platform-administration')->firstOrFail();
 
-        $user = User::query()->updateOrCreate(
-            ['email' => env('INITIAL_SUPER_ADMIN_EMAIL', 'superadmin@rfc.local')],
-            [
-                'name' => env('INITIAL_SUPER_ADMIN_NAME', 'Platform Super Admin'),
-                'username' => env('INITIAL_SUPER_ADMIN_USERNAME', 'superadmin'),
-                'national_id' => env('INITIAL_SUPER_ADMIN_NATIONAL_ID', '9999999999'),
-                'phone' => env('INITIAL_SUPER_ADMIN_PHONE', '0790000099'),
-                'status' => 'active',
-                'password' => Hash::make(env('INITIAL_SUPER_ADMIN_PASSWORD', 'Admin@12345')),
-            ],
-        );
+        $user = User::query()->firstOrNew([
+            'email' => env('INITIAL_SUPER_ADMIN_EMAIL', 'superadmin@rfc.local'),
+        ]);
+
+        $user->fill([
+            'name' => env('INITIAL_SUPER_ADMIN_NAME', 'Platform Super Admin'),
+            'username' => env('INITIAL_SUPER_ADMIN_USERNAME', 'superadmin'),
+            'national_id' => env('INITIAL_SUPER_ADMIN_NATIONAL_ID', '9999999999'),
+            'phone' => env('INITIAL_SUPER_ADMIN_PHONE', '0790000099'),
+            'status' => 'active',
+        ]);
+
+        if (! $user->exists) {
+            $user->password = Hash::make(env('INITIAL_SUPER_ADMIN_PASSWORD', 'Admin@12345'));
+        }
+
+        $user->save();
 
         $user->entities()->syncWithoutDetaching([
             $adminEntity->getKey() => [
@@ -181,18 +187,24 @@ class AccessControlSeeder extends Seeder
     {
         $rfcEntity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
 
-        $user = User::query()->updateOrCreate(
-            ['email' => env('INITIAL_RFC_OWNER_EMAIL', 'ref@ref.test')],
-            [
-                'name' => env('INITIAL_RFC_OWNER_NAME', 'RFC Owner Account'),
-                'username' => env('INITIAL_RFC_OWNER_USERNAME', 'rfc_owner'),
-                'national_id' => env('INITIAL_RFC_OWNER_NATIONAL_ID', '2000012345'),
-                'phone' => env('INITIAL_RFC_OWNER_PHONE', '0791231233'),
-                'status' => 'active',
-                'registration_type' => 'staff',
-                'password' => Hash::make(env('INITIAL_RFC_OWNER_PASSWORD', 'Admin@12345')),
-            ],
-        );
+        $user = User::query()->firstOrNew([
+            'email' => env('INITIAL_RFC_OWNER_EMAIL', 'ref@ref.test'),
+        ]);
+
+        $user->fill([
+            'name' => env('INITIAL_RFC_OWNER_NAME', 'RFC Owner Account'),
+            'username' => env('INITIAL_RFC_OWNER_USERNAME', 'rfc_owner'),
+            'national_id' => env('INITIAL_RFC_OWNER_NATIONAL_ID', '2000012345'),
+            'phone' => env('INITIAL_RFC_OWNER_PHONE', '0791231233'),
+            'status' => 'active',
+            'registration_type' => 'staff',
+        ]);
+
+        if (! $user->exists) {
+            $user->password = Hash::make(env('INITIAL_RFC_OWNER_PASSWORD', 'Admin@12345'));
+        }
+
+        $user->save();
 
         $user->entities()->syncWithoutDetaching([
             $rfcEntity->getKey() => [
@@ -270,6 +282,8 @@ class AccessControlSeeder extends Seeder
             'groups.manage',
             'entities.view',
             'entities.manage',
+            'company.users.view',
+            'company.users.manage',
             'roles.view',
             'roles.manage',
             'permissions.view',
@@ -421,6 +435,8 @@ class AccessControlSeeder extends Seeder
                 'reports.view.entity',
             ],
             'applicant_owner' => [
+                'company.users.view',
+                'company.users.manage',
                 'applications.create',
                 'applications.view.entity',
                 'applications.update.entity',
@@ -431,11 +447,46 @@ class AccessControlSeeder extends Seeder
             ],
             'applicant_member' => [
                 'applications.create',
+                'applications.view.own',
+                'applications.update.own',
+                'documents.upload.own',
+                'documents.view.own',
+                'permits.view.own',
+            ],
+            'company_admin' => [
+                'company.users.view',
+                'company.users.manage',
+                'applications.create',
                 'applications.view.entity',
                 'applications.update.entity',
+                'applications.submit',
                 'documents.upload.own',
                 'documents.view.entity',
                 'permits.view.entity',
+            ],
+            'company_manager' => [
+                'company.users.view',
+                'applications.create',
+                'applications.view.entity',
+                'applications.update.entity',
+                'applications.submit',
+                'documents.upload.own',
+                'documents.view.entity',
+                'permits.view.entity',
+            ],
+            'company_creator' => [
+                'applications.create',
+                'applications.view.own',
+                'applications.update.own',
+                'applications.submit',
+                'documents.upload.own',
+                'documents.view.own',
+                'permits.view.own',
+            ],
+            'company_viewer' => [
+                'applications.view.own',
+                'documents.view.own',
+                'permits.view.own',
             ],
         ];
     }
@@ -465,6 +516,10 @@ class AccessControlSeeder extends Seeder
             'organizations' => [
                 'applicant_owner',
                 'applicant_member',
+                'company_admin',
+                'company_manager',
+                'company_creator',
+                'company_viewer',
             ],
             'individuals' => [
                 'applicant_owner',

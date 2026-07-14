@@ -121,10 +121,9 @@ return [
         'military_border' => [
             [
                 'entity_code' => 'military-media-directorate',
-                'name' => 'Application Military Border Equipment -> Military Media Directorate',
+                'name' => 'Application Military Support -> Military Media Directorate',
                 'conditions' => [
                     'annex_flags' => [
-                        'military_border_equipment',
                         'military_support',
                         'location_type_border_areas',
                         'special_requirement_armed_forces',

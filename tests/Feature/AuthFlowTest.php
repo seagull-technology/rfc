@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Entity;
 use App\Models\User;
 use App\Notifications\RegistrationCompletionRequestedNotification;
+use App\Services\StudentRegistrationLookupService;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -20,12 +21,28 @@ class AuthFlowTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_access_control_reseeding_does_not_reset_existing_system_account_passwords(): void
+    {
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $rfcOwner = User::query()->where('email', 'ref@ref.test')->firstOrFail();
+        $admin->forceFill(['password' => Hash::make('ExistingAdminPassword!1')])->save();
+        $rfcOwner->forceFill(['password' => Hash::make('ExistingRfcPassword!1')])->save();
+
+        $this->seed(AccessControlSeeder::class);
+
+        $this->assertTrue(Hash::check('ExistingAdminPassword!1', $admin->fresh()->password));
+        $this->assertTrue(Hash::check('ExistingRfcPassword!1', $rfcOwner->fresh()->password));
+    }
+
     public function test_student_registration_creates_user_entity_and_scoped_role(): void
     {
         $this->seed(AccessControlSeeder::class);
 
         $lookupResponse = $this->post(route('register.student.lookup'), [
             'national_id' => '9876543210',
+            'birth_date' => '1999-01-15',
         ]);
 
         $lookupResponse->assertOk();
@@ -35,6 +52,7 @@ class AuthFlowTest extends TestCase
             'registration_type' => 'student',
             'email' => 'ali@example.com',
             'national_id' => '9876543210',
+            'birth_date' => '1999-01-15',
             'phone' => '0791234567',
             'address' => 'Student address, Amman',
             'student_lookup_verified' => '1',
@@ -81,6 +99,7 @@ class AuthFlowTest extends TestCase
             'registration_type' => 'student',
             'email' => 'unchecked@example.com',
             'national_id' => '9876543211',
+            'birth_date' => '1999-01-16',
             'phone' => '0791234568',
             'address' => 'Unchecked student address',
             'student_lookup_verified' => '1',
@@ -101,42 +120,106 @@ class AuthFlowTest extends TestCase
     {
         $this->seed(AccessControlSeeder::class);
 
-        Cache::forget('gsb:mohe_sanad:current:9876543213');
+        Cache::forget('gsb:mohe_sanad:current:9876543213:1998-10-03');
 
         config()->set('services.gsb.enabled', true);
         config()->set('services.gsb.client_id', 'client-id');
         config()->set('services.gsb.client_secret', 'client-secret');
         config()->set('services.gsb.services.mohe_sanad.enabled', true);
-        config()->set('services.gsb.services.mohe_sanad.base_url', 'https://api-gateway.g2b.gsb.gov.jo:9443');
-        config()->set('services.gsb.services.mohe_sanad.path', '/porg-gsb/g2b-catalog/api/mohe-sanad');
+        config()->set('services.gsb.services.mohe_sanad.base_url', 'https://api-gateway.stg.gsb.gov.jo:9443');
+        config()->set('services.gsb.services.mohe_sanad.path', '/porg-g2g/g2g/newstandard/api/MoheStandard');
 
         Http::fake([
-            'https://api-gateway.g2b.gsb.gov.jo:9443/porg-gsb/g2b-catalog/api/mohe-sanad' => Http::response([
-                'code' => null,
-                'data' => [[
-                    'STUDENT_NAME' => 'MOHE Student',
-                    'BIRTH_DATE' => '2002-01-02',
-                    'gender_desc' => 'Female',
-                    'NATIONALITY' => 'Jordanian',
-                    'INSTITUTE_NAME' => 'Yarmouk University',
-                    'S_MAJOR_NAME' => 'Cinema Production',
-                    'degree' => 'Bachelor',
-                    'student_status' => 'currently studying',
-                ]],
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/newstandard/api/MoheStandard' => Http::response([
+                'code' => 200,
+                'message' => 'Success',
+                'data' => [
+                    [
+                        'STUDENT_NAME' => 'سجل تخرج سابق',
+                        'BIRTH_DATE' => '03-OCT-98',
+                        'INSTITUTE_NAME' => 'جامعة سابقة',
+                        'major' => 'تخصص سابق',
+                        'student_status' => 'خريج',
+                    ],
+                    [
+                        'STUDENT_NAME' => 'طالب جامعي تجريبي',
+                        'BIRTH_DATE' => '03-OCT-98',
+                        'gender_desc' => 'ذكر',
+                        'NATIONALITY' => 'أردني',
+                        'INSTITUTE_NAME' => 'جامعة تجريبية',
+                        'S_MAJOR_NAME' => 'هندسة برمجيات',
+                        'degree' => 'البكالوريوس',
+                        'student_status' => 'على مقاعد الدراسة',
+                        'STUDENT_PHONE' => '799999999',
+                        'STUDENT_ID' => 'TEST-2018-001',
+                        'UNIVERSITY_TYPE_NAME' => 'خاصة',
+                        'INSTITUTE_GOVERNORATE' => 'محافظة العاصمة',
+                        'CITY_NAME' => 'عمان',
+                    ],
+                ],
             ], 200),
         ]);
 
         $response = $this->post(route('register.student.lookup'), [
             'national_id' => '9876543213',
+            'birth_date' => '03/10/1998',
         ]);
 
         $response
             ->assertOk()
-            ->assertJsonPath('data.full_name', 'MOHE Student')
-            ->assertJsonPath('data.birth_date', '2002-01-02')
-            ->assertJsonPath('data.gender', 'female')
-            ->assertJsonPath('data.university_name', 'Yarmouk University')
-            ->assertJsonPath('data.major', 'Cinema Production');
+            ->assertJsonPath('data.full_name', 'طالب جامعي تجريبي')
+            ->assertJsonPath('data.birth_date', '1998-10-03')
+            ->assertJsonPath('data.gender', 'male')
+            ->assertJsonPath('data.nationality', 'أردني')
+            ->assertJsonPath('data.university_name', 'جامعة تجريبية')
+            ->assertJsonPath('data.major', 'هندسة برمجيات')
+            ->assertJsonPath('data.student_phone', '0799999999')
+            ->assertJsonPath('data.student_id', 'TEST-2018-001');
+
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/newstandard/api/MoheStandard'
+            && $request['nationalNo'] === '9876543213'
+            && $request['birthDate'] === '1998-10-03');
+    }
+
+    public function test_student_lookup_rejects_mohe_graduate_record(): void
+    {
+        $this->seed(AccessControlSeeder::class);
+
+        Cache::forget('gsb:mohe_sanad:current:9876543214:1998-10-03');
+
+        config()->set('services.gsb.enabled', true);
+        config()->set('services.gsb.client_id', 'client-id');
+        config()->set('services.gsb.client_secret', 'client-secret');
+        config()->set('services.gsb.services.mohe_sanad.enabled', true);
+        config()->set('services.gsb.services.mohe_sanad.base_url', 'https://api-gateway.stg.gsb.gov.jo:9443');
+        config()->set('services.gsb.services.mohe_sanad.path', '/porg-g2g/g2g/newstandard/api/MoheStandard');
+
+        Http::fake([
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/newstandard/api/MoheStandard' => Http::response([
+                'code' => 200,
+                'message' => 'Success',
+                'data' => [[
+                    'STUDENT_NAME' => 'خريج جامعي تجريبي',
+                    'BIRTH_DATE' => '03-OCT-98',
+                    'INSTITUTE_NAME' => 'جامعة تجريبية',
+                    'major' => 'هندسة البرمجيات',
+                    'student_status' => 'خريج',
+                ]],
+            ], 200),
+        ]);
+
+        $response = $this->post(route('register.student.lookup'), [
+            'national_id' => '9876543214',
+            'birth_date' => '03/10/1998',
+        ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error', 'NOT_CURRENT_STUDENT');
+
+        $this->assertNull(session(StudentRegistrationLookupService::SESSION_KEY));
+
+        Http::assertSent(fn ($request): bool => $request['birthDate'] === '1998-10-03');
     }
 
     public function test_pending_student_user_cannot_sign_in_before_admin_approval(): void
@@ -146,12 +229,14 @@ class AuthFlowTest extends TestCase
 
         $this->post(route('register.student.lookup'), [
             'national_id' => '9876543212',
+            'birth_date' => '1999-01-17',
         ])->assertOk();
 
         $this->post(route('register.store'), [
             'registration_type' => 'student',
             'email' => 'pending-student@example.com',
             'national_id' => '9876543212',
+            'birth_date' => '1999-01-17',
             'phone' => '0791234569',
             'address' => 'Pending student address',
             'student_lookup_verified' => '1',
@@ -179,7 +264,7 @@ class AuthFlowTest extends TestCase
         $this->seed(AccessControlSeeder::class);
 
         $lookupResponse = $this->post(route('register.company.lookup'), [
-            'registration_number' => 'REG-1122',
+            'registration_number' => '2000011122',
         ]);
 
         $lookupResponse->assertOk();
@@ -187,7 +272,7 @@ class AuthFlowTest extends TestCase
 
         $response = $this->post(route('register.store'), [
             'registration_type' => 'company',
-            'registration_number' => 'REG-1122',
+            'registration_number' => '2000011122',
             'email' => 'info@futurefilms.test',
             'phone' => '0790000001',
             'address' => 'Amman, Jordan',
@@ -203,7 +288,7 @@ class AuthFlowTest extends TestCase
             ->assertRedirect(route('login'))
             ->assertSessionHas('status', 'Your account has been submitted for review. We will notify you by email and SMS once it is approved, rejected, or requires additional information.');
 
-        $entity = Entity::query()->where('registration_no', 'REG-1122')->firstOrFail();
+        $entity = Entity::query()->where('registration_no', '2000011122')->firstOrFail();
         $user = User::query()->where('email', 'info@futurefilms.test')->firstOrFail();
 
         $this->assertSame('company', $entity->registration_type);
@@ -231,9 +316,27 @@ class AuthFlowTest extends TestCase
             ->assertOk()
             ->assertSeeText('Student address')
             ->assertSee('id="student-address"', false)
+            ->assertSee('data-student-birth-date', false)
             ->assertSeeText('Company address')
             ->assertSee('id="company-address"', false)
             ->assertSee('autocomplete="street-address"', false);
+    }
+
+    public function test_company_registration_page_accepts_one_to_ten_digit_national_ids(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+
+        $response = $this->get(route('register'));
+
+        $response->assertOk();
+
+        $content = $response->getContent();
+        $companyLookupScript = strstr($content, 'const setupCompanyLookup = function () {');
+
+        $this->assertStringContainsString('pattern="\\d{1,10}"', $content);
+        $this->assertIsString($companyLookupScript);
+        $this->assertStringContainsString('if (!/^\\d{1,10}$/.test(value))', $companyLookupScript);
+        $this->assertStringNotContainsString('if (!/^\\d{10}$/.test(value))', $companyLookupScript);
     }
 
     public function test_company_registration_requires_verified_commercial_registration_lookup(): void
@@ -243,7 +346,7 @@ class AuthFlowTest extends TestCase
 
         $response = $this->from(route('register'))->post(route('register.store'), [
             'registration_type' => 'company',
-            'registration_number' => 'REG-3344',
+            'registration_number' => '2000033344',
             'email' => 'unchecked-company@example.com',
             'phone' => '0790000002',
             'address' => 'Amman, Jordan',
@@ -261,6 +364,94 @@ class AuthFlowTest extends TestCase
         $this->assertDatabaseMissing('users', [
             'email' => 'unchecked-company@example.com',
         ]);
+    }
+
+    public function test_company_lookup_uses_ccd_company_registry_when_record_exists(): void
+    {
+        Cache::forget('gsb:ccd_company:44455');
+
+        $this->configureCompanyGsbServices();
+
+        Http::fake([
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/companies/CompanybyNo/44455' => Http::response([
+                'data' => [[
+                    'COMPANY_NAME_AR' => 'شركة أفلام تجريبية',
+                    'REGISTRATION_DATE' => '2020-02-15',
+                    'CAPITAL' => '250000',
+                    'COMPANY_TYPE_NAME' => 'شركة ذات مسؤولية محدودة',
+                    'GOVERNORATE_NAME' => 'العاصمة',
+                    'REG_NO' => '4455',
+                ]],
+            ]),
+        ]);
+
+        $response = $this->post(route('register.company.lookup'), [
+            'registration_number' => '44455',
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.entity_name', 'شركة أفلام تجريبية')
+            ->assertJsonPath('data.company_registration_date', '2020-02-15')
+            ->assertJsonPath('data.company_capital', '250000')
+            ->assertJsonPath('data.organization_type', 'شركة ذات مسؤولية محدودة')
+            ->assertJsonPath('data.governorate', 'العاصمة')
+            ->assertJsonPath('meta.source', 'gsb_ccd_company');
+
+        Http::assertSent(fn ($request): bool => $request->method() === 'GET'
+            && $request->url() === 'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/companies/CompanybyNo/44455'
+            && $request->hasHeader('X-MODEE-Client-Id', 'client-id'));
+    }
+
+    public function test_company_lookup_falls_back_to_mit_for_establishment_record(): void
+    {
+        Cache::forget('gsb:ccd_company:66677');
+        Cache::forget('gsb:mit_establishment:66677');
+
+        $this->configureCompanyGsbServices();
+
+        Http::fake([
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/companies/CompanybyNo/66677' => Http::response(['data' => []]),
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getRegisteryInfoByEstablishmentNationalNumber' => Http::response([
+                'code' => 200,
+                'data' => [[
+                    'ESTABLISHMENT_NAME' => 'مؤسسة إنتاج فردية',
+                    'REG_DATE' => '2021-06-10',
+                    'CAPITAL_VALUE' => '75000',
+                    'ESTABLISHMENT_TYPE_NAME' => 'مؤسسة فردية',
+                    'GOV_NAME' => 'إربد',
+                ]],
+            ]),
+        ]);
+
+        $response = $this->post(route('register.company.lookup'), [
+            'registration_number' => '66677',
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.entity_name', 'مؤسسة إنتاج فردية')
+            ->assertJsonPath('data.company_registration_date', '2021-06-10')
+            ->assertJsonPath('data.company_capital', '75000')
+            ->assertJsonPath('data.organization_type', 'مؤسسة فردية')
+            ->assertJsonPath('data.governorate', 'إربد')
+            ->assertJsonPath('meta.source', 'gsb_mit_services')
+            ->assertJsonCount(2, 'meta.attempts');
+
+        Http::assertSent(fn ($request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getRegisteryInfoByEstablishmentNationalNumber'
+            && $request['nationalNo'] === '66677');
+    }
+
+    public function test_company_lookup_rejects_non_numeric_or_more_than_ten_digit_numbers(): void
+    {
+        $this->postJson(route('register.company.lookup'), [
+            'registration_number' => 'COMP-123',
+        ])->assertUnprocessable()->assertJsonValidationErrors('registration_number');
+
+        $this->postJson(route('register.company.lookup'), [
+            'registration_number' => '12345678901',
+        ])->assertUnprocessable()->assertJsonValidationErrors('registration_number');
     }
 
     public function test_ngo_registration_creates_pending_account_with_address(): void
@@ -619,6 +810,21 @@ class AuthFlowTest extends TestCase
             ->assertSeeText('حقل الرقم الوطني مطلوب.')
             ->assertSeeText('حقل رقم الهاتف مطلوب.')
             ->assertSeeText('حقل العنوان مطلوب.');
+    }
+
+    private function configureCompanyGsbServices(): void
+    {
+        config()->set('services.gsb.enabled', true);
+        config()->set('services.gsb.client_id', 'client-id');
+        config()->set('services.gsb.client_secret', 'client-secret');
+        config()->set('services.gsb.services.ccd_company.enabled', true);
+        config()->set('services.gsb.services.ccd_company.base_url', 'https://api-gateway.stg.gsb.gov.jo:9443');
+        config()->set('services.gsb.services.ccd_company.path', '/porg-g2g/g2g/api/companies/CompanybyNo/{nationalNo}');
+        config()->set('services.gsb.services.ccd_company.method', 'GET');
+        config()->set('services.gsb.services.mit_services.enabled', true);
+        config()->set('services.gsb.services.mit_services.base_url', 'https://api-gateway.stg.gsb.gov.jo:9443');
+        config()->set('services.gsb.services.mit_services.path', '/porg-g2g/g2g/api/Registry/getRegisteryInfoByEstablishmentNationalNumber');
+        config()->set('services.gsb.services.mit_services.method', 'POST');
     }
 
     private function assertOrganizationRegistrationCreatesPendingAccount(

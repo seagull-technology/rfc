@@ -77,11 +77,14 @@
             ->filter(fn (string $value): bool => filled($value))
             ->join(', ') ?: __('app.dashboard.not_available');
     };
-    $equipmentFlightRows = $nonEmptyRows(data_get($annex, 'equipment_flights', []));
     $equipmentTravelerRows = $nonEmptyRows(data_get($annex, 'equipment_travelers', []));
     $importedEquipmentRows = $nonEmptyRows(data_get($annex, 'imported_equipment', []));
-    $militaryBorderLocationRows = $nonEmptyRows(data_get($annex, 'military_border_locations', []));
-    $militaryBorderEquipmentRows = $nonEmptyRows(data_get($annex, 'military_border_equipment', []));
+    $shippingEquipmentRows = $importedEquipmentRows
+        ->filter(fn ($row): bool => data_get($row, 'transport_group', 'shipping') !== 'traveler')
+        ->values();
+    $travelerEquipmentRows = $importedEquipmentRows
+        ->filter(fn ($row): bool => data_get($row, 'transport_group') === 'traveler')
+        ->values();
     $publicSecuritySupportRows = $nonEmptyRows(data_get($annex, 'public_security_support', []));
     $militarySupportRows = $nonEmptyRows(data_get($annex, 'military_support', []));
     $supportAuthorityLabel = static fn ($value): string => match ((string) $value) {
@@ -149,8 +152,6 @@
     };
     $airportPeopleRows = $nonEmptyRows(data_get($annex, 'airport_people', []));
     $governmentalSceneRows = $nonEmptyRows(data_get($annex, 'governmental_scenes', []));
-    $importedEquipmentTotal = $importedEquipmentRows->sum(fn ($row) => (float) data_get($row, 'total_value'));
-    $militaryBorderEquipmentTotal = $militaryBorderEquipmentRows->sum(fn ($row) => (float) data_get($row, 'total_value'));
     $onlySections = collect($onlySections ?? [])
         ->filter(fn ($section): bool => filled($section))
         ->map(fn ($section): string => (string) $section)
@@ -163,11 +164,7 @@
         'filming_locations' => $filmingLocationRows->isNotEmpty(),
         'special_location_requirements' => $specialLocationRequirementRows->isNotEmpty(),
         'safety_guidelines' => (bool) data_get($safetyGuidelines, 'acknowledged') || filled(data_get($safetyGuidelines, 'notes')),
-        'equipment_flights' => $equipmentFlightRows->isNotEmpty(),
-        'equipment_travelers' => $equipmentTravelerRows->isNotEmpty(),
-        'imported_equipment' => $importedEquipmentRows->isNotEmpty(),
-        'military_border_locations' => $militaryBorderLocationRows->isNotEmpty(),
-        'military_border_equipment' => $militaryBorderEquipmentRows->isNotEmpty(),
+        'imported_equipment' => $importedEquipmentRows->isNotEmpty() || $equipmentTravelerRows->isNotEmpty(),
         'public_security_support' => $publicSecuritySupportRows->isNotEmpty(),
         'military_support' => $militarySupportRows->isNotEmpty(),
         'airport_filming' => $rowHasData($airportFilming),
@@ -183,8 +180,7 @@
         ['target' => 'CastCrewListView', 'label' => __('app.applications.annex_sections.cast_crew'), 'sections' => ['cast_crew']],
         ['target' => 'LocationListView', 'label' => __('app.applications.annex_sections.filming_locations'), 'sections' => ['filming_locations', 'special_location_requirements', 'public_security_support', 'military_support']],
         ['target' => 'RFCGuidelinesView', 'label' => __('app.applications.annex_sections.safety_guidelines'), 'sections' => ['safety_guidelines']],
-        ['target' => 'EquipmentListView', 'label' => __('app.applications.annex_sections.imported_equipment'), 'sections' => ['equipment_flights', 'equipment_travelers', 'imported_equipment']],
-        ['target' => 'EquipmentMilitaryBorderView', 'label' => __('app.applications.annex_sections.military_border_equipment'), 'sections' => ['military_border_locations', 'military_border_equipment']],
+        ['target' => 'EquipmentListView', 'label' => __('app.applications.annex_sections.imported_equipment'), 'sections' => ['equipment_travelers', 'imported_equipment']],
         ['target' => 'FilmingAirportsView', 'label' => __('app.applications.annex_sections.airport_filming'), 'sections' => ['airport_filming', 'airport_people']],
         ['target' => 'FilmingGovernmentalView', 'label' => __('app.applications.annex_sections.governmental_scenes'), 'sections' => ['governmental_scenes']],
     ])
@@ -392,7 +388,6 @@
                         <th>{{ __('app.applications.location_support_requirements_title') }}</th>
                         <th>{{ __('app.scouting.start_date') }}</th>
                         <th>{{ __('app.scouting.end_date') }}</th>
-                        <th>{{ __('app.applications.annex_fields.notes') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -408,10 +403,9 @@
                             <td>{{ $locationSupportRequirementSummaryForRow((array) $row) }}</td>
                             <td>{{ $fallback(data_get($row, 'start_date')) }}</td>
                             <td>{{ $fallback(data_get($row, 'end_date')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'notes')) }}</td>
                         </tr>
                     @empty
-                        <tr><td colspan="11">{{ __('app.documents.not_filled') }}</td></tr>
+                        <tr><td colspan="10">{{ __('app.documents.not_filled') }}</td></tr>
                     @endforelse
                 </tbody>
             </table>
@@ -459,40 +453,40 @@
         <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
     </div>
     <div class="offcanvas-body">
-        <h5 class="mb-3">{{ __('app.applications.flight_details_title') }}</h5>
-        <div class="table-responsive mb-4">
+        <div class="table-responsive">
             <table class="table table-striped mb-0 attached-form-readonly-table">
                 <thead>
                     <tr>
                         <th style="width: 64px">#</th>
-                        <th>{{ __('app.applications.annex_fields.flight_type') }}</th>
-                        <th>{{ __('app.applications.annex_fields.flight_number') }}</th>
-                        <th>{{ __('app.applications.annex_fields.date') }}</th>
-                        <th>{{ __('app.applications.annex_fields.time') }}</th>
-                        <th>{{ __('app.applications.annex_fields.departure_city') }}</th>
-                        <th>{{ __('app.applications.annex_fields.arrival_city') }}</th>
+                        <th>{{ __('app.applications.annex_fields.shipping_company_name') }}</th>
+                        <th>{{ __('app.applications.annex_fields.invoice_number') }}</th>
+                        <th>{{ __('app.applications.annex_fields.bill_of_lading_number') }}</th>
+                        <th>{{ __('app.applications.annex_fields.arrival_date') }}</th>
+                        <th>{{ __('app.applications.annex_fields.departure_date') }}</th>
+                        <th>{{ __('app.applications.annex_fields.customs_center') }}</th>
+                        <th>{{ __('app.applications.annex_fields.attachment') }}</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse ($equipmentFlightRows as $row)
+                    @forelse ($shippingEquipmentRows as $row)
                         <tr>
                             <td>{{ $loop->iteration }}</td>
-                            <td>{{ $translateOption('app.applications.flight_types', data_get($row, 'flight_type')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'flight_number')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'flight_date')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'flight_time')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'departure_city')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'arrival_city')) }}</td>
+                            <td>{{ $fallback(data_get($row, 'shipping_company_name')) }}</td>
+                            <td>{{ $fallback(data_get($row, 'invoice_number')) }}</td>
+                            <td>{{ $fallback(data_get($row, 'bill_of_lading_number')) }}</td>
+                            <td>{{ $fallback(data_get($row, 'arrival_date')) }}</td>
+                            <td>{{ $fallback(data_get($row, 'departure_date')) }}</td>
+                            <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT, data_get($row, 'customs_center', data_get($row, 'entry_point'))) }}</td>
+                            <td>{{ $fallback(data_get($row, 'attachment_name')) }}</td>
                         </tr>
                     @empty
-                        <tr><td colspan="7">{{ __('app.documents.not_filled') }}</td></tr>
+                        <tr><td colspan="8">{{ __('app.documents.not_filled') }}</td></tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
-
-        <h5 class="mb-3">{{ __('app.applications.travelers_list_title') }}</h5>
-        <div class="table-responsive mb-4">
+        <h3 class="mt-4 mb-3">{{ __('app.applications.travelers_list_title') }}</h3>
+        <div class="table-responsive">
             <table class="table table-striped mb-0 attached-form-readonly-table">
                 <thead>
                     <tr>
@@ -520,8 +514,7 @@
                 </tbody>
             </table>
         </div>
-
-        <h5 class="mb-3">{{ __('app.applications.equipment_list_title') }}</h5>
+        <h3 class="mt-4 mb-3">{{ __('app.applications.equipment_list_title') }}</h3>
         <div class="table-responsive">
             <table class="table table-striped mb-0 attached-form-readonly-table">
                 <thead>
@@ -529,7 +522,6 @@
                         <th style="width: 64px">#</th>
                         <th>{{ __('app.applications.annex_fields.equipment_item') }}</th>
                         <th>{{ __('app.applications.annex_fields.serial_number') }}</th>
-                        <th>{{ __('app.applications.annex_fields.flight') }}</th>
                         <th>{{ __('app.applications.annex_fields.traveler_name') }}</th>
                         <th>{{ __('app.applications.annex_fields.quantity') }}</th>
                         <th>{{ __('app.applications.annex_fields.unit_value_usd') }}</th>
@@ -540,102 +532,18 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse ($importedEquipmentRows as $row)
+                    @forelse ($travelerEquipmentRows as $row)
                         <tr>
                             <td>{{ $loop->iteration }}</td>
                             <td>{{ $fallback(data_get($row, 'item')) }}</td>
                             <td>{{ $fallback(data_get($row, 'serial_number')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'flight_reference')) }}</td>
                             <td>{{ $fallback(data_get($row, 'traveler_name')) }}</td>
                             <td>{{ $fallback(data_get($row, 'quantity')) }}</td>
                             <td>{{ $fallback(data_get($row, 'unit_value')) }}</td>
                             <td>{{ $fallback(data_get($row, 'total_value')) }}</td>
-	                            <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_CATEGORY, data_get($row, 'classification')) }}</td>
-	                            <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_SHIPPING_METHOD, data_get($row, 'shipping_method')) }}</td>
-	                            <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT, data_get($row, 'entry_point')) }}</td>
-                        </tr>
-                    @empty
-                        <tr><td colspan="11">{{ __('app.documents.not_filled') }}</td></tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
-        <div class="text-end fw-semibold mt-3">{{ __('app.applications.equipment_total_label') }} {{ number_format($importedEquipmentTotal, 2) }} {{ __('app.applications.usd') }}</div>
-    </div>
-</div>
-@endif
-
-@if ($attachedFormTargets->contains('EquipmentMilitaryBorderView'))
-<div class="offcanvas offcanvas-end attached-form-view-drawer" tabindex="-1" id="EquipmentMilitaryBorderView" aria-labelledby="EquipmentMilitaryBorderViewLabel">
-    <div class="offcanvas-header">
-        <h2 id="EquipmentMilitaryBorderViewLabel" class="mb-0">{{ __('app.applications.annex_sections.military_border_equipment') }}</h2>
-        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
-    </div>
-    <div class="offcanvas-body">
-        <h5 class="mb-3">{{ __('app.applications.military_border_locations_title') }}</h5>
-        <div class="table-responsive mb-4">
-            <table class="table table-striped mb-0 attached-form-readonly-table">
-                <thead>
-                    <tr>
-                        <th style="width: 64px">#</th>
-                        <th>{{ __('app.scouting.governorate') }}</th>
-                        <th>{{ __('app.applications.annex_fields.location_exact_name') }}</th>
-                        <th>{{ __('app.applications.annex_fields.location_address') }}</th>
-                        <th>{{ __('app.applications.annex_fields.location_nature') }}</th>
-                        <th>{{ __('app.applications.annex_fields.location_type') }}</th>
-                        <th>{{ __('app.scouting.start_date') }}</th>
-                        <th>{{ __('app.scouting.end_date') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse ($militaryBorderLocationRows as $row)
-                        <tr>
-                            <td>{{ $loop->iteration }}</td>
-                            <td>{{ \App\Models\Governorate::labelFor(data_get($row, 'governorate')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'location_name')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'address')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'nature')) }}</td>
-	                            <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_MILITARY_BORDER_LOCATION_TYPE, data_get($row, 'location_type')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'start_date')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'end_date')) }}</td>
-                        </tr>
-                    @empty
-                        <tr><td colspan="8">{{ __('app.documents.not_filled') }}</td></tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
-
-        <h5 class="mb-3">{{ __('app.applications.equipment_list_title') }}</h5>
-        <div class="table-responsive">
-            <table class="table table-striped mb-0 attached-form-readonly-table">
-                <thead>
-                    <tr>
-                        <th style="width: 64px">#</th>
-                        <th>{{ __('app.scouting.location_name') }}</th>
-                        <th>{{ __('app.applications.annex_fields.equipment_item') }}</th>
-                        <th>{{ __('app.applications.annex_fields.serial_number') }}</th>
-                        <th>{{ __('app.applications.annex_fields.quantity') }}</th>
-                        <th>{{ __('app.applications.annex_fields.unit_value_usd') }}</th>
-                        <th>{{ __('app.applications.annex_fields.total_value') }}</th>
-                        <th>{{ __('app.applications.annex_fields.classification') }}</th>
-                        <th>{{ __('app.applications.annex_fields.entry_method') }}</th>
-                        <th>{{ __('app.applications.annex_fields.entry_point') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse ($militaryBorderEquipmentRows as $row)
-                        <tr>
-                            <td>{{ $loop->iteration }}</td>
-                            <td>{{ $fallback(data_get($row, 'location_reference') ?: data_get($row, 'location_name')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'item') ?: data_get($row, 'equipment')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'serial_number')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'quantity')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'unit_value')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'total_value')) }}</td>
-	                            <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_CATEGORY, data_get($row, 'classification')) }}</td>
-                            <td>{{ $translateOption('app.applications.entry_methods', data_get($row, 'entry_method')) }}</td>
-	                            <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT, data_get($row, 'entry_point')) }}</td>
+                            <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_CATEGORY, data_get($row, 'classification')) }}</td>
+                            <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_SHIPPING_METHOD, data_get($row, 'shipping_method')) }}</td>
+                            <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT, data_get($row, 'entry_point')) }}</td>
                         </tr>
                     @empty
                         <tr><td colspan="10">{{ __('app.documents.not_filled') }}</td></tr>
@@ -643,7 +551,6 @@
                 </tbody>
             </table>
         </div>
-        <div class="text-end fw-semibold mt-3">{{ __('app.applications.equipment_total_label') }} {{ number_format($militaryBorderEquipmentTotal, 2) }} {{ __('app.applications.usd') }}</div>
     </div>
 </div>
 @endif

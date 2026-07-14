@@ -29,6 +29,7 @@ use App\Http\Controllers\Admin\ScoutingRequestManagementController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\WorkAndReleaseLookupController;
 use App\Http\Controllers\Authority\ApplicationInboxController;
+use App\Http\Controllers\CompanyEmployeeController;
 use App\Http\Controllers\ContactCenterController;
 use App\Http\Controllers\CurrentEntityController;
 use App\Http\Controllers\DashboardController;
@@ -92,6 +93,7 @@ Route::group([
         Route::post('/registration/complete', [RegistrationCompletionController::class, 'update'])->name('registration.completion.update');
         Route::get('/profile', ProfileController::class)->name('profile.show');
         Route::get('/profile/logo', [ProfileController::class, 'logo'])->name('profile.logo');
+        Route::get('/entities/{entity}/logo', [ProfileController::class, 'entityLogo'])->name('entities.logo');
         Route::post('/profile/account', [ProfileController::class, 'updateAccount'])->name('profile.account.update');
         Route::post('/profile/contact', [ProfileController::class, 'updateContact'])->name('profile.contact.update');
         Route::post('/profile/official-change-request', [ProfileController::class, 'storeOfficialChangeRequest'])->name('profile.official-change-request.store');
@@ -101,6 +103,11 @@ Route::group([
         Route::get('/notifications/{notification}', NotificationRedirectController::class)->name('notifications.redirect');
         Route::get('/contact-center', [ContactCenterController::class, 'index'])->name('contact-center.index');
         Route::get('/contact-center/messages/{message}/download', [ContactCenterController::class, 'download'])->name('contact-center.messages.download');
+
+        Route::get('/company/users', [CompanyEmployeeController::class, 'index'])->name('company.employees.index');
+        Route::post('/company/users', [CompanyEmployeeController::class, 'store'])->name('company.employees.store');
+        Route::post('/company/users/{member}/update', [CompanyEmployeeController::class, 'update'])->name('company.employees.update');
+        Route::post('/company/users/{member}/status', [CompanyEmployeeController::class, 'updateStatus'])->name('company.employees.status');
 
         Route::get('/applications', [ApplicationController::class, 'index'])->name('applications.index');
         Route::get('/applications/create', [ApplicationController::class, 'create'])->name('applications.create');

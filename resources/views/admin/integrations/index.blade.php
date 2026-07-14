@@ -277,9 +277,13 @@
                     <form method="POST" action="{{ route('admin.integrations.mohe-student-test') }}" class="row g-3">
                         @csrf
 
-                        <div class="col-12">
+                        <div class="col-md-6">
                             <label for="national_id" class="form-label">{{ __('app.auth.national_id') }}</label>
                             <input id="national_id" name="national_id" type="text" class="form-control" value="{{ old('national_id') }}" inputmode="numeric" maxlength="10" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="mohe_birth_date" class="form-label">{{ __('app.auth.birth_date') }}</label>
+                            <input id="mohe_birth_date" name="birth_date" type="date" class="form-control" value="{{ old('birth_date') }}" max="{{ now()->subDay()->toDateString() }}" required>
                         </div>
                         <div class="col-12">
                             <button class="btn btn-primary" type="submit">{{ __('app.admin.integrations.run_mohe_lookup') }}</button>

@@ -1,0 +1,37 @@
+meta {
+  name: Lookup Establishment - MIT
+  type: http
+  seq: 2
+}
+
+post {
+  url: https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getRegisteryInfoByEstablishmentNationalNumber
+  body: json
+  auth: none
+}
+
+headers {
+  X-MODEE-Client-Id: {{gsb_client_id}}
+  X-MODEE-Client-Secret: {{gsb_client_secret}}
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "nationalNo": "{{test_company_national_no}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Establishment lookup through the Ministry of Industry and Trade registry service.
+
+  Select the STG environment before sending and configure:
+  - gsb_client_id
+  - gsb_client_secret
+  - test_company_national_no (numeric establishment national number, up to 10 digits)
+}

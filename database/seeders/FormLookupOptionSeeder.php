@@ -120,10 +120,6 @@ class FormLookupOptionSeeder extends Seeder
                 ['code' => 'other_2', 'name_en' => 'Other expenses', 'name_ar' => 'مصاريف أخرى'],
                 ['code' => 'other_3', 'name_en' => 'Other expenses', 'name_ar' => 'مصاريف أخرى'],
             ],
-            FormLookupOption::TYPE_MILITARY_BORDER_LOCATION_TYPE => [
-                ['code' => 'military_area', 'name_en' => 'Military area', 'name_ar' => 'منطقة عسكرية'],
-                ['code' => 'border_area', 'name_en' => 'Border area', 'name_ar' => 'منطقة حدودية'],
-            ],
             FormLookupOption::TYPE_DRONE_REQUEST_TYPE => [
                 ['code' => 'regular', 'name_en' => 'Regular', 'name_ar' => 'اعتيادي'],
                 ['code' => 'urgent', 'name_en' => 'Urgent', 'name_ar' => 'طارئ'],

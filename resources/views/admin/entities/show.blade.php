@@ -15,7 +15,7 @@
     $registrationLogoName = data_get($entity->metadata, 'logo_name');
     $registrationLogoMime = data_get($entity->metadata, 'logo_mime');
     $hasRegistrationLogo = filled(data_get($entity->metadata, 'logo_path'));
-    $entityLogoUrl = $hasRegistrationLogo ? route('admin.entities.registration-logo', $entity->getKey()) : asset('images/OIP.jpeg');
+    $entityLogoUrl = \App\Support\EntityLogo::url($entity, 'images/OIP.jpeg');
     $studentGender = data_get($entity->metadata, 'gender');
     $profileStats = $entityAnalytics['stats'];
     $chartData = $entityAnalytics['charts'];

@@ -59,10 +59,17 @@ class RegisterController extends Controller
         RoleAssignmentService $roleAssignmentService,
         StudentRegistrationLookupService $studentLookupService,
     ): RedirectResponse {
+        $normalizedBirthDate = $studentLookupService->normalizeBirthDate((string) $request->input('birth_date'));
+
+        if ($normalizedBirthDate !== null) {
+            $request->merge(['birth_date' => $normalizedBirthDate]);
+        }
+
         $data = $request->validate([
             'registration_type' => ['required', 'in:student'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
             'national_id' => ['required', 'regex:/^\d{10}$/', Rule::unique('users', 'national_id'), Rule::unique('entities', 'national_id')],
+            'birth_date' => ['required', 'date_format:Y-m-d', 'before:today'],
             'phone' => ['required', 'regex:/^\d{10}$/', Rule::unique('users', 'phone')],
             'address' => ['required', 'string', 'max:255'],
             'logo' => $this->logoValidationRules(),
@@ -75,7 +82,11 @@ class RegisterController extends Controller
 
         $lookupState = $request->session()->get(StudentRegistrationLookupService::SESSION_KEY);
 
-        if (! $studentLookupService->lookupStateMatches(is_array($lookupState) ? $lookupState : null, $data['national_id'])) {
+        if (! $studentLookupService->lookupStateMatches(
+            is_array($lookupState) ? $lookupState : null,
+            $data['national_id'],
+            $data['birth_date'],
+        )) {
             throw ValidationException::withMessages([
                 'national_id' => __('app.auth.student_lookup_required'),
             ]);
@@ -115,6 +126,12 @@ class RegisterController extends Controller
                     'nationality' => $data['nationality'],
                     'university_name' => $data['university_name'],
                     'major' => $data['major'],
+                    'degree' => $data['degree'] ?? null,
+                    'student_status' => $data['student_status'] ?? null,
+                    'student_id' => $data['student_id'] ?? null,
+                    'university_type' => $data['university_type'] ?? null,
+                    'university_governorate' => $data['university_governorate'] ?? null,
+                    'city' => $data['city'] ?? null,
                     'address' => $data['address'],
                 ], $this->logoMetadata($logo, 'student')),
             ]);
@@ -142,7 +159,7 @@ class RegisterController extends Controller
     ): RedirectResponse {
         $data = $request->validate([
             'registration_type' => ['required', 'in:company'],
-            'registration_number' => ['required', 'string', 'max:50', Rule::unique('entities', 'registration_no')],
+            'registration_number' => ['required', 'regex:/^\d{1,10}$/', Rule::unique('entities', 'registration_no')],
             'entity_name' => ['nullable', 'string', 'max:255'],
             'company_registration_date' => ['nullable', 'date'],
             'company_capital' => ['nullable', 'numeric', 'min:0'],
@@ -155,6 +172,7 @@ class RegisterController extends Controller
             'company_lookup_verified' => ['accepted'],
             'password' => array_merge(['required', 'confirmed'], $this->passwordRules()),
         ], array_merge([
+            'registration_number.regex' => __('app.auth.organization_national_id_digits'),
             'phone.regex' => __('app.auth.phone_digits'),
         ], $this->logoValidationMessages()));
 
@@ -167,6 +185,7 @@ class RegisterController extends Controller
         }
 
         $data = array_merge($data, (array) data_get($lookupState, 'data', []));
+        $data['company_registry_source'] = data_get($lookupState, 'meta.source');
         $data['phone'] = PhoneNumber::normalize($data['phone']);
         $username = $this->makeUsername('company', $data['registration_number']);
         $document = $data['registration_document'];
@@ -201,6 +220,10 @@ class RegisterController extends Controller
                     'description' => $data['description'] ?: null,
                     'company_registration_date' => $data['company_registration_date'],
                     'company_capital' => $data['company_capital'],
+                    'organization_type' => $data['organization_type'] ?? null,
+                    'governorate' => $data['governorate'] ?? null,
+                    'commercial_registration_number' => $data['commercial_registration_number'] ?? null,
+                    'company_registry_source' => data_get($data, 'company_registry_source'),
                     'registration_document_path' => $documentPath,
                     'registration_document_name' => $document->getClientOriginalName(),
                     'registration_document_mime' => $document->getClientMimeType(),

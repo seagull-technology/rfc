@@ -99,8 +99,6 @@ class ApprovalRoutingTest extends TestCase
             ->assertSee('value="imported_equipment_shipping_method_shipping"', false)
             ->assertSeeText('Entry points')
             ->assertSee('value="imported_equipment_entry_point_queen_alia_international_airport"', false)
-            ->assertSeeText('Military/border location types')
-            ->assertSee('value="military_location_type_border_area"', false)
             ->assertSeeText('Support authority')
             ->assertSeeText('Public Security')
             ->assertSee('value="public_security_support"', false)
@@ -132,7 +130,7 @@ class ApprovalRoutingTest extends TestCase
             ->assertOk()
             ->assertSeeText('Test routing category')
             ->assertSee('value="imported_equipment_category_test_routing_category"', false)
-            ->assertSee('value="military_equipment_category_test_routing_category"', false);
+            ->assertDontSee('value="military_equipment_category_test_routing_category"', false);
     }
 
     public function test_specific_annex_child_trigger_removes_broad_form_trigger(): void
@@ -315,19 +313,21 @@ class ApprovalRoutingTest extends TestCase
             'is_active' => true,
         ]);
 
+        $filmingStart = now()->addDays(10)->toDateString();
+        $filmingEnd = now()->addDays(11)->toDateString();
+
         $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
             'project_name' => 'Airport Annex Shoot',
             'filming_locations' => [[
                 'governorate' => 'aqaba',
                 'location_name' => 'King Hussein International Airport',
                 'location_type' => 'public_locations',
-                'start_date' => '2026-05-02',
-                'end_date' => '2026-05-03',
-                'notes' => 'Exterior and terminal filming.',
+                'start_date' => $filmingStart,
+                'end_date' => $filmingEnd,
             ]],
             'airport_filming_airport_name' => 'King Hussein International Airport',
             'airport_filming_area' => 'Terminal and apron',
-            'airport_filming_date' => '2026-05-02',
+            'airport_filming_date' => $filmingStart,
             'airport_filming_crew_count' => 18,
             'airport_filming_notes' => 'Requires airport coordination.',
         ]));
@@ -361,7 +361,6 @@ class ApprovalRoutingTest extends TestCase
                 'location_type' => 'public_locations',
                 'start_date' => '2026-05-04',
                 'end_date' => '2026-05-05',
-                'notes' => 'No airport activity.',
             ]],
         ]));
 
@@ -475,7 +474,6 @@ class ApprovalRoutingTest extends TestCase
         $this->assertSame(['annex_flags' => ['imported_equipment']], $customsRule->conditions);
         $this->assertSame([
             'annex_flags' => [
-                'military_border_equipment',
                 'military_support',
                 'location_type_border_areas',
                 'special_requirement_armed_forces',

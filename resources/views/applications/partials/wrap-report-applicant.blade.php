@@ -173,7 +173,7 @@
                     </div>
                     <div class="col-lg-4">
                         <label class="form-label">{{ __('app.wrap_report.fields.submitted_position') }} <span class="text-danger">*</span></label>
-                        <input class="form-control" name="submitted_position" value="{{ $fieldValue('submitted_position', data_get($producer, 'liaison_position')) }}" required>
+                        <input class="form-control" name="submitted_position" value="{{ $fieldValue('submitted_position') }}" required>
                     </div>
                     <div class="col-lg-4">
                         <label class="form-label">{{ __('app.wrap_report.fields.submitted_date') }} <span class="text-danger">*</span></label>

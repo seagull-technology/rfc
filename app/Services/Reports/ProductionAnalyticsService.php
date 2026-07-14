@@ -640,10 +640,6 @@ class ProductionAnalyticsService
             $rows->push($this->locationFact($application, (array) $location, $today, 'filming_locations'));
         }
 
-        foreach ((array) data_get($annex, 'military_border_locations', []) as $location) {
-            $rows->push($this->locationFact($application, (array) $location, $today, 'military_border_locations'));
-        }
-
         return $rows
             ->filter(fn (?array $row): bool => $row !== null)
             ->values();
@@ -774,10 +770,6 @@ class ProductionAnalyticsService
             $rows->push($this->equipmentFact($application, (array) $equipment, 'imported_equipment'));
         }
 
-        foreach ((array) data_get($annex, 'military_border_equipment', []) as $equipment) {
-            $rows->push($this->equipmentFact($application, (array) $equipment, 'military_border_equipment'));
-        }
-
         return $rows->filter()->values();
     }
 
@@ -794,7 +786,7 @@ class ProductionAnalyticsService
         $category = $this->normalizeEquipmentCategory(
             data_get($equipment, 'classification')
                 ?: data_get($equipment, 'transport_group')
-                ?: ($source === 'military_border_equipment' ? 'military' : 'other')
+                ?: 'other'
         );
 
         return [

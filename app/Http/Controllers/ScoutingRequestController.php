@@ -8,8 +8,10 @@ use App\Models\Governorate;
 use App\Models\Nationality;
 use App\Models\ScoutingRequestCorrespondence;
 use App\Models\ScoutingRequest;
+use App\Models\User;
 use App\Models\WorkCategory;
 use App\Notifications\InboxMessageNotification;
+use App\Support\JordanBusinessDays;
 use App\Support\NotificationRecipients;
 use App\Support\ScoutingRequestOverview;
 use App\Support\WorkflowMessageMetadata;
@@ -27,7 +29,7 @@ class ScoutingRequestController extends Controller
     {
         [$user, $entity] = $this->applicantContext($request);
 
-        abort_unless($user->can('applications.view.entity'), 403);
+        $this->ensureApplicantHasAnyPermission($user, ['applications.view.entity', 'applications.view.own']);
 
         $filters = $request->validate([
             'q' => ['nullable', 'string', 'max:255'],
@@ -37,6 +39,8 @@ class ScoutingRequestController extends Controller
         $query = ScoutingRequest::query()
             ->with(['entity', 'submittedBy', 'reviewedBy'])
             ->where('entity_id', $entity->getKey());
+
+        $this->restrictApplicantScoutingQuery($query, $user);
 
         if (filled($filters['q'] ?? null)) {
             $search = trim((string) $filters['q']);
@@ -158,7 +162,7 @@ class ScoutingRequestController extends Controller
     {
         [$user, $entity] = $this->applicantContext($request);
 
-        abort_unless($user->can('applications.view.entity'), 403);
+        $this->ensureApplicantHasAnyPermission($user, ['applications.view.entity', 'applications.view.own']);
 
         $record = $this->findApplicantRequest($scoutingRequest, $entity);
         $record->load([
@@ -180,9 +184,10 @@ class ScoutingRequestController extends Controller
     {
         [$user, $entity] = $this->applicantContext($request);
 
-        abort_unless($user->can('applications.update.entity'), 403);
+        $this->ensureApplicantHasAnyPermission($user, ['applications.update.entity', 'applications.update.own']);
 
         $record = $this->findApplicantRequest($scoutingRequest, $entity);
+        $this->ensureApplicantCanUpdateScoutingRequest($user, $record);
 
         abort_unless($record->canBeEditedByApplicant(), 403);
 
@@ -200,9 +205,10 @@ class ScoutingRequestController extends Controller
     {
         [$user, $entity] = $this->applicantContext($request);
 
-        abort_unless($user->can('applications.update.entity'), 403);
+        $this->ensureApplicantHasAnyPermission($user, ['applications.update.entity', 'applications.update.own']);
 
         $record = $this->findApplicantRequest($scoutingRequest, $entity);
+        $this->ensureApplicantCanUpdateScoutingRequest($user, $record);
 
         abort_unless($record->canBeEditedByApplicant(), 403);
 
@@ -264,7 +270,7 @@ class ScoutingRequestController extends Controller
     {
         [$user, $entity] = $this->applicantContext($request);
 
-        abort_unless($user->can('applications.view.entity'), 403);
+        $this->ensureApplicantHasAnyPermission($user, ['applications.view.entity', 'applications.view.own']);
 
         $record = $this->findApplicantRequest($scoutingRequest, $entity);
 
@@ -326,7 +332,8 @@ class ScoutingRequestController extends Controller
 
     public function downloadCorrespondenceAttachment(Request $request, string $scoutingRequest, string $correspondence): StreamedResponse|RedirectResponse
     {
-        [, $entity] = $this->applicantContext($request);
+        [$user, $entity] = $this->applicantContext($request);
+        $this->ensureApplicantHasAnyPermission($user, ['applications.view.entity', 'applications.view.own']);
 
         $record = $this->findApplicantRequest($scoutingRequest, $entity);
         $message = $this->findApplicantCorrespondence($correspondence, $record);
@@ -344,7 +351,7 @@ class ScoutingRequestController extends Controller
     {
         [$user, $entity] = $this->applicantContext($request);
 
-        abort_unless($user->can('applications.view.entity'), 403);
+        $this->ensureApplicantHasAnyPermission($user, ['applications.view.entity', 'applications.view.own']);
 
         $record = $this->findApplicantRequest($scoutingRequest, $entity);
 
@@ -379,11 +386,60 @@ class ScoutingRequestController extends Controller
 
         $user = auth()->user();
 
-        if ($user && $this->isInternationalProducerUser($user)) {
-            abort_unless($this->requestIsLinkedToInternationalProducer($record, $user), 403);
+        if ($user instanceof User) {
+            $this->ensureApplicantCanViewScoutingRequest($user, $record);
         }
 
         return $record;
+    }
+
+    /**
+     * @param  array<int, string>  $permissions
+     */
+    private function ensureApplicantHasAnyPermission(User $user, array $permissions): void
+    {
+        abort_unless(collect($permissions)->contains(fn (string $permission): bool => $user->can($permission)), 403);
+    }
+
+    private function restrictApplicantScoutingQuery(Builder $query, User $user): Builder
+    {
+        if (! $user->can('applications.view.entity')) {
+            $query->where('submitted_by_user_id', $user->getKey());
+        }
+
+        return $query;
+    }
+
+    private function ensureApplicantCanViewScoutingRequest(User $user, ScoutingRequest $request): void
+    {
+        if ($this->isInternationalProducerUser($user)) {
+            abort_unless($this->requestIsLinkedToInternationalProducer($request, $user), 403);
+
+            return;
+        }
+
+        if ($user->can('applications.view.entity')) {
+            return;
+        }
+
+        abort_unless(
+            $user->can('applications.view.own')
+            && (int) $request->submitted_by_user_id === (int) $user->getKey(),
+            403,
+        );
+    }
+
+    private function ensureApplicantCanUpdateScoutingRequest(User $user, ScoutingRequest $request): void
+    {
+        if ($user->can('applications.update.entity')) {
+            return;
+        }
+
+        abort_unless(
+            $user->can('applications.update.own')
+            && (int) $request->submitted_by_user_id === (int) $user->getKey(),
+            403,
+        );
     }
 
     private function isInternationalProducerUser($user): bool
@@ -546,6 +602,40 @@ class ScoutingRequestController extends Controller
     }
 
     /**
+     * @param  array<string, int>  $approvalDaysByLocationType
+     */
+    private function locationStartRespectsApprovalLeadTimeRule(Request $request, array $approvalDaysByLocationType): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($request, $approvalDaysByLocationType): void {
+            if (blank($value) || ! preg_match('/^locations\.(\d+)\.start_date$/', $attribute, $matches)) {
+                return;
+            }
+
+            $locationType = (string) data_get((array) $request->input('locations', []), $matches[1].'.location_type', '');
+            $approvalDays = (int) ($approvalDaysByLocationType[$locationType] ?? 0);
+
+            if ($approvalDays <= 0) {
+                return;
+            }
+
+            try {
+                $selectedStartDate = JordanBusinessDays::parse((string) $value);
+            } catch (\Throwable) {
+                return;
+            }
+
+            $minimumStartDate = JordanBusinessDays::addBusinessDays(JordanBusinessDays::today(), $approvalDays);
+
+            if ($selectedStartDate->lt($minimumStartDate)) {
+                $fail(__('app.applications.location_type_approval_business_days', [
+                    'days' => $approvalDays,
+                    'date' => $minimumStartDate->toDateString(),
+                ]));
+            }
+        };
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function validatePayload(Request $request, bool $isUpdate = false): array
@@ -555,6 +645,12 @@ class ScoutingRequestController extends Controller
         $workCategoryCodes = WorkCategory::activeCodes();
         $governorateCodes = Governorate::activeCodes();
         $locationTypeCodes = FilmingLocationType::activeCodes();
+        $locationTypeApprovalDays = FilmingLocationType::query()
+            ->active()
+            ->where('approval_days', '>', 0)
+            ->pluck('approval_days', 'code')
+            ->map(fn ($days): int => (int) $days)
+            ->all();
 
         return $request->validate([
             'project_name' => ['required', 'string', 'max:255'],
@@ -589,7 +685,7 @@ class ScoutingRequestController extends Controller
             'locations.*.google_map_url' => ['nullable', 'string', 'max:500'],
             'locations.*.location_description' => ['nullable', 'string', 'max:1000'],
             'locations.*.location_type' => ['required', 'string', Rule::in($locationTypeCodes), $this->locationTypeBelongsToGovernorateRule($request)],
-            'locations.*.start_date' => ['required', 'date'],
+            'locations.*.start_date' => ['required', 'date', $this->locationStartRespectsApprovalLeadTimeRule($request, $locationTypeApprovalDays)],
             'locations.*.end_date' => ['required', 'date', 'after_or_equal:locations.*.start_date'],
             'crew' => ['required', 'array', 'min:1'],
             'crew.*.name' => ['required', 'string', 'max:255'],

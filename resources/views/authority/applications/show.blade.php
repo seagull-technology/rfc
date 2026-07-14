@@ -1,5 +1,6 @@
 @php
     $title = $application->project_name;
+    $applicationEntityLogoUrl = \App\Support\EntityLogo::url($application->entity, 'images/OIP.jpeg');
     $metadata = $application->metadata ?? [];
     $producer = data_get($metadata, 'producer', []);
     $director = data_get($metadata, 'director', []);
@@ -363,7 +364,7 @@
             <div class="d-flex flex-wrap align-items-center justify-content-between">
                 <div class="d-flex align-items-center">
                     <div class="profile-img position-relative me-3 mb-3 mb-lg-0 profile-logo profile-logo1">
-                        <img src="{{ asset('images/OIP.jpeg') }}" alt="User-Profile" class="theme-color-default-img img-fluid rounded-pill avatar-100" loading="lazy">
+                        <img src="{{ $applicationEntityLogoUrl }}" alt="User-Profile" class="theme-color-default-img img-fluid rounded-pill avatar-100" loading="lazy">
                     </div>
                     <div>
                         <h4 class="me-2 h4 text-white">{{ $application->entity?->displayName() }}</h4>
@@ -417,10 +418,6 @@
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.contact_mobile') }}:</span><span class="ms-2">{{ data_get($producer, 'contact_mobile', __('app.dashboard.not_available')) }}</span></div>
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.contact_fax') }}:</span><span class="ms-2">{{ data_get($producer, 'contact_fax', __('app.dashboard.not_available')) }}</span></div>
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.contact_email') }}:</span><span class="ms-2">{{ data_get($producer, 'contact_email', __('app.dashboard.not_available')) }}</span></div>
-                                        <div class="mb-1"><span class="fw-600">{{ __('app.applications.liaison_name') }}:</span><span class="ms-2">{{ data_get($producer, 'liaison_name', __('app.dashboard.not_available')) }}</span></div>
-                                        <div class="mb-1"><span class="fw-600">{{ __('app.applications.liaison_position') }}:</span><span class="ms-2">{{ data_get($producer, 'liaison_position', __('app.dashboard.not_available')) }}</span></div>
-                                        <div class="mb-1"><span class="fw-600">{{ __('app.applications.liaison_email') }}:</span><span class="ms-2">{{ data_get($producer, 'liaison_email', __('app.dashboard.not_available')) }}</span></div>
-                                        <div class="mb-0"><span class="fw-600">{{ __('app.applications.liaison_mobile') }}:</span><span class="ms-2">{{ data_get($producer, 'liaison_mobile', __('app.dashboard.not_available')) }}</span></div>
                                     </div>
                                 </div>
 

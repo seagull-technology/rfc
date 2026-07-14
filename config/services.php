@@ -38,7 +38,7 @@ return [
     'gsb' => [
         'enabled' => filter_var(env('GSB_ENABLED', false), FILTER_VALIDATE_BOOL),
         'environment' => env('GSB_ENVIRONMENT', 'stg'),
-        'base_url' => env('GSB_BASE_URL', 'https://api-gateway.g2b.gsb.gov.jo:9443'),
+        'base_url' => env('GSB_BASE_URL', 'https://api-gateway.stg.gsb.gov.jo:9443'),
         'force_ip' => env('GSB_FORCE_IP', ''),
         'timeout' => (int) env('GSB_TIMEOUT', 25),
         'cache_minutes' => (int) env('GSB_CACHE_MINUTES', 10),
@@ -52,8 +52,8 @@ return [
         'services' => [
             'mohe_sanad' => [
                 'enabled' => filter_var(env('GSB_MOHE_SANAD_ENABLED', env('GSB_ENABLED', false)), FILTER_VALIDATE_BOOL),
-                'base_url' => env('GSB_MOHE_SANAD_BASE_URL', env('GSB_BASE_URL', 'https://api-gateway.g2b.gsb.gov.jo:9443')),
-                'path' => env('GSB_MOHE_SANAD_PATH', '/porg-gsb/g2b-catalog/api/mohe-sanad'),
+                'base_url' => env('GSB_MOHE_SANAD_BASE_URL', env('GSB_BASE_URL', 'https://api-gateway.stg.gsb.gov.jo:9443')),
+                'path' => env('GSB_MOHE_SANAD_PATH', '/porg-g2g/g2g/newstandard/api/MoheStandard'),
                 'method' => env('GSB_MOHE_SANAD_METHOD', 'POST'),
             ],
             'cspd_personal_info_masked' => [
@@ -76,14 +76,14 @@ return [
             ],
             'ccd_company' => [
                 'enabled' => filter_var(env('GSB_CCD_COMPANY_ENABLED', env('GSB_ENABLED', false)), FILTER_VALIDATE_BOOL),
-                'base_url' => env('GSB_CCD_COMPANY_BASE_URL', env('GSB_BASE_URL', 'https://api-gateway.g2b.gsb.gov.jo:9443')),
-                'path' => env('GSB_CCD_COMPANY_PATH', ''),
-                'method' => env('GSB_CCD_COMPANY_METHOD', 'POST'),
+                'base_url' => env('GSB_CCD_COMPANY_BASE_URL', env('GSB_BASE_URL', 'https://api-gateway.stg.gsb.gov.jo:9443')),
+                'path' => env('GSB_CCD_COMPANY_PATH', '/porg-g2g/g2g/api/companies/CompanybyNo/{nationalNo}'),
+                'method' => env('GSB_CCD_COMPANY_METHOD', 'GET'),
             ],
             'mit_services' => [
                 'enabled' => filter_var(env('GSB_MIT_SERVICES_ENABLED', env('GSB_ENABLED', false)), FILTER_VALIDATE_BOOL),
-                'base_url' => env('GSB_MIT_SERVICES_BASE_URL', env('GSB_BASE_URL', 'https://api-gateway.g2b.gsb.gov.jo:9443')),
-                'path' => env('GSB_MIT_SERVICES_PATH', ''),
+                'base_url' => env('GSB_MIT_SERVICES_BASE_URL', env('GSB_BASE_URL', 'https://api-gateway.stg.gsb.gov.jo:9443')),
+                'path' => env('GSB_MIT_SERVICES_PATH', '/porg-g2g/g2g/api/Registry/getRegisteryInfoByEstablishmentNationalNumber'),
                 'method' => env('GSB_MIT_SERVICES_METHOD', 'POST'),
             ],
             'signflow_v2' => [

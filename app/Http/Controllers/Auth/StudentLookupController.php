@@ -13,6 +13,12 @@ class StudentLookupController extends Controller
 {
     public function __invoke(Request $request, StudentRegistrationLookupService $lookupService): JsonResponse
     {
+        $normalizedBirthDate = $lookupService->normalizeBirthDate((string) $request->input('birth_date'));
+
+        if ($normalizedBirthDate !== null) {
+            $request->merge(['birth_date' => $normalizedBirthDate]);
+        }
+
         $validated = $request->validate([
             'national_id' => [
                 'required',
@@ -24,15 +30,25 @@ class StudentLookupController extends Controller
                     }
                 },
             ],
+            'birth_date' => ['required', 'date_format:Y-m-d', 'before:today'],
         ], [
             'national_id.regex' => __('app.auth.national_id_digits'),
         ]);
 
-        $lookup = $lookupService->lookup((string) $validated['national_id']);
+        $lookup = $lookupService->lookup(
+            (string) $validated['national_id'],
+            (string) $validated['birth_date'],
+        );
 
         if (! ($lookup['ok'] ?? false)) {
+            $message = match ($lookup['error'] ?? null) {
+                'IDENTITY_MISMATCH' => __('app.auth.student_lookup_identity_mismatch'),
+                'NOT_CURRENT_STUDENT' => __('app.auth.student_not_current'),
+                default => __('app.auth.student_lookup_failed'),
+            };
+
             return response()->json([
-                'message' => __('app.auth.student_lookup_failed'),
+                'message' => $message,
                 'error' => $lookup['error'] ?? 'LOOKUP_FAILED',
             ], 422);
         }

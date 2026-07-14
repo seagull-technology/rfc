@@ -307,7 +307,7 @@ class ApplicationManagementController extends Controller
                 ->withErrors(['rfc_decision' => __('app.rfc_decision.accept_required')]);
         }
 
-        $issuedApplicantLetters = DB::transaction(function () use ($record, $actorId): Collection {
+        DB::transaction(function () use ($record, $actorId): void {
             $targets = $this->officialLetterRouteTargets($record);
             $letters = $this->prepareOfficialLettersForTargets($record, $targets, $actorId);
             $applicantLetter = $this->prepareApplicantFacilitationLetter($record, $actorId);
@@ -353,11 +353,7 @@ class ApplicationManagementController extends Controller
                 ],
                 'happened_at' => now(),
             ]);
-
-            return collect([$applicantLetter->fresh(['targetEntity'])]);
         });
-
-        $this->notifyOfficialLettersIssued($record->fresh(['entity', 'submittedBy']), $issuedApplicantLetters, $actorId);
 
         return redirect()
             ->route('admin.applications.show', $record)
@@ -1432,8 +1428,8 @@ class ApplicationManagementController extends Controller
                 'end' => $application->planned_end_date?->format('Y-m-d') ?? __('app.dashboard.not_available'),
             ]),
             'attachments' => [],
-            'status' => 'issued',
-            'issued_at' => now(),
+            'status' => 'draft',
+            'issued_at' => null,
         ];
 
         $letter = $application->officialLetters()
@@ -1441,6 +1437,8 @@ class ApplicationManagementController extends Controller
             ->first();
 
         if ($letter instanceof ApplicationOfficialLetter) {
+            $alreadyIssued = $letter->status === 'issued';
+
             $letter->forceFill([
                 'target_entity_id' => $letter->target_entity_id ?: $application->entity_id,
                 'updated_by_user_id' => $actorId,
@@ -1451,8 +1449,8 @@ class ApplicationManagementController extends Controller
                 'subject' => $letter->subject ?: $defaults['subject'],
                 'body' => $letter->body ?: $defaults['body'],
                 'attachments' => $letter->attachments ?? [],
-                'status' => 'issued',
-                'issued_at' => $letter->issued_at ?: now(),
+                'status' => $alreadyIssued ? 'issued' : 'draft',
+                'issued_at' => $alreadyIssued ? $letter->issued_at : null,
             ])->save();
 
             return $letter;

@@ -155,17 +155,23 @@ class DashboardController extends Controller
             default => 'dashboard.staff',
         };
 
-        $applications = FilmApplication::query()
+        $applicationsQuery = FilmApplication::query()
             ->with(['submittedBy', 'reviewedBy', 'authorityApprovals.reviewedBy'])
             ->where('entity_id', $entity->getKey())
-            ->newestFirst()
-            ->get();
+            ->newestFirst();
 
-        $scoutingRequests = ScoutingRequest::query()
+        $this->restrictApplicantOwnedQuery($applicationsQuery, $user);
+
+        $applications = $applicationsQuery->get();
+
+        $scoutingRequestsQuery = ScoutingRequest::query()
             ->with('submittedBy')
             ->where('entity_id', $entity->getKey())
-            ->newestFirst()
-            ->get();
+            ->newestFirst();
+
+        $this->restrictApplicantOwnedQuery($scoutingRequestsQuery, $user);
+
+        $scoutingRequests = $scoutingRequestsQuery->get();
 
         $actionItems = $this->applicantActionItems($applications, $scoutingRequests);
         $latestRequestUpdates = $this->applicantLatestRequestUpdates($applications, $scoutingRequests);
@@ -222,6 +228,15 @@ class DashboardController extends Controller
             ->whereIn('data->type_key', ['registration_approved', 'registration_completion_requested', 'registration_rejected'])
             ->latest()
             ->first();
+    }
+
+    private function restrictApplicantOwnedQuery(Builder $query, User $user): Builder
+    {
+        if (! $user->can('applications.view.entity')) {
+            $query->where('submitted_by_user_id', $user->getKey());
+        }
+
+        return $query;
     }
 
     /**

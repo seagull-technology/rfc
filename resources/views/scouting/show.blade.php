@@ -1,10 +1,15 @@
 @php
     $title = $requestRecord->project_name;
+    $requestEntityLogoUrl = \App\Support\EntityLogo::url($entity, 'images/OIP.jpeg');
     $metadata = $requestRecord->metadata ?? [];
     $producer = data_get($metadata, 'producer', []);
     $production = data_get($metadata, 'production', []);
     $locations = data_get($metadata, 'locations', []);
     $crew = data_get($metadata, 'crew', []);
+    $canUpdateScoutingRequest = $user->can('applications.update.entity')
+        || ($user->can('applications.update.own') && (int) $requestRecord->submitted_by_user_id === (int) $user->getKey());
+    $canSubmitScoutingRequest = $user->can('applications.submit')
+        && ($user->can('applications.view.entity') || (int) $requestRecord->submitted_by_user_id === (int) $user->getKey());
     $legacyLocationTypeMap = [
         'public_site' => 'public_locations',
         'border_area' => 'border_areas',
@@ -156,7 +161,7 @@
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-4">
                 <div class="d-flex align-items-center">
                     <div class="profile-img position-relative me-3 mb-3 mb-lg-0 profile-logo profile-logo1">
-                        <img src="{{ asset('images/OIP.jpeg') }}" alt="User-Profile" class="theme-color-default-img img-fluid rounded-pill avatar-100" loading="lazy">
+                        <img src="{{ $requestEntityLogoUrl }}" alt="User-Profile" class="theme-color-default-img img-fluid rounded-pill avatar-100" loading="lazy">
                     </div>
                     <div>
                         <h4 class="me-2 h4 text-white">{{ $entity->displayName() }}</h4>
@@ -249,10 +254,10 @@
                         <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mt-4">
                             <div class="d-flex gap-2 flex-wrap">
                                 <a class="btn btn-outline-secondary" data-bs-toggle="tab" href="#profile-correspondence" role="tab" aria-selected="false">{{ __('app.request_state.open_correspondence') }}</a>
-                                @if ($requestRecord->canBeEditedByApplicant())
+                                @if ($requestRecord->canBeEditedByApplicant() && $canUpdateScoutingRequest)
                                     <a class="btn btn-light" href="{{ route('scouting-requests.edit', $requestRecord) }}">{{ __('app.applications.edit_action') }}</a>
                                 @endif
-                                @if ($requestRecord->canBeSubmittedByApplicant())
+                                @if ($requestRecord->canBeSubmittedByApplicant() && $canSubmitScoutingRequest)
                                     <form method="POST" action="{{ route('scouting-requests.submit', $requestRecord) }}">
                                         @csrf
                                         <button class="btn btn-danger" type="submit">{{ __('app.scouting.submit_action') }}</button>

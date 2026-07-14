@@ -7,6 +7,7 @@
     $adminAvailableEntities = $currentAdmin?->availableEntities() ?? collect();
     $layoutProfileEntityName = $profileEntityName ?? $currentAdmin?->primaryEntity()?->displayName() ?? __('app.dashboard.no_entity');
     $layoutProfileEmail = $profileEmail ?? $currentAdmin?->email ?? '';
+    $layoutProfileLogo = \App\Support\EntityLogo::url($currentAdminEntity, 'images/logo.svg');
     $layoutSidebarCounters = $layoutSidebarCounters ?? ['applications' => 0, 'scouting_requests' => 0, 'contact_center' => 0];
     $adminProfileLinks = collect([
         ['label' => __('app.portal.profile_links.rfc'), 'url' => route('admin.dashboard')],
@@ -377,13 +378,13 @@
                             </li>
                             <li class="nav-item dropdown">
                                 <a class="py-0 nav-link d-flex align-items-center ps-3" href="#" id="profile-setting" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                    <img src="{{ asset('images/logo.svg') }}" alt="User-Profile" class="theme-color-default-img img-fluid avatar avatar-50 avatar-rounded" loading="lazy">
+                                    <img src="{{ $layoutProfileLogo }}" alt="User-Profile" class="theme-color-default-img img-fluid avatar avatar-50 avatar-rounded" loading="lazy">
                                 </a>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profile-setting">
                                     <li class="px-3 mb-3">
                                         <div class="d-flex align-items-center">
                                             <div class="avatar me-3">
-                                                <img class="avatar-img rounded-circle shadow avatar-70 rounded" src="{{ asset('images/logo.svg') }}" alt="avatar">
+                                                <img class="avatar-img rounded-circle shadow avatar-70 rounded" src="{{ $layoutProfileLogo }}" alt="avatar">
                                             </div>
                                             <div class="text-start">
                                                 <a class="h6" href="{{ route('admin.dashboard') }}">{{ $layoutProfileEntityName }}</a>

@@ -1,3 +1,7 @@
+@php
+    $workflowEntityLogoUrl = \App\Support\EntityLogo::url(auth()->user()?->primaryEntity(), 'images/logo.svg');
+@endphp
+
 <div class="workflow-dashboard-layout">
     <div class="row">
         <div class="col-12">
@@ -16,7 +20,7 @@
         <div class="card-body">
             <div class="text-center">
                 <div>
-                    <img src="{{ asset('images/logo.svg') }}" alt="profile-img" class="rounded-pill avatar-130 img-fluid bg-white p-2" loading="lazy">
+                    <img src="{{ $workflowEntityLogoUrl }}" alt="profile-img" class="rounded-pill avatar-130 img-fluid bg-white p-2" loading="lazy">
                 </div>
                 <div class="mt-3">
                     <h3 class="d-inline-block text-white">{{ $profileEntityName }}</h3>

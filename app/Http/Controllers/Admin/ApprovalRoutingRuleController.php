@@ -656,32 +656,6 @@ class ApprovalRoutingRuleController extends Controller
                     ),
                 ],
             ]),
-            $this->annexTriggerGroup('military_border_equipment', 'military_border_equipment', [
-                [
-                    'key' => 'military_location_types',
-                    'label' => __('app.admin.approval_routing.annex_trigger_child_groups.military_location_types'),
-                    'options' => $this->formLookupFlagOptions(
-                        FormLookupOption::TYPE_MILITARY_BORDER_LOCATION_TYPE,
-                        'military_location_type_',
-                    ),
-                ],
-                [
-                    'key' => 'military_equipment_categories',
-                    'label' => __('app.admin.approval_routing.annex_trigger_child_groups.equipment_categories'),
-                    'options' => $this->formLookupFlagOptions(
-                        FormLookupOption::TYPE_EQUIPMENT_CATEGORY,
-                        'military_equipment_category_',
-                    ),
-                ],
-                [
-                    'key' => 'military_equipment_entry_points',
-                    'label' => __('app.admin.approval_routing.annex_trigger_child_groups.entry_points'),
-                    'options' => $this->formLookupFlagOptions(
-                        FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT,
-                        'military_equipment_entry_point_',
-                    ),
-                ],
-            ]),
             $this->annexTriggerGroup('airport_filming', 'airport_filming', [
                 [
                     'key' => 'airports',

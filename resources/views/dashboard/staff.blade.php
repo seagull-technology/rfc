@@ -43,6 +43,7 @@
     ];
 
     $recentApplications = $applications->take(8);
+    $entityLogoUrl = \App\Support\EntityLogo::url($entity, 'images/logo.svg');
 @endphp
 
 @extends('layouts.portal-dashboard', ['title' => $title])
@@ -114,7 +115,7 @@
         <div class="card-body">
             <div class="text-center">
                 <div>
-                    <img src="{{ asset('images/logo.svg') }}" alt="profile-img" class="rounded-pill avatar-130 img-fluid bg-white p-2" loading="lazy">
+                    <img src="{{ $entityLogoUrl }}" alt="profile-img" class="rounded-pill avatar-130 img-fluid bg-white p-2" loading="lazy">
                 </div>
                 <div class="mt-3">
                     <h3 class="d-inline-block text-white">{{ $entity->displayName() }}</h3>

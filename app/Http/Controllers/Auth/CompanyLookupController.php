@@ -14,7 +14,9 @@ class CompanyLookupController extends Controller
     public function __invoke(Request $request, CompanyRegistrationLookupService $lookupService): JsonResponse
     {
         $payload = $request->validate([
-            'registration_number' => ['required', 'string', 'max:50', Rule::unique('entities', 'registration_no')],
+            'registration_number' => ['required', 'regex:/^\d{1,10}$/', Rule::unique('entities', 'registration_no')],
+        ], [
+            'registration_number.regex' => __('app.auth.organization_national_id_digits'),
         ]);
 
         $result = $lookupService->lookup($payload['registration_number']);

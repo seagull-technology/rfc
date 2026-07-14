@@ -54,6 +54,9 @@
             'card_color' => 'success-subtle',
         ],
     ];
+    $entityLogoUrl = \App\Support\EntityLogo::url($entity, 'images/OIP.jpeg');
+    $canCreateApplications = $user->can('applications.create');
+    $canViewCompanyUsers = $user->canViewCompanyEmployees($entity);
 @endphp
 
 @extends('layouts.portal-dashboard', ['title' => __('app.dashboard.organization_title')])
@@ -178,7 +181,7 @@
         <div class="card-body">
             <div class="text-center">
                 <div>
-                    <img src="{{ asset('images/OIP.jpeg') }}" alt="profile-img" class="rounded-pill avatar-130 img-fluid" loading="lazy">
+                    <img src="{{ $entityLogoUrl }}" alt="profile-img" class="rounded-pill avatar-130 img-fluid" loading="lazy">
                 </div>
                 <div class="mt-3">
                     <h3 class="d-inline-block text-white">{{ $entity->displayName() }}</h3>
@@ -222,7 +225,14 @@
                     <h2 class="episode-playlist-title wp-heading-inline">
                         <span class="position-relative">{{ __('app.applications.index_title') }}</span>
                     </h2>
-                    <a class="btn btn-danger" href="{{ route('applications.create') }}"><i class="fa-solid fa-plus me-2"></i>{{ __('app.applications.create_action') }}</a>
+                    <div class="d-flex gap-2 flex-wrap">
+                        @if ($canViewCompanyUsers)
+                            <a class="btn btn-outline-primary" href="{{ route('company.employees.index') }}"><i class="fa-solid fa-users me-2"></i>{{ __('app.portal.profile_links.company_employees') }}</a>
+                        @endif
+                        @if ($canCreateApplications)
+                            <a class="btn btn-danger" href="{{ route('applications.create') }}"><i class="fa-solid fa-plus me-2"></i>{{ __('app.applications.create_action') }}</a>
+                        @endif
+                    </div>
                 </div>
                 <div class="card-body pt-0">
                     <div class="mt-4 table-responsive">
@@ -306,7 +316,9 @@
                     <h2 class="episode-playlist-title wp-heading-inline">
                         <span class="position-relative">{{ __('app.dashboard.sections.scouting_requests') }}</span>
                     </h2>
-                    <a class="btn btn-danger" href="{{ route('scouting-requests.create') }}"><i class="fa-solid fa-plus me-2"></i>{{ __('app.scouting.create_action') }}</a>
+                    @if ($canCreateApplications)
+                        <a class="btn btn-danger" href="{{ route('scouting-requests.create') }}"><i class="fa-solid fa-plus me-2"></i>{{ __('app.scouting.create_action') }}</a>
+                    @endif
                 </div>
                 <div class="card-body pt-0">
                     <div class="mt-4 table-responsive">

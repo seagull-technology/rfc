@@ -152,8 +152,101 @@
         white-space: nowrap;
     }
 
+    .registration-identity-lookup {
+        align-items: end;
+        background: rgba(0, 0, 0, .14);
+        border: 1px solid rgba(255, 255, 255, .12);
+        border-radius: .5rem;
+        display: grid;
+        gap: .875rem;
+        grid-template-columns: minmax(15rem, 1fr) auto;
+        margin-bottom: .25rem;
+        padding: 1rem;
+    }
+
+    .registration-identity-lookup--student {
+        grid-template-columns: repeat(2, minmax(15rem, 1fr)) auto;
+    }
+
+    .registration-identity-field {
+        min-width: 0;
+    }
+
+    .registration-identity-field .form-label {
+        display: block;
+        margin-bottom: .5rem;
+    }
+
+    .registration-identity-field .form-control {
+        background: rgba(255, 255, 255, .08) !important;
+        border: 1px solid rgba(255, 255, 255, .24) !important;
+        border-radius: .375rem;
+        color: var(--bs-white) !important;
+        font-size: 1rem !important;
+        height: 3.25rem;
+        line-height: 1.5;
+        min-height: 3.25rem;
+        padding: .75rem 1rem;
+    }
+
+    .registration-identity-field .form-control::placeholder {
+        color: rgba(255, 255, 255, .58);
+        font-size: .9375rem;
+        opacity: 1;
+    }
+
+    .registration-identity-field .form-control:focus {
+        background: rgba(255, 255, 255, .11) !important;
+        border-color: rgba(var(--bs-danger-rgb), .9) !important;
+        box-shadow: 0 0 0 .2rem rgba(var(--bs-danger-rgb), .18);
+    }
+
+    .registration-identity-submit {
+        height: 3.25rem;
+        margin: 0;
+        min-height: 3.25rem;
+        min-width: 8.5rem;
+        padding: .75rem 1.25rem;
+    }
+
     .registration-password-control {
         position: relative;
+    }
+
+    .registration-date-control {
+        position: relative;
+    }
+
+    .registration-date-control .form-control {
+        direction: ltr;
+        padding-left: 1rem;
+        padding-right: 3rem;
+        text-align: left;
+    }
+
+    .registration-date-toggle {
+        align-items: center;
+        background: transparent;
+        border: 0;
+        color: rgba(255, 255, 255, .72);
+        display: inline-flex;
+        font-size: 1.1rem;
+        inset-block: 0;
+        border-left: 1px solid rgba(255, 255, 255, .14);
+        cursor: pointer;
+        left: auto;
+        right: 0;
+        justify-content: center;
+        margin: auto 0;
+        padding: 0;
+        position: absolute;
+        width: 3rem;
+    }
+
+    .registration-date-toggle:hover,
+    .registration-date-toggle:focus {
+        color: var(--bs-white);
+        outline: none;
     }
 
     .registration-password-control .form-control {
@@ -303,6 +396,15 @@
         .registration-tabs .nav-item {
             flex: 0 0 min(12rem, 72vw);
         }
+
+        .registration-identity-lookup--student {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .registration-identity-lookup--student .registration-identity-submit {
+            grid-column: 1 / -1;
+            width: 100%;
+        }
     }
 
     @media (max-width: 767.98px) {
@@ -344,6 +446,15 @@
 
         .registration-lookup-button {
             width: 100%;
+        }
+
+        .registration-identity-lookup {
+            grid-template-columns: 1fr;
+            padding: .875rem;
+        }
+
+        .registration-identity-submit {
+            grid-column: auto;
         }
 
         .registration-actions {

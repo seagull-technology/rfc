@@ -64,9 +64,6 @@ class ApprovalRoutingConditionLabels
             'imported_equipment_category_' => FormLookupOption::TYPE_EQUIPMENT_CATEGORY,
             'imported_equipment_shipping_method_' => FormLookupOption::TYPE_EQUIPMENT_SHIPPING_METHOD,
             'imported_equipment_entry_point_' => FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT,
-            'military_location_type_' => FormLookupOption::TYPE_MILITARY_BORDER_LOCATION_TYPE,
-            'military_equipment_category_' => FormLookupOption::TYPE_EQUIPMENT_CATEGORY,
-            'military_equipment_entry_point_' => FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT,
             'airport_filming_airport_' => FormLookupOption::TYPE_AIRPORT,
         ];
     }

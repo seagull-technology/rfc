@@ -2,6 +2,15 @@
     $title = __('app.scouting.title');
     $activeRequests = $requests->whereIn('status', ['draft', 'submitted', 'under_review', 'needs_clarification'])->values();
     $previousRequests = $requests->whereIn('status', ['approved', 'rejected'])->values();
+    $currentApplicantUser = auth()->user();
+    $canCreateScoutingRequests = $currentApplicantUser?->can('applications.create') ?? false;
+    $canUpdateScoutingRequest = static fn ($requestRecord): bool => (bool) (
+        $currentApplicantUser?->can('applications.update.entity')
+        || (
+            $currentApplicantUser?->can('applications.update.own')
+            && (int) $requestRecord->submitted_by_user_id === (int) $currentApplicantUser->getKey()
+        )
+    );
     $statusClass = static fn (string $status): string => match ($status) {
         'approved' => 'success',
         'rejected' => 'danger',
@@ -120,7 +129,9 @@
                     </select>
                 </div>
                 <div class="col-lg-4 d-flex gap-2 flex-wrap justify-content-lg-end">
-                    <a class="btn btn-danger" href="{{ route('scouting-requests.create') }}"><i class="fa-solid fa-plus me-2"></i>{{ __('app.scouting.create_action') }}</a>
+                    @if ($canCreateScoutingRequests)
+                        <a class="btn btn-danger" href="{{ route('scouting-requests.create') }}"><i class="fa-solid fa-plus me-2"></i>{{ __('app.scouting.create_action') }}</a>
+                    @endif
                     <button class="btn btn-primary" type="submit">{{ __('app.applications.apply_filters_action') }}</button>
                     <a class="btn btn-outline-primary" href="{{ route('scouting-requests.index') }}">{{ __('app.applications.clear_filters_action') }}</a>
                 </div>
@@ -179,7 +190,7 @@
                                                         <a class="btn btn-sm btn-icon btn-info-subtle rounded" href="{{ route('scouting-requests.show', $requestRecord) }}">
                                                             <span class="btn-inner"><i class="ph ph-eye fs-6"></i></span>
                                                         </a>
-                                                        @if ($requestRecord->canBeEditedByApplicant())
+                                                        @if ($requestRecord->canBeEditedByApplicant() && $canUpdateScoutingRequest($requestRecord))
                                                             <a class="btn btn-sm btn-icon btn-secondary-subtle rounded ms-1" href="{{ route('scouting-requests.edit', $requestRecord) }}">
                                                                 <span class="btn-inner"><i class="ph ph-pen fs-6"></i></span>
                                                             </a>

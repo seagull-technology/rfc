@@ -168,6 +168,55 @@ class User extends Authenticatable
         }
     }
 
+    public function canForEntity(?Entity $entity, string $permission): bool
+    {
+        if (! $entity) {
+            return false;
+        }
+
+        $registrar = app(PermissionRegistrar::class);
+        $registrar->setPermissionsTeamId($entity->getKey());
+
+        try {
+            return $this->can($permission);
+        } finally {
+            $registrar->setPermissionsTeamId(null);
+        }
+    }
+
+    public function isPrimaryActiveMemberOf(?Entity $entity): bool
+    {
+        if (! $entity) {
+            return false;
+        }
+
+        return $this->entities()
+            ->whereKey($entity->getKey())
+            ->wherePivot('status', 'active')
+            ->wherePivot('is_primary', true)
+            ->exists();
+    }
+
+    public function canViewCompanyEmployees(?Entity $entity): bool
+    {
+        if (! $entity || $entity->registration_type !== 'company') {
+            return false;
+        }
+
+        return $this->canForEntity($entity, 'company.users.view')
+            || $this->canManageCompanyEmployees($entity);
+    }
+
+    public function canManageCompanyEmployees(?Entity $entity): bool
+    {
+        if (! $entity || $entity->registration_type !== 'company') {
+            return false;
+        }
+
+        return $this->canForEntity($entity, 'company.users.manage')
+            || $this->isPrimaryActiveMemberOf($entity);
+    }
+
     public function localizedStatus(): string
     {
         return __('app.statuses.'.Str::lower($this->status ?: 'active'));

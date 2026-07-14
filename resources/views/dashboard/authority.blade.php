@@ -65,6 +65,7 @@
             'badge_class' => 'bg-dark text-white',
         ],
     ];
+    $entityLogoUrl = \App\Support\EntityLogo::url($entity, 'images/111.jpeg');
 @endphp
 
 @extends('layouts.authority-dashboard', ['title' => $title])
@@ -213,7 +214,7 @@
         <div class="card-body">
             <div class="text-center">
                 <div>
-                    <img src="{{ asset('images/111.jpeg') }}" alt="profile-img" class="rounded-pill avatar-130 img-fluid" loading="lazy">
+                    <img src="{{ $entityLogoUrl }}" alt="profile-img" class="rounded-pill avatar-130 img-fluid" loading="lazy">
                 </div>
                 <div class="mt-3">
                     <h3 class="d-inline-block text-white">{{ $entity->displayName() }}</h3>

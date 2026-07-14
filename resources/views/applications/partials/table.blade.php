@@ -1,4 +1,22 @@
 @php
+    $currentApplicantUser = auth()->user();
+    $canUpdateApplicantApplication = static fn ($application): bool => (bool) (
+        $currentApplicantUser?->can('applications.update.entity')
+        || (
+            $currentApplicantUser?->can('applications.update.own')
+            && (int) $application->submitted_by_user_id === (int) $currentApplicantUser->getKey()
+        )
+    );
+    $canSubmitApplicantApplication = static fn ($application): bool => (bool) (
+        $currentApplicantUser?->can('applications.submit')
+        && (
+            $currentApplicantUser?->can('applications.view.entity')
+            || (
+                $currentApplicantUser
+                && (int) $application->submitted_by_user_id === (int) $currentApplicantUser->getKey()
+            )
+        )
+    );
     $statusClass = static fn (string $status): string => match ($status) {
         'draft' => 'secondary',
         'submitted' => 'warning',
@@ -52,14 +70,14 @@
                                     <i class="fa-solid fa-eye"></i>
                                 </span>
                             </a>
-                            @if ($application->canBeEditedByApplicant())
+                            @if ($application->canBeEditedByApplicant() && $canUpdateApplicantApplication($application))
                                 <a href="{{ route('applications.edit', $application) }}" class="btn btn-sm btn-icon btn-secondary rounded-pill" data-bs-toggle="tooltip" title="{{ __('app.applications.edit_action') }}">
                                     <span class="btn-inner">
                                         <i class="fa-solid fa-pen"></i>
                                     </span>
                                 </a>
                             @endif
-                            @if ($application->canBeSubmittedByApplicant())
+                            @if ($application->canBeSubmittedByApplicant() && $canSubmitApplicantApplication($application))
                                 <form method="POST" action="{{ route('applications.submit', $application) }}"
                                     data-application-submit-confirm
                                     data-confirm-title="{{ __('app.applications.submit_confirm_title') }}"

@@ -1,0 +1,22 @@
+RFC GSB BRUNO COLLECTION - V3
+=============================
+
+1. Copy this whole folder to the government server.
+2. In Bruno, use Open Collection and select the RFC-GSB folder.
+3. At the top-right, select the STG environment.
+4. Open the STG environment configuration and fill:
+   - gsb_client_id
+   - gsb_client_secret
+   - test_national_no (10 digits for MOHE)
+   - test_birth_date (YYYY-MM-DD, for example 2000-01-31)
+   - test_company_national_no (numeric and up to 10 digits)
+5. For students, open MOHE > Lookup Student - Mohe Standard.
+6. For companies, open COMPANIES and test both requests:
+   - Lookup Company - CCD
+   - Lookup Establishment - MIT
+
+The RFC application checks CCD first and then MIT when CCD has no usable
+company record. Testing both requests directly helps identify which registry
+contains a specific establishment.
+
+Never place real credentials directly in request files or screenshots.

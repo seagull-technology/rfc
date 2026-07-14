@@ -21,6 +21,7 @@
     ];
     $defaultGovernorate = $governorateOptions->first()?->code ?? 'amman';
     $defaultLocationType = $locationTypeOptions->first()?->code ?? 'public_locations';
+    $minimumLocationStartDate = \App\Support\JordanBusinessDays::today()->toDateString();
     $normalizeLocationType = static fn ($value): string => (string) ($legacyLocationTypeMap[(string) $value] ?? ($value ?: $defaultLocationType));
     $locationRows = collect(old('locations', data_get($metadata, 'locations', [[
         'governorate' => $defaultGovernorate,
@@ -259,7 +260,7 @@
                                                             <td><input type="text" class="form-control" name="locations[{{ $index }}][location_name]" value="{{ $location['location_name'] ?? '' }}"></td>
                                                             <td><input type="text" class="form-control" name="locations[{{ $index }}][google_map_url]" value="{{ $location['google_map_url'] ?? '' }}"></td>
                                                             <td><input type="text" class="form-control" name="locations[{{ $index }}][location_description]" value="{{ $location['location_description'] ?? '' }}"></td>
-                                                            <td><input type="date" class="form-control" name="locations[{{ $index }}][start_date]" value="{{ $location['start_date'] ?? '' }}"></td>
+                                                            <td><input type="date" class="form-control" name="locations[{{ $index }}][start_date]" value="{{ $location['start_date'] ?? '' }}" min="{{ $minimumLocationStartDate }}" data-scout-location-start-date></td>
                                                             <td><input type="date" class="form-control" name="locations[{{ $index }}][end_date]" value="{{ $location['end_date'] ?? '' }}"></td>
                                                             <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeDynamicRow(this, '#scoutLocationTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
                                                         </tr>
@@ -339,6 +340,7 @@
         const scoutLocationTypeLabels = @json($locationTypeLabels);
         const scoutLocationTypeApprovalDays = @json($locationTypeApprovalDays);
         const scoutLocationTypeApprovalDaysNotice = @js(__('app.applications.location_type_approval_days_notice'));
+        const scoutLocationStartMin = @js($minimumLocationStartDate);
         const scoutPersonNationalityOptions = @json($personNationalityOptions->map(fn ($option) => ['value' => $option->code, 'label' => $option->displayName()])->values());
 
         function escapeScoutHtml(value) {
@@ -390,6 +392,67 @@
             refreshScoutLocationApprovalNote(row);
         }
 
+        function scoutParseYmd(value) {
+            const parts = String(value || '').split('-').map(function (part) {
+                return parseInt(part, 10);
+            });
+
+            if (parts.length !== 3 || parts.some(Number.isNaN)) {
+                return null;
+            }
+
+            return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+        }
+
+        function scoutFormatYmd(date) {
+            const year = date.getUTCFullYear();
+            const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(date.getUTCDate()).padStart(2, '0');
+
+            return year + '-' + month + '-' + day;
+        }
+
+        function scoutAddJordanBusinessDays(startDate, days) {
+            const date = scoutParseYmd(startDate);
+            let remaining = Math.max(0, parseInt(days || '0', 10));
+
+            if (!date) {
+                return startDate;
+            }
+
+            while (remaining > 0) {
+                date.setUTCDate(date.getUTCDate() + 1);
+
+                if (date.getUTCDay() !== 5 && date.getUTCDay() !== 6) {
+                    remaining -= 1;
+                }
+            }
+
+            return scoutFormatYmd(date);
+        }
+
+        function scoutMaxYmd(firstDate, secondDate) {
+            if (!firstDate) {
+                return secondDate || '';
+            }
+
+            if (!secondDate) {
+                return firstDate;
+            }
+
+            return secondDate > firstDate ? secondDate : firstDate;
+        }
+
+        function scoutLocationStartMinimumForType(locationType) {
+            const days = parseInt(scoutLocationTypeApprovalDays[locationType] || '0', 10);
+
+            if (days <= 0) {
+                return scoutLocationStartMin;
+            }
+
+            return scoutMaxYmd(scoutLocationStartMin, scoutAddJordanBusinessDays(scoutLocationStartMin, days));
+        }
+
         function refreshScoutLocationApprovalNote(row) {
             if (!row) {
                 return;
@@ -397,15 +460,23 @@
 
             const locationTypeSelect = row.querySelector('[data-scout-location-type-select]');
             const note = row.querySelector('[data-scout-location-type-approval-note]');
+            const startDate = row.querySelector('[data-scout-location-start-date]');
 
             if (!locationTypeSelect || !note) {
                 return;
             }
 
             const days = parseInt(scoutLocationTypeApprovalDays[locationTypeSelect.value] || '0', 10);
+            const minimumStartDate = scoutLocationStartMinimumForType(locationTypeSelect.value);
+
+            if (startDate) {
+                startDate.min = minimumStartDate;
+            }
 
             if (days > 0) {
-                note.textContent = scoutLocationTypeApprovalDaysNotice.replace(':days', String(days));
+                note.textContent = scoutLocationTypeApprovalDaysNotice
+                    .replace(':days', String(days))
+                    .replace(':date', minimumStartDate);
                 note.classList.remove('d-none');
 
                 return;
@@ -455,7 +526,7 @@
                 <td><input type="text" class="form-control" name="locations[${index}][location_name]"></td>
                 <td><input type="text" class="form-control" name="locations[${index}][google_map_url]"></td>
                 <td><input type="text" class="form-control" name="locations[${index}][location_description]"></td>
-                <td><input type="date" class="form-control" name="locations[${index}][start_date]"></td>
+                <td><input type="date" class="form-control" name="locations[${index}][start_date]" min="${scoutLocationStartMin}" data-scout-location-start-date></td>
                 <td><input type="date" class="form-control" name="locations[${index}][end_date]"></td>
                 <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeDynamicRow(this, '#scoutLocationTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
             `;

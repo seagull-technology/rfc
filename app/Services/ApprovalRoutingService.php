@@ -283,54 +283,37 @@ class ApprovalRoutingService
             $flags[] = 'safety_guidelines';
         }
 
-        if ($this->hasFilledRows(data_get($annex, 'imported_equipment', []))) {
+        if ($this->hasFilledRows(data_get($annex, 'imported_equipment', [])) || $this->hasFilledRows(data_get($annex, 'equipment_travelers', []))) {
             $flags[] = 'imported_equipment';
 
             $importedEquipmentRows = data_get($annex, 'imported_equipment', []);
-            $flags = array_merge($flags, $this->formLookupFlagsForRows(
-                $importedEquipmentRows,
-                'classification',
-                'imported_equipment_category_',
-                FormLookupOption::TYPE_EQUIPMENT_CATEGORY,
-            ));
-            $flags = array_merge($flags, $this->formLookupFlagsForRows(
-                $importedEquipmentRows,
-                'shipping_method',
-                'imported_equipment_shipping_method_',
-                FormLookupOption::TYPE_EQUIPMENT_SHIPPING_METHOD,
-            ));
-            $flags = array_merge($flags, $this->formLookupFlagsForRows(
-                $importedEquipmentRows,
-                'entry_point',
-                'imported_equipment_entry_point_',
-                FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT,
-            ));
-        }
-
-        if (
-            $this->hasFilledRows(data_get($annex, 'military_border_locations', []))
-            || $this->hasFilledRows(data_get($annex, 'military_border_equipment', []))
-        ) {
-            $flags[] = 'military_border_equipment';
-
-            $flags = array_merge($flags, $this->formLookupFlagsForRows(
-                data_get($annex, 'military_border_locations', []),
-                'location_type',
-                'military_location_type_',
-                FormLookupOption::TYPE_MILITARY_BORDER_LOCATION_TYPE,
-            ));
-            $flags = array_merge($flags, $this->formLookupFlagsForRows(
-                data_get($annex, 'military_border_equipment', []),
-                'classification',
-                'military_equipment_category_',
-                FormLookupOption::TYPE_EQUIPMENT_CATEGORY,
-            ));
-            $flags = array_merge($flags, $this->formLookupFlagsForRows(
-                data_get($annex, 'military_border_equipment', []),
-                'entry_point',
-                'military_equipment_entry_point_',
-                FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT,
-            ));
+            $flags = array_merge(
+                $flags,
+                $this->formLookupFlagsForRows(
+                    $importedEquipmentRows,
+                    'classification',
+                    'imported_equipment_category_',
+                    FormLookupOption::TYPE_EQUIPMENT_CATEGORY,
+                ),
+                $this->formLookupFlagsForRows(
+                    $importedEquipmentRows,
+                    'shipping_method',
+                    'imported_equipment_shipping_method_',
+                    FormLookupOption::TYPE_EQUIPMENT_SHIPPING_METHOD,
+                ),
+                $this->formLookupFlagsForRows(
+                    $importedEquipmentRows,
+                    'entry_point',
+                    'imported_equipment_entry_point_',
+                    FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT,
+                ),
+                $this->formLookupFlagsForRows(
+                    $importedEquipmentRows,
+                    'customs_center',
+                    'imported_equipment_entry_point_',
+                    FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT,
+                ),
+            );
         }
 
         if ($this->hasFilledRows(data_get($annex, 'public_security_support', []))) {

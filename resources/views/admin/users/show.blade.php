@@ -11,6 +11,7 @@
     $primaryEntityDocumentName = data_get($primaryEntity?->metadata, 'registration_document_name');
     $primaryEntityDocumentMime = data_get($primaryEntity?->metadata, 'registration_document_mime');
     $primaryEntityStudentGender = data_get($primaryEntity?->metadata, 'gender');
+    $primaryEntityLogoUrl = \App\Support\EntityLogo::url($primaryEntity, 'images/OIP.jpeg');
     $reviewData = (array) data_get($primaryEntity?->metadata, 'review', []);
     $profileStats = $userAnalytics['stats'];
     $chartData = $userAnalytics['charts'];
@@ -122,7 +123,7 @@
     <div class="card user-profile-card">
         <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
             <div class="d-flex align-items-center gap-3">
-                <img src="{{ asset('images/OIP.jpeg') }}" class="rounded-circle" width="70" alt="user">
+                <img src="{{ $primaryEntityLogoUrl }}" class="rounded-circle" width="70" alt="user">
                 <div>
                     <h4 class="mb-0">{{ $user->displayName() }}</h4>
                     <small class="text-muted">{{ $primaryEntity?->displayName() ?? __('app.admin.users.show_intro', ['email' => $user->email]) }}</small>

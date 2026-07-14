@@ -16,7 +16,6 @@ class FormLookupOption extends Model
     public const TYPE_AIRPORT = 'airport';
     public const TYPE_SPECIAL_LOCATION_REQUIREMENT = 'special_location_requirement';
     public const TYPE_BUDGET_SPENDING_CATEGORY = 'budget_spending_category';
-    public const TYPE_MILITARY_BORDER_LOCATION_TYPE = 'military_border_location_type';
     public const TYPE_DRONE_REQUEST_TYPE = 'drone_request_type';
 
     /**
@@ -29,7 +28,6 @@ class FormLookupOption extends Model
         self::TYPE_AIRPORT => ['queen_alia_international_airport', 'amman_civil_airport', 'king_hussein_international_airport_aqaba'],
         self::TYPE_SPECIAL_LOCATION_REQUIREMENT => ['road_closures', 'police_presence', 'armed_forces', 'regular_aerial_filming', 'drone_filming', 'special_effects', 'construction_work', 'animals', 'weapons', 'other'],
         self::TYPE_BUDGET_SPENDING_CATEGORY => ['jordanian_actors', 'jordanian_crew', 'flights_travel', 'accommodation', 'transportation', 'equipment_costs', 'other_1', 'other_2', 'other_3'],
-        self::TYPE_MILITARY_BORDER_LOCATION_TYPE => ['military_area', 'border_area'],
         self::TYPE_DRONE_REQUEST_TYPE => ['regular', 'urgent'],
     ];
 
@@ -175,7 +173,6 @@ class FormLookupOption extends Model
             self::TYPE_AIRPORT => __('app.admin.form_lookups.types.airport'),
             self::TYPE_SPECIAL_LOCATION_REQUIREMENT => __('app.admin.form_lookups.types.special_location_requirement'),
             self::TYPE_BUDGET_SPENDING_CATEGORY => __('app.admin.form_lookups.types.budget_spending_category'),
-            self::TYPE_MILITARY_BORDER_LOCATION_TYPE => __('app.admin.form_lookups.types.military_border_location_type'),
             self::TYPE_DRONE_REQUEST_TYPE => __('app.admin.form_lookups.types.drone_request_type'),
         ];
     }

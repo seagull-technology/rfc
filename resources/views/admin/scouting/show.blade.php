@@ -1,6 +1,7 @@
 @php
     $title = $requestRecord->project_name;
     $breadcrumb = __('app.admin.navigation.scouting_requests');
+    $requestEntityLogoUrl = \App\Support\EntityLogo::url($requestRecord->entity, 'images/OIP.jpeg');
     $metadata = $requestRecord->metadata ?? [];
     $producer = data_get($metadata, 'producer', []);
     $production = data_get($metadata, 'production', []);
@@ -168,7 +169,7 @@
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
                 <div class="d-flex align-items-center">
                     <div class="profile-img position-relative me-3 mb-3 mb-lg-0 profile-logo profile-logo1">
-                        <img src="{{ asset('images/OIP.jpeg') }}" alt="User-Profile" class="theme-color-default-img img-fluid rounded-pill avatar-100" loading="lazy">
+                        <img src="{{ $requestEntityLogoUrl }}" alt="User-Profile" class="theme-color-default-img img-fluid rounded-pill avatar-100" loading="lazy">
                     </div>
                     <div>
                         <h4 class="me-2 h4 text-white">{{ $requestRecord->entity?->displayName() ?? __('app.dashboard.not_available') }}</h4>

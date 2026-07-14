@@ -95,11 +95,15 @@ class IntegrationDiagnosticsController extends Controller
     {
         $payload = $request->validate([
             'national_id' => ['required', 'regex:/^\d{10}$/'],
+            'birth_date' => ['required', 'date_format:Y-m-d', 'before:today'],
         ], [
             'national_id.regex' => __('app.auth.national_id_digits'),
         ]);
 
-        $result = $this->moheSanadService->lookupCurrentStudent((string) $payload['national_id']);
+        $result = $this->moheSanadService->lookupCurrentStudent(
+            (string) $payload['national_id'],
+            (string) $payload['birth_date'],
+        );
 
         return redirect()
             ->route('admin.integrations.index')

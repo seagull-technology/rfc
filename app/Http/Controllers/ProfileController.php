@@ -9,6 +9,7 @@ use App\Models\ScoutingRequest;
 use App\Models\User;
 use App\Notifications\InboxMessageNotification;
 use App\Support\ApplicantDashboardState;
+use App\Support\EntityLogo;
 use App\Support\PhoneNumber;
 use App\Support\ProfileChangeRequests;
 use Illuminate\Database\Eloquent\Builder;
@@ -188,7 +189,7 @@ class ProfileController extends Controller
             'profileOfficialFields' => ProfileChangeRequests::officialFields($entity),
             'profileChangeRequests' => ProfileChangeRequests::all($entity),
             'pendingProfileChangeRequest' => ProfileChangeRequests::pending($entity),
-            'profileLogoUrl' => data_get($entity->metadata, 'logo_path') ? route('profile.logo') : asset('images/OIP.jpeg'),
+            'profileLogoUrl' => EntityLogo::url($entity),
             'entityApplications' => $applications,
             'scoutingRequests' => $scoutingRequests,
             'previousProjects' => $previousProjects,
@@ -221,6 +222,21 @@ class ProfileController extends Controller
                 ->route('profile.show')
                 ->withErrors(['profile' => __('app.profile.logo_missing')]);
         }
+
+        return Storage::disk('local')->response(
+            $path,
+            data_get($entity->metadata, 'logo_name', basename($path)),
+            ['Content-Type' => data_get($entity->metadata, 'logo_mime', 'image/png')],
+        );
+    }
+
+    public function entityLogo(Request $request, Entity $entity): StreamedResponse
+    {
+        abort_unless($request->user(), 403);
+
+        $path = data_get($entity->metadata, 'logo_path');
+
+        abort_unless(is_string($path) && Storage::disk('local')->exists($path), 404);
 
         return Storage::disk('local')->response(
             $path,

@@ -1,5 +1,6 @@
 @php
     $title = $application->project_name;
+    $applicationEntityLogoUrl = \App\Support\EntityLogo::url($entity, 'images/OIP.jpeg');
     $metadata = $application->metadata ?? [];
     $producer = data_get($metadata, 'producer', []);
     $director = data_get($metadata, 'director', []);
@@ -10,6 +11,10 @@
     $formatMoney = static fn ($value): string => filled($value) ? number_format((float) $value, 2) : __('app.dashboard.not_available');
     $formattedBudget = $formatMoney($application->estimated_budget);
     $formattedLocalSpend = $formatMoney(data_get($budgetMeta, 'local_spend_estimate'));
+    $canUpdateApplication = $user->can('applications.update.entity')
+        || ($user->can('applications.update.own') && (int) $application->submitted_by_user_id === (int) $user->getKey());
+    $canSubmitApplication = $user->can('applications.submit')
+        && ($user->can('applications.view.entity') || (int) $application->submitted_by_user_id === (int) $user->getKey());
     $asDate = static function ($value): ?\Carbon\CarbonInterface {
         if ($value instanceof \Carbon\CarbonInterface) {
             return $value;
@@ -384,7 +389,7 @@
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-4">
                 <div class="d-flex align-items-center">
                     <div class="profile-img position-relative me-3 mb-3 mb-lg-0 profile-logo profile-logo1">
-                        <img src="{{ asset('images/OIP.jpeg') }}" alt="User-Profile" class="theme-color-default-img img-fluid rounded-pill avatar-100" loading="lazy">
+                        <img src="{{ $applicationEntityLogoUrl }}" alt="User-Profile" class="theme-color-default-img img-fluid rounded-pill avatar-100" loading="lazy">
                     </div>
                     <div>
                         <h4 class="me-2 h4 text-white">{{ $entity->displayName() }}</h4>
@@ -471,10 +476,10 @@
                         <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mt-4">
                             <div class="d-flex gap-2 flex-wrap">
                                 <a class="btn btn-outline-secondary" data-bs-toggle="tab" href="#profile-approvals" role="tab" aria-selected="false">{{ __('app.request_state.open_correspondence') }}</a>
-                                @if ($application->canBeEditedByApplicant())
+                                @if ($application->canBeEditedByApplicant() && $canUpdateApplication)
                                     <a class="btn btn-light" href="{{ route('applications.edit', $application) }}">{{ __('app.applications.edit_action') }}</a>
                                 @endif
-                                @if ($application->canBeSubmittedByApplicant())
+                                @if ($application->canBeSubmittedByApplicant() && $canSubmitApplication)
                                     <form method="POST" action="{{ route('applications.submit', $application) }}"
                                         data-application-submit-confirm
                                         data-confirm-title="{{ __('app.applications.submit_confirm_title') }}"
@@ -508,7 +513,6 @@
                                 <div class="mb-1"><span class="fw-600">{{ __('app.applications.contact_address') }}:</span><span class="ms-2">{{ data_get($producer, 'contact_address', __('app.dashboard.not_available')) }}</span></div>
                                 <div class="mb-1"><span class="fw-600">{{ __('app.applications.contact_phone') }}:</span><span class="ms-2">{{ data_get($producer, 'contact_phone', __('app.dashboard.not_available')) }}</span></div>
                                 <div class="mb-1"><span class="fw-600">{{ __('app.applications.contact_email') }}:</span><span class="ms-2">{{ data_get($producer, 'contact_email', __('app.dashboard.not_available')) }}</span></div>
-                                <div class="mb-1"><span class="fw-600">{{ __('app.applications.liaison_name') }}:</span><span class="ms-2">{{ data_get($producer, 'liaison_name', __('app.dashboard.not_available')) }}</span></div>
                                 <div class="mb-0"><span class="fw-600">{{ __('app.applications.release_method') }}:</span><span class="ms-2">{{ \App\Models\ReleaseMethod::labelFor($application->release_method) }}</span></div>
                             </div>
                         </div>

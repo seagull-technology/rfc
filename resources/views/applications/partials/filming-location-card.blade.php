@@ -4,6 +4,9 @@
     $tableId = $tableId ?? 'filmingLocationsRequestTable';
     $selectedGovernorate = (string) ($row['governorate'] ?? '');
     $selectedLocationType = (string) ($row['location_type'] ?? '');
+    $locationStartDate = (string) ($row['start_date'] ?? '');
+    $locationEndDate = (string) ($row['end_date'] ?? '');
+    $minimumFilmingLocationStartDate = $minimumFilmingLocationStartDate ?? now()->toDateString();
     $rowLocationTypeOptions = $locationTypeOptionsForGovernorate($selectedGovernorate);
     $selectedSpecialLocationRequirements = $locationRequirementSelectionForRow($row);
     $emptyLocationSupportRequirement = $emptyLocationSupportRequirement ?? ['authority' => '', 'requirement' => '', 'date' => '', 'time_from' => '', 'time_to' => '', 'notes' => ''];
@@ -82,15 +85,11 @@
                     </div>
                     <div class="col-md-6 col-xl-3">
                         <label class="form-label">{{ __('app.scouting.start_date') }}</label>
-                        <input type="date" class="form-control" name="filming_locations[{{ $index }}][start_date]" value="{{ $row['start_date'] ?? '' }}">
+                        <input type="date" class="form-control" name="filming_locations[{{ $index }}][start_date]" value="{{ $locationStartDate }}" min="{{ $minimumFilmingLocationStartDate }}" data-location-start-date>
                     </div>
                     <div class="col-md-6 col-xl-3">
                         <label class="form-label">{{ __('app.scouting.end_date') }}</label>
-                        <input type="date" class="form-control" name="filming_locations[{{ $index }}][end_date]" value="{{ $row['end_date'] ?? '' }}">
-                    </div>
-                    <div class="col-xl-6">
-                        <label class="form-label">{{ __('app.applications.annex_fields.notes') }}</label>
-                        <input type="text" class="form-control" name="filming_locations[{{ $index }}][notes]" value="{{ $row['notes'] ?? '' }}">
+                        <input type="date" class="form-control" name="filming_locations[{{ $index }}][end_date]" value="{{ $locationEndDate }}" @if (filled($locationStartDate)) min="{{ $locationStartDate }}" @endif data-location-end-date>
                     </div>
                 </div>
                 @foreach ($selectedSpecialLocationRequirements as $preservedSpecialRequirement)
@@ -102,7 +101,7 @@
                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
                     <h6 class="mb-0">{{ __('app.applications.location_support_requirements_title') }}</h6>
                     <button type="button" class="btn btn-sm btn-success" onclick="addFilmingLocationSupportRequirement(this)">
-                        <i class="fa-solid fa-plus me-1"></i>{{ __('app.add') }}
+                        <i class="fa-solid fa-plus me-1"></i>{{ __('app.applications.location_support_add_requirement') }}
                     </button>
                 </div>
                 <div class="d-grid gap-3" data-location-support-requirements>
@@ -110,6 +109,12 @@
                         @php
                             $selectedSupportAuthority = (string) data_get($supportRequirement, 'authority', '');
                             $selectedSupportRequirement = (string) data_get($supportRequirement, 'requirement', '');
+                            $selectedSupportRequirementLabel = filled($selectedSupportRequirement)
+                                ? ($locationRequirementLabels[$selectedSupportRequirement] ?? \App\Models\FormLookupOption::labelFor(\App\Models\FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT, $selectedSupportRequirement))
+                                : '';
+                            $supportRequirementNotesPrompt = filled($selectedSupportRequirementLabel)
+                                ? __('app.applications.location_support_notes_prompt', ['requirement' => $selectedSupportRequirementLabel])
+                                : '';
                         @endphp
                         <div class="application-location-support-row" data-location-support-requirement-row>
                             <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
@@ -130,7 +135,7 @@
                                 </div>
                                 <div class="col-md-6 col-xl-3">
                                     <label class="form-label">{{ __('app.applications.annex_fields.requirement') }}</label>
-                                    <select class="form-select select2-basic-single" name="filming_locations[{{ $index }}][support_requirements][{{ $supportIndex }}][requirement]">
+                                    <select class="form-select select2-basic-single" name="filming_locations[{{ $index }}][support_requirements][{{ $supportIndex }}][requirement]" data-location-support-requirement-select>
                                         <option value="">{{ __('app.admin.select_placeholder') }}</option>
                                         @if (filled($selectedSupportRequirement) && ! in_array($selectedSupportRequirement, $locationRequirementOptions, true))
                                             <option value="{{ $selectedSupportRequirement }}" selected>{{ $selectedSupportRequirement }}</option>
@@ -142,7 +147,7 @@
                                 </div>
                                 <div class="col-md-6 col-xl-2">
                                     <label class="form-label">{{ __('app.applications.annex_fields.date') }}</label>
-                                    <input type="date" class="form-control" name="filming_locations[{{ $index }}][support_requirements][{{ $supportIndex }}][date]" value="{{ data_get($supportRequirement, 'date') }}">
+                                    <input type="date" class="form-control" name="filming_locations[{{ $index }}][support_requirements][{{ $supportIndex }}][date]" value="{{ data_get($supportRequirement, 'date') }}" @if (filled($locationStartDate)) min="{{ $locationStartDate }}" @endif @if (filled($locationEndDate)) max="{{ $locationEndDate }}" @endif data-location-support-date>
                                 </div>
                                 <div class="col-md-6 col-xl-2">
                                     <label class="form-label">{{ __('app.applications.annex_fields.time_from') }}</label>
@@ -153,8 +158,12 @@
                                     <input type="time" class="form-control" name="filming_locations[{{ $index }}][support_requirements][{{ $supportIndex }}][time_to]" value="{{ data_get($supportRequirement, 'time_to') }}">
                                 </div>
                                 <div class="col-md-6 col-xl-12">
-                                    <label class="form-label">{{ __('app.applications.annex_fields.notes') }}</label>
-                                    <textarea class="form-control" name="filming_locations[{{ $index }}][support_requirements][{{ $supportIndex }}][notes]" rows="2">{{ data_get($supportRequirement, 'notes') }}</textarea>
+                                    <label class="form-label">
+                                        {{ __('app.applications.annex_fields.notes') }}
+                                        <span class="text-danger @if (blank($selectedSupportRequirement)) d-none @endif" data-location-support-notes-required-marker>*</span>
+                                    </label>
+                                    <textarea class="form-control" name="filming_locations[{{ $index }}][support_requirements][{{ $supportIndex }}][notes]" rows="2" data-location-support-notes @if (filled($selectedSupportRequirement)) required @endif placeholder="{{ $supportRequirementNotesPrompt }}">{{ data_get($supportRequirement, 'notes') }}</textarea>
+                                    <div class="form-text text-danger fw-semibold @if (blank($supportRequirementNotesPrompt)) d-none @endif" data-location-support-notes-help>{{ $supportRequirementNotesPrompt }}</div>
                                 </div>
                             </div>
                         </div>

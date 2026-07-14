@@ -29,17 +29,16 @@
                 $applicationEquipmentEntryPointOptions = collect(data_get($formLookupOptions ?? [], 'equipment_entry_points', []))
                     ->map(fn ($option): array => ['code' => $option->code, 'label' => $option->displayName()])
                     ->values();
-                $applicationMilitaryLocationTypeOptions = collect($militaryLocationTypeOptions ?? ['military_area', 'border_area'])
-                    ->map(fn ($code): array => ['code' => $code, 'label' => ($militaryLocationTypeLabels[$code] ?? __('app.applications.military_location_types.'.$code))])
-                    ->values();
                 $applicationLocationTypeApprovalDays = (array) data_get($locationLookupOptions ?? [], 'location_type_approval_days', []);
                 $maxCrewBirthDate = $maxCrewBirthDate ?? now()->subDay()->toDateString();
+                $minimumFilmingLocationStartDate = $minimumFilmingLocationStartDate ?? \App\Support\JordanBusinessDays::today()->toDateString();
 	        @endphp
 	        <script>
 		            const applicationNationalityOptionsHtml = @js($applicationNationalityOptionsHtml);
 		            const applicationGovernorateOptionsHtml = @js($applicationGovernorateOptionsHtml);
 		            const applicationGenderOptionsHtml = @js($applicationGenderOptionsHtml);
                 const applicationCrewBirthDateMax = @js($maxCrewBirthDate);
+                const applicationFilmingLocationStartMin = @js($minimumFilmingLocationStartDate);
                 const applicationSpecialLocationRequirementOptions = @json($applicationSpecialLocationRequirementOptions);
                 const applicationSupportAuthorityOptions = @json($applicationSupportAuthorityOptions);
                 const applicationLocationCardLabels = {
@@ -61,6 +60,9 @@
                     timeTo: @js(__('app.applications.annex_fields.time_to')),
                     deleteLabel: @js(__('app.delete')),
                     addLabel: @js(__('app.add')),
+                    addRequirementLabel: @js(__('app.applications.location_support_add_requirement')),
+                    supportDateRangeMessage: @js(__('app.applications.location_support_date_range')),
+                    supportNotesPrompt: @js(__('app.applications.location_support_notes_prompt')),
                     approvalDaysNotice: @js(__('app.applications.location_type_approval_days_notice')),
                 };
                 const applicationWorkSummaryMessages = {
@@ -71,7 +73,6 @@
                 const applicationEquipmentCategoryOptions = @json($applicationEquipmentCategoryOptions);
                 const applicationEquipmentShippingMethodOptions = @json($applicationEquipmentShippingMethodOptions);
                 const applicationEquipmentEntryPointOptions = @json($applicationEquipmentEntryPointOptions);
-                const applicationMilitaryLocationTypeOptions = @json($applicationMilitaryLocationTypeOptions);
 	            const applicationLocationTypesByGovernorate = @json((array) data_get($locationLookupOptions ?? [], 'location_types_by_governorate', []));
 	            const applicationLocationTypeLabels = @json((array) data_get($locationLookupOptions ?? [], 'location_type_labels', []));
                 const applicationLocationTypeApprovalDays = @json($applicationLocationTypeApprovalDays);
@@ -116,6 +117,76 @@
                 refreshApplicationLocationApprovalNote(row);
             }
 
+            function applicationParseYmd(value) {
+                const parts = String(value || '').split('-').map(function (part) {
+                    return parseInt(part, 10);
+                });
+
+                if (parts.length !== 3 || parts.some(Number.isNaN)) {
+                    return null;
+                }
+
+                return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+            }
+
+            function applicationFormatYmd(date) {
+                const year = date.getUTCFullYear();
+                const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+                const day = String(date.getUTCDate()).padStart(2, '0');
+
+                return year + '-' + month + '-' + day;
+            }
+
+            function applicationAddJordanBusinessDays(startDate, days) {
+                const date = applicationParseYmd(startDate);
+                let remaining = Math.max(0, parseInt(days || '0', 10));
+
+                if (!date) {
+                    return startDate;
+                }
+
+                while (remaining > 0) {
+                    date.setUTCDate(date.getUTCDate() + 1);
+
+                    if (date.getUTCDay() !== 5 && date.getUTCDay() !== 6) {
+                        remaining -= 1;
+                    }
+                }
+
+                return applicationFormatYmd(date);
+            }
+
+            function applicationMaxYmd(firstDate, secondDate) {
+                if (!firstDate) {
+                    return secondDate || '';
+                }
+
+                if (!secondDate) {
+                    return firstDate;
+                }
+
+                return secondDate > firstDate ? secondDate : firstDate;
+            }
+
+            function applicationLocationStartMinimumForType(locationType) {
+                const days = parseInt(applicationLocationTypeApprovalDays[locationType] || '0', 10);
+
+                if (days <= 0) {
+                    return applicationFilmingLocationStartMin;
+                }
+
+                return applicationMaxYmd(
+                    applicationFilmingLocationStartMin,
+                    applicationAddJordanBusinessDays(applicationFilmingLocationStartMin, days)
+                );
+            }
+
+            function applicationLocationStartMinimumForCard(card) {
+                const locationType = card ? card.querySelector('[data-location-type-select]') : null;
+
+                return applicationLocationStartMinimumForType(locationType ? locationType.value : '');
+            }
+
             function refreshApplicationLocationApprovalNote(row) {
                 if (!row) {
                     return;
@@ -123,15 +194,23 @@
 
                 const locationType = row.querySelector('[data-location-type-select]');
                 const note = row.querySelector('[data-location-type-approval-note]');
+                const startDate = row.querySelector('[data-location-start-date]');
 
                 if (!locationType || !note) {
                     return;
                 }
 
                 const days = parseInt(applicationLocationTypeApprovalDays[locationType.value] || '0', 10);
+                const minimumStartDate = applicationLocationStartMinimumForType(locationType.value);
+
+                if (startDate) {
+                    startDate.min = minimumStartDate;
+                }
 
                 if (days > 0) {
-                    note.textContent = applicationLocationCardLabels.approvalDaysNotice.replace(':days', String(days));
+                    note.textContent = applicationLocationCardLabels.approvalDaysNotice
+                        .replace(':days', String(days))
+                        .replace(':date', minimumStartDate);
                     note.classList.remove('d-none');
 
                     return;
@@ -155,6 +234,65 @@
 	                    .replace(/"/g, '&quot;')
 	                    .replace(/'/g, '&#039;');
 	            }
+
+            function applicationSupportRequirementLabel(row) {
+                const requirement = row ? row.querySelector('[data-location-support-requirement-select]') : null;
+
+                if (!requirement || !requirement.value) {
+                    return '';
+                }
+
+                const option = requirement.options[requirement.selectedIndex];
+
+                return option ? String(option.text || '').trim() : String(requirement.value || '').trim();
+            }
+
+            function updateFilmingLocationSupportRequirementNotes(row) {
+                const notes = row ? row.querySelector('[data-location-support-notes]') : null;
+                const marker = row ? row.querySelector('[data-location-support-notes-required-marker]') : null;
+                const help = row ? row.querySelector('[data-location-support-notes-help]') : null;
+                const requirementLabel = applicationSupportRequirementLabel(row);
+
+                if (!notes) {
+                    return;
+                }
+
+                if (!requirementLabel) {
+                    notes.required = false;
+                    notes.placeholder = '';
+                    notes.setCustomValidity('');
+
+                    if (marker) {
+                        marker.classList.add('d-none');
+                    }
+
+                    if (help) {
+                        help.textContent = '';
+                        help.classList.add('d-none');
+                    }
+
+                    return;
+                }
+
+                const message = applicationLocationCardLabels.supportNotesPrompt.replace(':requirement', requirementLabel);
+
+                notes.required = true;
+                notes.placeholder = message;
+                notes.setCustomValidity(String(notes.value || '').trim() ? '' : message);
+
+                if (marker) {
+                    marker.classList.remove('d-none');
+                }
+
+                if (help) {
+                    help.textContent = message;
+                    help.classList.remove('d-none');
+                }
+            }
+
+            function refreshFilmingLocationSupportRequirementNotes(root) {
+                (root || document).querySelectorAll('[data-location-support-requirement-row]').forEach(updateFilmingLocationSupportRequirementNotes);
+            }
 
                 function applicationLookupOptionsHtml(options, selectedValue) {
                     const selected = String(selectedValue || '');
@@ -233,11 +371,11 @@
                     + '</div>'
                     + '<div class="row g-3">'
                     + '<div class="col-md-6 col-xl-2"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.authority) + '</label><select class="form-select select2-basic-single" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][authority]">' + applicationSupportAuthorityOptionsHtml('') + '</select></div>'
-                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.requirement) + '</label><select class="form-select select2-basic-single" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][requirement]"><option value="">' + applicationLocationTypePlaceholder + '</option>' + applicationSpecialLocationRequirementOptionsHtml([]) + '</select></div>'
-                    + '<div class="col-md-6 col-xl-2"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.date) + '</label><input type="date" class="form-control" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][date]"></div>'
+                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.requirement) + '</label><select class="form-select select2-basic-single" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][requirement]" data-location-support-requirement-select><option value="">' + applicationLocationTypePlaceholder + '</option>' + applicationSpecialLocationRequirementOptionsHtml([]) + '</select></div>'
+                    + '<div class="col-md-6 col-xl-2"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.date) + '</label><input type="date" class="form-control" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][date]" data-location-support-date></div>'
                     + '<div class="col-md-6 col-xl-2"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.timeFrom) + '</label><input type="time" class="form-control" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][time_from]"></div>'
                     + '<div class="col-md-6 col-xl-2"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.timeTo) + '</label><input type="time" class="form-control" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][time_to]"></div>'
-                    + '<div class="col-md-6 col-xl-12"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.notes) + '</label><textarea class="form-control" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][notes]" rows="2"></textarea></div>'
+                    + '<div class="col-md-6 col-xl-12"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.notes) + ' <span class="text-danger d-none" data-location-support-notes-required-marker>*</span></label><textarea class="form-control" name="filming_locations[' + locationIndex + '][support_requirements][' + supportIndex + '][notes]" rows="2" data-location-support-notes></textarea><div class="form-text text-danger fw-semibold d-none" data-location-support-notes-help></div></div>'
                     + '</div>'
                     + '</div>';
             }
@@ -257,12 +395,11 @@
                     + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationName) + '</label><input type="text" class="form-control" name="filming_locations[' + index + '][location_name]"></div>'
                     + '<div class="col-md-6"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationAddress) + '</label><input type="text" class="form-control" name="filming_locations[' + index + '][address]"></div>'
                     + '<div class="col-md-6"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationNature) + '</label><textarea class="form-control" name="filming_locations[' + index + '][nature]" rows="2"></textarea></div>'
-                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.startDate) + '</label><input type="date" class="form-control" name="filming_locations[' + index + '][start_date]"></div>'
-                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.endDate) + '</label><input type="date" class="form-control" name="filming_locations[' + index + '][end_date]"></div>'
-                    + '<div class="col-xl-6"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.notes) + '</label><input type="text" class="form-control" name="filming_locations[' + index + '][notes]"></div>'
+                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.startDate) + '</label><input type="date" class="form-control" name="filming_locations[' + index + '][start_date]" min="' + applicationEscapeHtml(applicationFilmingLocationStartMin) + '" data-location-start-date></div>'
+                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.endDate) + '</label><input type="date" class="form-control" name="filming_locations[' + index + '][end_date]" data-location-end-date></div>'
                     + '</div></div>'
                     + '<div class="application-location-card__section application-location-card__section--requirements">'
-                    + '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><h6 class="mb-0">' + applicationEscapeHtml(applicationLocationCardLabels.supportTitle) + '</h6><button type="button" class="btn btn-sm btn-success" onclick="addFilmingLocationSupportRequirement(this)"><i class="fa-solid fa-plus me-1"></i>' + applicationEscapeHtml(applicationLocationCardLabels.addLabel) + '</button></div>'
+                    + '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><h6 class="mb-0">' + applicationEscapeHtml(applicationLocationCardLabels.supportTitle) + '</h6><button type="button" class="btn btn-sm btn-success" onclick="addFilmingLocationSupportRequirement(this)"><i class="fa-solid fa-plus me-1"></i>' + applicationEscapeHtml(applicationLocationCardLabels.addRequirementLabel) + '</button></div>'
                     + '<div class="d-grid gap-3" data-location-support-requirements>' + filmingLocationSupportRequirementHtml(index, 0) + '</div>'
                     + '</div>'
                     + '</div>'
@@ -295,6 +432,57 @@
                 });
             }
 
+            function updateFilmingLocationDateConstraints(card) {
+                if (!card) {
+                    return;
+                }
+
+                const startDate = card.querySelector('[data-location-start-date]');
+                const endDate = card.querySelector('[data-location-end-date]');
+                const startValue = startDate ? String(startDate.value || '') : '';
+                const endValue = endDate ? String(endDate.value || '') : '';
+
+                if (startDate) {
+                    startDate.min = applicationLocationStartMinimumForCard(card);
+                }
+
+                if (endDate) {
+                    if (startValue) {
+                        endDate.min = startValue;
+                    } else {
+                        endDate.removeAttribute('min');
+                    }
+                }
+
+                card.querySelectorAll('[data-location-support-date]').forEach(function (supportDate) {
+                    supportDate.setCustomValidity('');
+
+                    if (startValue) {
+                        supportDate.min = startValue;
+                    } else {
+                        supportDate.removeAttribute('min');
+                    }
+
+                    if (endValue) {
+                        supportDate.max = endValue;
+                    } else {
+                        supportDate.removeAttribute('max');
+                    }
+
+                    if (supportDate.value && startValue && supportDate.value < startValue) {
+                        supportDate.setCustomValidity(applicationLocationCardLabels.supportDateRangeMessage);
+                    }
+
+                    if (supportDate.value && endValue && supportDate.value > endValue) {
+                        supportDate.setCustomValidity(applicationLocationCardLabels.supportDateRangeMessage);
+                    }
+                });
+            }
+
+            function refreshFilmingLocationDateConstraints(root) {
+                (root || document).querySelectorAll('.application-location-card').forEach(updateFilmingLocationDateConstraints);
+            }
+
             function addFilmingLocationSupportRequirement(button) {
                 const card = button.closest('.application-location-card');
                 const container = card ? card.querySelector('[data-location-support-requirements]') : null;
@@ -309,6 +497,8 @@
                 container.insertAdjacentHTML('beforeend', filmingLocationSupportRequirementHtml(locationIndex, supportIndex));
                 renumberFilmingLocationSupportRequirements(card);
                 initializeApplicationEnhancedSelects(container.lastElementChild);
+                updateFilmingLocationDateConstraints(card);
+                refreshFilmingLocationSupportRequirementNotes(container.lastElementChild);
             }
 
             function removeFilmingLocationSupportRequirement(button) {
@@ -327,6 +517,8 @@
                 }
 
                 renumberFilmingLocationSupportRequirements(card);
+                updateFilmingLocationDateConstraints(card);
+                refreshFilmingLocationSupportRequirementNotes(card);
             }
 
             function filmingLocationRowKey(row, fallbackIndex) {
@@ -603,6 +795,7 @@
                 renumberApplicationAnnexRows(selector);
                 refreshSpecialLocationRequirementSelects();
                 refreshEquipmentTravelerSelects();
+                refreshFilmingLocationDateConstraints(document);
                 updateEquipmentTotals();
             }
 
@@ -640,6 +833,17 @@
                         + deleteCell;
 	                } else if (fieldName === 'filming_locations') {
 	                    row.innerHTML = filmingLocationCardHtml(tableId, index);
+                } else if (fieldName === 'imported_equipment') {
+                    const rowKey = 'new_' + Date.now() + '_' + index;
+                    row.innerHTML = '<td class="row-number"></td>'
+                        + '<td><input type="hidden" name="imported_equipment[' + rowKey + '][transport_group]" value="shipping"><input type="text" class="form-control" name="imported_equipment[' + rowKey + '][shipping_company_name]"></td>'
+                        + '<td><input type="text" class="form-control" name="imported_equipment[' + rowKey + '][invoice_number]"></td>'
+                        + '<td><input type="text" class="form-control" name="imported_equipment[' + rowKey + '][bill_of_lading_number]"></td>'
+                        + '<td><input type="date" class="form-control" name="imported_equipment[' + rowKey + '][arrival_date]"></td>'
+                        + '<td><input type="date" class="form-control" name="imported_equipment[' + rowKey + '][departure_date]"></td>'
+                        + '<td><select class="form-select" name="imported_equipment[' + rowKey + '][customs_center]">' + applicationLookupOptionsHtml(applicationEquipmentEntryPointOptions, '') + '</select></td>'
+                        + '<td><input type="file" class="form-control" name="imported_equipment[' + rowKey + '][attachment]" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png"></td>'
+                        + deleteCell;
                 } else if (fieldName === 'equipment_flights') {
                     row.innerHTML = '<td class="row-number"></td>'
                         + '<td><select class="form-select" name="equipment_flights[' + index + '][flight_type]"><option value="">{{ __('app.admin.select_placeholder') }}</option><option value="arrival">{{ __('app.applications.flight_types.arrival') }}</option><option value="departure">{{ __('app.applications.flight_types.departure') }}</option></select></td>'
@@ -676,28 +880,6 @@
                         + '<td><select class="form-select" name="imported_equipment[' + rowKey + '][shipping_method]">' + applicationLookupOptionsHtml(applicationEquipmentShippingMethodOptions, '') + '</select></td>'
                         + '<td><select class="form-select" name="imported_equipment[' + rowKey + '][entry_point]">' + applicationLookupOptionsHtml(applicationEquipmentEntryPointOptions, '') + '</select></td>'
                         + deleteCell;
-                } else if (fieldName === 'military_border_locations') {
-                    row.innerHTML = '<td class="row-number"></td>'
-                        + '<td><select class="form-select" name="military_border_locations[' + index + '][governorate]">' + applicationGovernorateOptionsHtml + '</select></td>'
-                        + '<td><input type="text" class="form-control" name="military_border_locations[' + index + '][location_name]"></td>'
-                        + '<td><input type="text" class="form-control" name="military_border_locations[' + index + '][address]"></td>'
-                        + '<td><textarea class="form-control" name="military_border_locations[' + index + '][nature]" rows="2"></textarea></td>'
-                        + '<td><select class="form-select" name="military_border_locations[' + index + '][location_type]">' + applicationLookupOptionsHtml(applicationMilitaryLocationTypeOptions, '') + '</select></td>'
-                        + '<td><input type="date" class="form-control" name="military_border_locations[' + index + '][start_date]"></td>'
-                        + '<td><input type="date" class="form-control" name="military_border_locations[' + index + '][end_date]"></td>'
-                        + deleteCell;
-                } else if (fieldName === 'military_border_equipment') {
-                    row.innerHTML = '<td class="row-number"></td>'
-                        + '<td><input type="text" class="form-control" name="military_border_equipment[' + index + '][item]"></td>'
-                        + '<td><input type="text" class="form-control" name="military_border_equipment[' + index + '][serial_number]"></td>'
-                        + '<td><input type="text" class="form-control" name="military_border_equipment[' + index + '][location_reference]"></td>'
-                        + '<td><input type="number" min="0" class="form-control" name="military_border_equipment[' + index + '][quantity]"></td>'
-                        + '<td><input type="number" step="0.01" min="0" class="form-control" name="military_border_equipment[' + index + '][unit_value]"></td>'
-                        + '<td><input type="number" step="0.01" min="0" class="form-control" name="military_border_equipment[' + index + '][total_value]"></td>'
-                        + '<td><select class="form-select" name="military_border_equipment[' + index + '][classification]">' + applicationLookupOptionsHtml(applicationEquipmentCategoryOptions, '') + '</select></td>'
-                        + '<td><input type="text" class="form-control" name="military_border_equipment[' + index + '][entry_method]"></td>'
-                        + '<td><select class="form-select" name="military_border_equipment[' + index + '][entry_point]">' + applicationLookupOptionsHtml(applicationEquipmentEntryPointOptions, '') + '</select></td>'
-                        + deleteCell;
                 } else if (fieldName === 'public_security_support' || fieldName === 'military_support') {
                     row.innerHTML = supportScheduleRowHtml(fieldName, index, deleteCell);
                 } else if (fieldName === 'airport_people') {
@@ -726,6 +908,7 @@
                 refreshApplicationLocationTypeSelect(row);
                 refreshSpecialLocationRequirementSelects();
                 refreshEquipmentTravelerSelects();
+                refreshFilmingLocationDateConstraints(row);
                 updateEquipmentTotals();
             }
 
@@ -743,6 +926,14 @@
                     refreshSpecialLocationRequirementSelects();
                 }
 
+                if (event.target.matches('[data-location-start-date], [data-location-end-date], [data-location-support-date]')) {
+                    updateFilmingLocationDateConstraints(event.target.closest('.application-location-card'));
+                }
+
+                if (event.target.matches('[data-location-support-requirement-select], [data-location-support-notes]')) {
+                    updateFilmingLocationSupportRequirementNotes(event.target.closest('[data-location-support-requirement-row]'));
+                }
+
                 if (event.target.matches('input[name^="equipment_travelers"][name$="[traveler_name]"]')) {
                     refreshEquipmentTravelerSelects();
                 }
@@ -756,21 +947,41 @@
                 if (event.target.matches('input[name^="equipment_travelers"][name$="[traveler_name]"]')) {
                     refreshEquipmentTravelerSelects();
                 }
+
+                if (event.target.matches('[data-location-support-notes]')) {
+                    updateFilmingLocationSupportRequirementNotes(event.target.closest('[data-location-support-requirement-row]'));
+                }
             });
+
+            if (window.jQuery) {
+                window.jQuery(document)
+                    .off(
+                        'change.applicationLocationSupportNotes select2:select.applicationLocationSupportNotes select2:unselect.applicationLocationSupportNotes select2:clear.applicationLocationSupportNotes',
+                        '[data-location-support-requirement-select]'
+                    )
+                    .on(
+                        'change.applicationLocationSupportNotes select2:select.applicationLocationSupportNotes select2:unselect.applicationLocationSupportNotes select2:clear.applicationLocationSupportNotes',
+                        '[data-location-support-requirement-select]',
+                        function () {
+                            updateFilmingLocationSupportRequirementNotes(this.closest('[data-location-support-requirement-row]'));
+                        }
+                    );
+            }
 
             refreshApplicationLocationTypeSelects(document);
             refreshSpecialLocationRequirementSelects();
             refreshEquipmentTravelerSelects();
+            refreshFilmingLocationDateConstraints(document);
+            refreshFilmingLocationSupportRequirementNotes(document);
 
             [
                 '#castCrewRequestTable',
                 '#filmingLocationsRequestTable',
+                '#importedEquipmentShipmentTable',
                 '#equipmentFlightsTable',
                 '#importedEquipmentShippingTable',
                 '#equipmentTravelersTable',
                 '#importedEquipmentTravelerTable',
-                '#militaryBorderLocationsTable',
-                '#militaryBorderEquipmentRequestTable',
                 '#airportPeopleTable',
                 '#governmentalScenesRequestTable',
             ].forEach(renumberApplicationAnnexRows);

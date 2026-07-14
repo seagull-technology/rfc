@@ -1,0 +1,30 @@
+meta {
+  name: Lookup Company - CCD
+  type: http
+  seq: 1
+}
+
+get {
+  url: https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/companies/CompanybyNo/{{test_company_national_no}}
+  body: none
+  auth: none
+}
+
+headers {
+  X-MODEE-Client-Id: {{gsb_client_id}}
+  X-MODEE-Client-Secret: {{gsb_client_secret}}
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Company lookup through the Companies Control Department service.
+
+  Select the STG environment before sending and configure:
+  - gsb_client_id
+  - gsb_client_secret
+  - test_company_national_no (numeric establishment national number, up to 10 digits)
+}
