@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Application;
+use App\Models\ApplicationAuthorityApproval;
 use App\Models\ApprovalRoutingRule;
 use App\Models\ApprovalRoutingRuleAudit;
 use App\Models\Entity;
@@ -15,9 +16,10 @@ use App\Services\AuthorityApprovalNotificationService;
 use App\Support\ApplicationWorkflowRegistry;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Spatie\Permission\PermissionRegistrar;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class ApprovalRoutingTest extends TestCase
@@ -203,8 +205,6 @@ class ApprovalRoutingTest extends TestCase
             'international_liaison_email' => 'international-routing-liaison@example.com',
             'international_liaison_mobile' => '+962799111111',
             'international_account_exists' => '1',
-            'international_account_password' => 'International@12345',
-            'international_account_password_confirmation' => 'International@12345',
         ]));
 
         $application = Application::query()->firstOrFail();
@@ -534,6 +534,112 @@ class ApprovalRoutingTest extends TestCase
             'application_id' => $application->getKey(),
         ]);
         $this->assertSame([], data_get($application->fresh()->metadata, 'requirements.required_approvals'));
+    }
+
+    public function test_location_support_requirement_routes_directly_to_its_selected_authority(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$applicant, $entity] = $this->createApplicantContext();
+        $authority = Entity::query()->where('code', 'royal-society-for-the-conservation-of-nature')->firstOrFail();
+        $requirement = FormLookupOption::query()
+            ->ofType(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT)
+            ->where('code', 'road_closures')
+            ->firstOrFail();
+        $requirement->entities()->syncWithoutDetaching([$authority->getKey()]);
+        ApprovalRoutingRule::query()->where('request_type', 'application')->update(['is_active' => false]);
+
+        $application = Application::query()->create([
+            'code' => 'REQ-LOCATION-SUPPORT-DIRECT',
+            'entity_id' => $entity->getKey(),
+            'submitted_by_user_id' => $applicant->getKey(),
+            'project_name' => 'Direct Location Support',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'feature_film',
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-08-01',
+            'planned_end_date' => '2026-08-10',
+            'project_summary' => 'Direct authority routing test.',
+            'status' => 'submitted',
+            'current_stage' => 'intake',
+            'metadata' => [
+                'annex' => [
+                    'location_support_requirements' => [[
+                        'authority' => $authority->code,
+                        'requirement' => $requirement->code,
+                    ]],
+                ],
+            ],
+        ]);
+
+        $routes = app(ApprovalRoutingService::class)->routesForApplication($application);
+
+        $this->assertCount(1, $routes);
+        $this->assertSame('location_support__'.$authority->code, $routes->first()['approval_code']);
+        $this->assertSame($authority->getKey(), $routes->first()['target_entity_id']);
+
+        $approvals = app(ApplicationAuthorityApprovalSyncService::class)->sync($application);
+
+        $this->assertCount(1, $approvals);
+        $this->assertDatabaseHas('application_authority_approvals', [
+            'application_id' => $application->getKey(),
+            'authority_code' => 'location_support__'.$authority->code,
+            'entity_id' => $authority->getKey(),
+        ]);
+    }
+
+    public function test_location_support_route_does_not_duplicate_an_existing_rule_target(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$applicant, $entity] = $this->createApplicantContext();
+        $authority = Entity::query()->where('code', 'royal-society-for-the-conservation-of-nature')->firstOrFail();
+        $requirement = FormLookupOption::query()
+            ->ofType(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT)
+            ->where('code', 'road_closures')
+            ->firstOrFail();
+        $requirement->entities()->syncWithoutDetaching([$authority->getKey()]);
+        ApprovalRoutingRule::query()->where('request_type', 'application')->update(['is_active' => false]);
+        ApprovalRoutingRule::query()->create([
+            'name' => 'Environment location support route',
+            'request_type' => 'application',
+            'approval_code' => 'environment',
+            'target_entity_id' => $authority->getKey(),
+            'conditions' => ['annex_flags' => ['filming_locations']],
+            'priority' => 10,
+            'is_active' => true,
+        ]);
+
+        $application = Application::query()->create([
+            'code' => 'REQ-LOCATION-SUPPORT-UNIQUE',
+            'entity_id' => $entity->getKey(),
+            'submitted_by_user_id' => $applicant->getKey(),
+            'project_name' => 'Unique Location Support',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'feature_film',
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-08-01',
+            'planned_end_date' => '2026-08-10',
+            'project_summary' => 'Deduplicated authority routing test.',
+            'status' => 'submitted',
+            'current_stage' => 'intake',
+            'metadata' => [
+                'annex' => [
+                    'filming_locations' => [['location_name' => 'Protected Area']],
+                    'location_support_requirements' => [[
+                        'authority' => $authority->code,
+                        'requirement' => $requirement->code,
+                    ]],
+                ],
+            ],
+        ]);
+
+        $routes = app(ApprovalRoutingService::class)->routesForApplication($application);
+
+        $this->assertCount(1, $routes->where('target_entity_id', $authority->getKey()));
+        $this->assertSame('environment', $routes->first()['approval_code']);
     }
 
     public function test_application_workflow_approval_map_uses_one_structured_shape(): void
@@ -1263,7 +1369,7 @@ class ApprovalRoutingTest extends TestCase
             ],
         ]);
 
-        \App\Models\ApplicationAuthorityApproval::query()->create([
+        ApplicationAuthorityApproval::query()->create([
             'application_id' => $application->getKey(),
             'authority_code' => 'municipalities',
             'entity_id' => $targetEntity->getKey(),
@@ -1271,7 +1377,7 @@ class ApprovalRoutingTest extends TestCase
             'status' => 'approved',
         ]);
 
-        \App\Models\ApplicationAuthorityApproval::query()->create([
+        ApplicationAuthorityApproval::query()->create([
             'application_id' => $secondApplication->getKey(),
             'authority_code' => 'municipalities',
             'entity_id' => $targetEntity->getKey(),
@@ -1326,7 +1432,7 @@ class ApprovalRoutingTest extends TestCase
             'is_active' => true,
         ]);
 
-        $staleRuleId = \Illuminate\Support\Facades\DB::table('approval_routing_rules')->insertGetId([
+        $staleRuleId = DB::table('approval_routing_rules')->insertGetId([
             'name' => 'Cleanup stale rule',
             'request_type' => 'application',
             'approval_code' => 'heritage',
@@ -1389,7 +1495,7 @@ class ApprovalRoutingTest extends TestCase
             ],
         ]);
 
-        \Illuminate\Support\Facades\DB::table('application_authority_approvals')->insert([
+        DB::table('application_authority_approvals')->insert([
             'application_id' => $applicationOne->getKey(),
             'authority_code' => 'heritage',
             'entity_id' => $targetEntity->getKey(),
@@ -1399,7 +1505,7 @@ class ApprovalRoutingTest extends TestCase
             'updated_at' => now()->subDays(120),
         ]);
 
-        \App\Models\ApplicationAuthorityApproval::query()->create([
+        ApplicationAuthorityApproval::query()->create([
             'application_id' => $applicationTwo->getKey(),
             'authority_code' => 'environment',
             'entity_id' => $targetEntity->getKey(),
@@ -1898,15 +2004,15 @@ class ApprovalRoutingTest extends TestCase
             'project_nationality' => 'jordanian',
             'project_nationalities' => ['jordanian'],
             'work_category' => 'feature_film',
-	            'release_method' => 'cinema',
-	            'planned_start_date' => '2026-05-02',
-	            'planned_end_date' => '2026-05-10',
-	            'schedule_phases' => [
-	                'preparation' => ['start_date' => '2026-04-20', 'end_date' => '2026-04-30'],
-	                'wrap' => ['start_date' => '2026-05-11', 'end_date' => '2026-05-12'],
-	                'post_production' => ['start_date' => '2026-05-13', 'end_date' => '2026-06-01'],
-	            ],
-	            'estimated_crew_count' => 35,
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-05-02',
+            'planned_end_date' => '2026-05-10',
+            'schedule_phases' => [
+                'preparation' => ['start_date' => '2026-04-20', 'end_date' => '2026-04-30'],
+                'wrap' => ['start_date' => '2026-05-11', 'end_date' => '2026-05-12'],
+                'post_production' => ['start_date' => '2026-05-13', 'end_date' => '2026-06-01'],
+            ],
+            'estimated_crew_count' => 35,
             'estimated_budget' => 120000,
             'project_summary' => 'A feature film production in Wadi Rum.',
             'producer_name' => 'Local Producer',
@@ -1929,6 +2035,7 @@ class ApprovalRoutingTest extends TestCase
             'international_producer_company' => 'Global Films',
             'required_approvals' => ['public_security'],
             'safety_guidelines_acknowledged' => '1',
+            'production_terms_accepted' => '1',
             'work_content_summary_synopsis' => $this->arabicWorkContentSummary(),
             'work_content_summary_confirmed' => '1',
             'supporting_notes' => 'Need desert location and crowd management support.',

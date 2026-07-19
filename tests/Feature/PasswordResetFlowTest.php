@@ -14,6 +14,25 @@ class PasswordResetFlowTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_foreign_producer_invitation_email_is_read_only(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+
+        $response = $this->get(route('password.reset', [
+            'token' => 'invitation-token',
+            'email' => 'foreign.producer@example.com',
+            'invitation' => 1,
+        ]));
+
+        $response
+            ->assertOk()
+            ->assertSee('value="foreign.producer@example.com"', false)
+            ->assertSee('readonly', false)
+            ->assertSee('aria-readonly="true"', false)
+            ->assertSee('data-password-reset-form', false)
+            ->assertSee('data-password-reset-submit', false);
+    }
+
     public function test_user_can_request_password_reset_link(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -27,6 +46,7 @@ class PasswordResetFlowTest extends TestCase
             'status' => 'active',
             'registration_type' => 'student',
             'password' => Hash::make('password123'),
+            'must_change_password' => true,
         ]);
 
         $response = $this->post(route('password.email'), [
@@ -53,6 +73,7 @@ class PasswordResetFlowTest extends TestCase
             'status' => 'active',
             'registration_type' => 'student',
             'password' => Hash::make('password123'),
+            'must_change_password' => true,
         ]);
 
         $token = Password::broker()->createToken($user);
@@ -60,14 +81,18 @@ class PasswordResetFlowTest extends TestCase
         $response = $this->post(route('password.store'), [
             'token' => $token,
             'email' => $user->email,
-            'password' => 'newpassword123',
-            'password_confirmation' => 'newpassword123',
+            'password' => 'NewPassword@123',
+            'password_confirmation' => 'NewPassword@123',
         ]);
 
         $response
             ->assertRedirect(route('login'))
             ->assertSessionHas('status', __('app.auth.password_reset_success'));
 
-        $this->assertTrue(Hash::check('newpassword123', $user->fresh()->password));
+        $user->refresh();
+
+        $this->assertTrue(Hash::check('NewPassword@123', $user->password));
+        $this->assertFalse($user->requiresPasswordSetup());
+        $this->assertNotNull($user->password_changed_at);
     }
 }

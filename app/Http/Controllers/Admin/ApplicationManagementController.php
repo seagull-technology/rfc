@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Application as FilmApplication;
 use App\Models\ApplicationAnnexSubmission;
 use App\Models\ApplicationAuthorityApproval;
+use App\Models\ApplicationAuthorityChangeRequest;
 use App\Models\ApplicationCorrespondence;
 use App\Models\ApplicationDocument;
 use App\Models\ApplicationOfficialLetter;
@@ -156,15 +157,18 @@ class ApplicationManagementController extends Controller
             'annexSubmissions.submittedBy',
             'annexSubmissions.reviewedBy',
             'wrapReport.submittedBy',
+            'authorityChangeRequests.approval.entity',
+            'authorityChangeRequests.requestedBy',
         ]);
         $reviewers = $this->workflowAssignableUsers();
-        $authorityApprovals = $record->authorityApprovals()->with(['reviewedBy', 'assignedTo', 'entity'])->get();
+        $authorityApprovals = $record->authorityApprovals()->with(['reviewedBy', 'assignedTo', 'entity', 'changeRequests.requestedBy'])->get();
         $authorityApprovalSignals = $authorityApprovals
             ->mapWithKeys(fn (ApplicationAuthorityApproval $approval): array => [
                 $approval->getKey() => $this->authorityEscalationService->signalForApproval($approval),
             ]);
         $rfcDecisionUserIds = collect([
             data_get($record->metadata ?? [], 'rfc_decision.decided_by_user_id'),
+            data_get($record->metadata ?? [], 'rfc_decision.official_books_prepared_by_user_id'),
             data_get($record->metadata ?? [], 'rfc_decision.facilitation_issued_by_user_id'),
             $record->reviewed_by_user_id,
             $record->final_decision_issued_by_user_id,
@@ -192,7 +196,9 @@ class ApplicationManagementController extends Controller
                 ->values(),
             'reviewers' => $reviewers,
             'documents' => $record->documents,
-            'correspondences' => $record->correspondences,
+            'correspondences' => $record->correspondences
+                ->filter(fn (ApplicationCorrespondence $message): bool => $message->isVisibleToRfc())
+                ->values(),
             'officialLetters' => $officialLetters,
             'officialLetterApprovals' => $officialLetterTargets,
             'annexSubmissions' => $record->annexSubmissions,
@@ -203,6 +209,17 @@ class ApplicationManagementController extends Controller
             'wrapReport' => $record->wrapReport,
             'wrapReportAvailable' => $record->wrapReportIsAvailable(),
             'wrapReportOptions' => $this->wrapReportOptions(),
+        ]);
+    }
+
+    public function printForms(Request $request, string $application): View
+    {
+        $record = $this->findApplication($application);
+
+        return view('applications.forms-print', [
+            'application' => $record,
+            'requestedForm' => $request->query('form'),
+            'backUrl' => route('admin.applications.show', $record).'#profile-activity',
         ]);
     }
 
@@ -223,6 +240,12 @@ class ApplicationManagementController extends Controller
         DB::transaction(function () use ($record, $decision, $note, $actorId, $decidedAt): void {
             $metadata = $record->metadata ?? [];
             $existingDecision = (array) data_get($metadata, 'rfc_decision', []);
+            $officialBooksPreparedAt = $decision === 'accepted'
+                ? data_get($existingDecision, 'official_books_prepared_at', data_get($existingDecision, 'facilitation_issued_at'))
+                : null;
+            $officialBooksPreparedBy = $decision === 'accepted'
+                ? data_get($existingDecision, 'official_books_prepared_by_user_id', data_get($existingDecision, 'facilitation_issued_by_user_id'))
+                : null;
 
             data_set($metadata, 'rfc_decision', [
                 ...$existingDecision,
@@ -230,6 +253,8 @@ class ApplicationManagementController extends Controller
                 'note' => $note,
                 'decided_at' => $decidedAt->toISOString(),
                 'decided_by_user_id' => $actorId,
+                'official_books_prepared_at' => $officialBooksPreparedAt,
+                'official_books_prepared_by_user_id' => $officialBooksPreparedBy,
                 'facilitation_issued_at' => $decision === 'accepted'
                     ? data_get($existingDecision, 'facilitation_issued_at')
                     : null,
@@ -267,14 +292,28 @@ class ApplicationManagementController extends Controller
                 Permit::query()->where('application_id', $record->getKey())->delete();
             }
 
+            $historyMetadata = [
+                'type' => 'rfc_decision_recorded',
+                'rfc_decision' => $decision,
+            ];
+
+            if ($decision === 'accepted') {
+                $historyMetadata = [
+                    ...$historyMetadata,
+                    ...$this->prepareOfficialBooksAfterRfcApproval(
+                        $record,
+                        $actorId,
+                        $officialBooksPreparedAt ?: $decidedAt->toISOString(),
+                        $officialBooksPreparedBy ?: $actorId,
+                    ),
+                ];
+            }
+
             $record->statusHistory()->create([
                 'user_id' => $actorId,
                 'status' => $record->status,
                 'note' => $note ?: __('app.rfc_decision.history.'.$decision),
-                'metadata' => [
-                    'type' => 'rfc_decision_recorded',
-                    'rfc_decision' => $decision,
-                ],
+                'metadata' => $historyMetadata,
                 'happened_at' => $decidedAt,
             ]);
         });
@@ -294,70 +333,6 @@ class ApplicationManagementController extends Controller
         return redirect()
             ->route('admin.applications.show', $record)
             ->with('status', __('app.applications.review_saved'));
-    }
-
-    public function issueFacilitationLetter(Request $request, string $application): RedirectResponse
-    {
-        $record = $this->findApplication($application);
-        $actorId = $request->user()?->getKey();
-
-        if (data_get($record->metadata ?? [], 'rfc_decision.status') !== 'accepted') {
-            return redirect()
-                ->route('admin.applications.show', $record)
-                ->withErrors(['rfc_decision' => __('app.rfc_decision.accept_required')]);
-        }
-
-        DB::transaction(function () use ($record, $actorId): void {
-            $targets = $this->officialLetterRouteTargets($record);
-            $letters = $this->prepareOfficialLettersForTargets($record, $targets, $actorId);
-            $applicantLetter = $this->prepareApplicantFacilitationLetter($record, $actorId);
-            $record->refresh();
-
-            $metadata = $record->metadata ?? [];
-            data_set($metadata, 'rfc_decision.status', 'accepted');
-            data_set($metadata, 'rfc_decision.facilitation_issued_at', now()->toISOString());
-            data_set($metadata, 'rfc_decision.facilitation_issued_by_user_id', $actorId);
-            data_set(
-                $metadata,
-                'requirements.required_approvals',
-                $targets->pluck('approval_code')->filter()->unique()->values()->all(),
-            );
-            data_set(
-                $metadata,
-                'requirements.official_book_targets',
-                $targets
-                    ->map(fn (array $target): array => [
-                        'approval_code' => $target['approval_code'],
-                        'target_entity_id' => $target['target_entity_id'],
-                        'target_entity_name' => $target['target_entity_name'],
-                    ])
-                    ->values()
-                    ->all(),
-            );
-
-            $record->forceFill([
-                'status' => 'under_review',
-                'current_stage' => 'rfc_facilitation',
-                'metadata' => $metadata,
-            ])->save();
-
-            $record->statusHistory()->create([
-                'user_id' => $actorId,
-                'status' => $record->status,
-                'note' => __('app.rfc_decision.history.facilitation_issued'),
-                'metadata' => [
-                    'type' => 'rfc_facilitation_issued',
-                    'official_letter_ids' => $letters->push($applicantLetter)->pluck('id')->all(),
-                    'applicant_facilitation_letter_id' => $applicantLetter->getKey(),
-                    'official_book_targets' => $targets->values()->all(),
-                ],
-                'happened_at' => now(),
-            ]);
-        });
-
-        return redirect()
-            ->route('admin.applications.show', $record)
-            ->with('status', __('app.rfc_decision.facilitation_issued'));
     }
 
     public function reviewAnnexSubmission(Request $request, string $application, string $annexSubmission): RedirectResponse
@@ -420,7 +395,8 @@ class ApplicationManagementController extends Controller
             $record->forceFill(['metadata' => $metadata])->save();
 
             if ($decision === ApplicationAnnexSubmission::STATUS_APPROVED
-                && filled(data_get($metadata, 'rfc_decision.facilitation_issued_at'))
+                && (filled(data_get($metadata, 'rfc_decision.official_books_prepared_at'))
+                    || filled(data_get($metadata, 'rfc_decision.facilitation_issued_at')))
             ) {
                 $record->refresh();
                 $targets = $this->officialLetterRouteTargets($record);
@@ -668,6 +644,12 @@ class ApplicationManagementController extends Controller
         $record = $this->findApplication($application);
         abort_unless($approval->application_id === $record->getKey(), 404);
 
+        if ($approval->status === 'changes_requested') {
+            return redirect()
+                ->route('admin.applications.show', $record)
+                ->withErrors(['status' => __('app.authority_change_requests.admin_locked')]);
+        }
+
         $validated = $request->validate([
             'status' => ['required', Rule::in(['pending', 'in_review', 'approved', 'rejected'])],
             'note' => ['nullable', 'string', 'max:2000'],
@@ -909,6 +891,23 @@ class ApplicationManagementController extends Controller
         return Storage::disk('local')->download(
             $approval->response_attachment_path,
             $approval->response_attachment_name ?: basename($approval->response_attachment_path),
+        );
+    }
+
+    public function downloadChangeRequestAttachment(string $application, ApplicationAuthorityChangeRequest $changeRequest): StreamedResponse|RedirectResponse
+    {
+        $record = $this->findApplication($application);
+        abort_unless($changeRequest->application_id === $record->getKey(), 404);
+
+        if (! $changeRequest->attachment_path || ! Storage::disk('local')->exists($changeRequest->attachment_path)) {
+            return redirect()
+                ->route('admin.applications.show', $record)
+                ->withErrors(['change_request_attachment' => __('app.authority_change_requests.attachment_missing')]);
+        }
+
+        return Storage::disk('local')->download(
+            $changeRequest->attachment_path,
+            $changeRequest->attachment_name ?: basename($changeRequest->attachment_path),
         );
     }
 
@@ -1273,6 +1272,7 @@ class ApplicationManagementController extends Controller
     {
         return ApplicationCorrespondence::query()
             ->where('application_id', $application->getKey())
+            ->visibleToRfc()
             ->findOrFail($correspondence);
     }
 
@@ -1332,6 +1332,69 @@ class ApplicationManagementController extends Controller
             })
             ->unique(fn (array $target): string => $this->officialLetterTargetKey($target))
             ->values();
+    }
+
+    /**
+     * Prepare every RFC and authority book as a draft immediately after RFC acceptance.
+     *
+     * @return array{
+     *     official_letter_ids: array<int, int>,
+     *     applicant_facilitation_letter_id: int,
+     *     official_book_targets: array<int, array<string, mixed>>
+     * }
+     */
+    private function prepareOfficialBooksAfterRfcApproval(
+        FilmApplication $application,
+        ?int $actorId,
+        string $preparedAt,
+        ?int $preparedByUserId,
+    ): array {
+        $targets = $this->officialLetterRouteTargets($application);
+        $letters = $this->prepareOfficialLettersForTargets($application, $targets, $actorId);
+        $applicantLetter = $this->prepareApplicantFacilitationLetter($application, $actorId);
+        $application->refresh();
+
+        $metadata = $application->metadata ?? [];
+        data_set($metadata, 'rfc_decision.status', 'accepted');
+        data_set($metadata, 'rfc_decision.official_books_prepared_at', $preparedAt);
+        data_set($metadata, 'rfc_decision.official_books_prepared_by_user_id', $preparedByUserId);
+
+        // Keep the legacy marker while older records and integrations transition to the new workflow name.
+        data_set($metadata, 'rfc_decision.facilitation_issued_at', $preparedAt);
+        data_set($metadata, 'rfc_decision.facilitation_issued_by_user_id', $preparedByUserId);
+        data_set(
+            $metadata,
+            'requirements.required_approvals',
+            $targets->pluck('approval_code')->filter()->unique()->values()->all(),
+        );
+        data_set(
+            $metadata,
+            'requirements.official_book_targets',
+            $targets
+                ->map(fn (array $target): array => [
+                    'approval_code' => $target['approval_code'],
+                    'target_entity_id' => $target['target_entity_id'],
+                    'target_entity_name' => $target['target_entity_name'],
+                ])
+                ->values()
+                ->all(),
+        );
+
+        $application->forceFill([
+            'status' => 'under_review',
+            'current_stage' => 'rfc_facilitation',
+            'metadata' => $metadata,
+        ])->save();
+
+        return [
+            'official_letter_ids' => $letters
+                ->pluck('id')
+                ->push($applicantLetter->getKey())
+                ->values()
+                ->all(),
+            'applicant_facilitation_letter_id' => $applicantLetter->getKey(),
+            'official_book_targets' => $targets->values()->all(),
+        ];
     }
 
     /**

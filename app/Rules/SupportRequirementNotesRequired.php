@@ -15,6 +15,8 @@ class SupportRequirementNotesRequired implements DataAwareRule, ImplicitRule
 
     private string $requirementLabel = '';
 
+    private ?string $customMessage = null;
+
     /**
      * @param  array<string, mixed>  $data
      */
@@ -27,27 +29,45 @@ class SupportRequirementNotesRequired implements DataAwareRule, ImplicitRule
 
     public function passes($attribute, $value): bool
     {
-        if (! preg_match('/^filming_locations\.([^\.]+)\.support_requirements\.([^\.]+)\.notes$/', (string) $attribute, $matches)) {
+        $attribute = (string) $attribute;
+
+        if (preg_match('/^location_support_requirements\.([^\.]+)\.notes$/', $attribute, $matches)) {
+            $requirement = (string) data_get(
+                $this->data,
+                "location_support_requirements.{$matches[1]}.requirement",
+                ''
+            );
+        } elseif (preg_match('/^filming_locations\.([^\.]+)\.support_requirements\.([^\.]+)\.notes$/', $attribute, $matches)) {
+            $requirement = (string) data_get(
+                $this->data,
+                "filming_locations.{$matches[1]}.support_requirements.{$matches[2]}.requirement",
+                ''
+            );
+        } else {
             return true;
         }
-
-        $requirement = (string) data_get(
-            $this->data,
-            "filming_locations.{$matches[1]}.support_requirements.{$matches[2]}.requirement",
-            ''
-        );
 
         if (! filled($requirement)) {
             return true;
         }
 
-        $this->requirementLabel = FormLookupOption::labelFor(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT, $requirement);
+        $option = FormLookupOption::query()
+            ->ofType(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT)
+            ->where('code', $requirement)
+            ->first();
+        $this->requirementLabel = $option?->displayName()
+            ?? FormLookupOption::labelFor(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT, $requirement);
+        $this->customMessage = $option?->notesPrompt();
 
         return filled($value);
     }
 
     public function message(): string
     {
+        if (filled($this->customMessage)) {
+            return (string) $this->customMessage;
+        }
+
         return __('app.applications.location_support_notes_prompt', [
             'requirement' => $this->requirementLabel,
         ]);

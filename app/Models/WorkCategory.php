@@ -9,6 +9,8 @@ use Illuminate\Support\Str;
 
 class WorkCategory extends Model
 {
+    public const DEFAULT_WORK_SUMMARY_MIN_WORDS = 500;
+
     /**
      * @var array<int, string>
      */
@@ -30,6 +32,7 @@ class WorkCategory extends Model
         'code',
         'name_en',
         'name_ar',
+        'work_summary_min_words',
         'is_active',
         'sort_order',
     ];
@@ -37,6 +40,7 @@ class WorkCategory extends Model
     protected $casts = [
         'is_active' => 'boolean',
         'sort_order' => 'integer',
+        'work_summary_min_words' => 'integer',
     ];
 
     public function scopeActive(Builder $query): Builder
@@ -57,6 +61,22 @@ class WorkCategory extends Model
         $locale ??= app()->getLocale();
 
         return $locale === 'ar' ? $this->name_ar : $this->name_en;
+    }
+
+    public function workSummaryMinWords(): int
+    {
+        return max(1, (int) ($this->work_summary_min_words ?: self::DEFAULT_WORK_SUMMARY_MIN_WORDS));
+    }
+
+    public static function workSummaryMinWordsFor(?string $code): int
+    {
+        if (! filled($code) || ! Schema::hasTable('work_categories')) {
+            return self::DEFAULT_WORK_SUMMARY_MIN_WORDS;
+        }
+
+        return static::query()
+            ->where('code', (string) $code)
+            ->first()?->workSummaryMinWords() ?? self::DEFAULT_WORK_SUMMARY_MIN_WORDS;
     }
 
     /**

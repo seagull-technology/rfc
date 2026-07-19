@@ -15,6 +15,8 @@
         || ($user->can('applications.update.own') && (int) $application->submitted_by_user_id === (int) $user->getKey());
     $canSubmitApplication = $user->can('applications.submit')
         && ($user->can('applications.view.entity') || (int) $application->submitted_by_user_id === (int) $user->getKey());
+    $foreignProducerApprovalPending = $application->requiresForeignProducerApproval()
+        && ! $application->foreignProducerDeclarationIsSigned();
     $asDate = static function ($value): ?\Carbon\CarbonInterface {
         if ($value instanceof \Carbon\CarbonInterface) {
             return $value;
@@ -83,26 +85,29 @@
     };
     $rfcDecisionStatus = data_get($metadata, 'rfc_decision.status');
     $rfcDecisionNote = data_get($metadata, 'rfc_decision.note') ?: $application->review_note;
-    $rfcFacilitationIssuedAt = $asDate(data_get($metadata, 'rfc_decision.facilitation_issued_at'));
-    $rfcDate = $rfcFacilitationIssuedAt
+    $rfcOfficialBooksPreparedAt = $asDate(
+        data_get($metadata, 'rfc_decision.official_books_prepared_at')
+            ?: data_get($metadata, 'rfc_decision.facilitation_issued_at')
+    );
+    $rfcDate = $rfcOfficialBooksPreparedAt
         ?? $asDate($application->reviewed_at)
         ?? $asDate($application->submitted_at)
         ?? $asDate($application->created_at);
     $rfcTimelineStatus = match (true) {
         $rfcDecisionStatus === 'rejected', $application->status === 'rejected' => 'rejected',
         $rfcDecisionStatus === 'returned', $application->status === 'needs_clarification' => 'needs_clarification',
-        $rfcDecisionStatus === 'accepted' || $rfcFacilitationIssuedAt !== null => 'approved',
+        $rfcDecisionStatus === 'accepted' || $rfcOfficialBooksPreparedAt !== null => 'approved',
         in_array($application->status, ['submitted', 'under_review'], true) => 'under_review',
         default => $application->status,
     };
     $rfcTimelineStatusLabel = match (true) {
-        $rfcDecisionStatus === 'accepted' || $rfcFacilitationIssuedAt !== null => __('app.rfc_decision.statuses.accepted'),
+        $rfcDecisionStatus === 'accepted' || $rfcOfficialBooksPreparedAt !== null => __('app.rfc_decision.statuses.accepted'),
         $rfcDecisionStatus === 'returned' => __('app.rfc_decision.statuses.returned'),
         $rfcDecisionStatus === 'rejected' => __('app.rfc_decision.statuses.rejected'),
         default => $application->localizedStatus(),
     };
     $rfcTimelineNote = match (true) {
-        $rfcFacilitationIssuedAt !== null => __('app.rfc_decision.history.facilitation_issued'),
+        $rfcOfficialBooksPreparedAt !== null => __('app.rfc_decision.history.official_books_prepared'),
         $rfcDecisionStatus === 'accepted' => __('app.rfc_decision.history.accepted'),
         $rfcDecisionStatus === 'returned' || $rfcDecisionStatus === 'rejected' => $rfcDecisionNote,
         default => $application->localizedStage(),
@@ -421,6 +426,7 @@
 @endsection
 
 @section('content')
+    @include('applications.partials.authority-change-requests', ['changeRequestViewer' => 'applicant'])
     <div class="row">
         <div class="col-sm-12">
             <div class="streamit-wraper-table">
@@ -472,6 +478,15 @@
                             <span class="ms-2 text-muted">{{ __('app.applications.request_number') }}: {{ $application->code }}</span>
                             <h3 class="request-state-title">{{ $requestState['title'] }}</h3>
                             <p class="request-state-text">{{ $requestState['body'] }}</p>
+                            @if ($application->canBeSubmittedByApplicant() && $canSubmitApplication && $foreignProducerApprovalPending)
+                                <div class="alert alert-warning d-flex align-items-start gap-2 mt-3 mb-0" role="alert">
+                                    <i class="ph ph-warning-circle fs-4 mt-1" aria-hidden="true"></i>
+                                    <div>
+                                        <div class="fw-semibold">{{ __('app.applications.foreign_producer_approval_pending_title') }}</div>
+                                        <div>{{ __('app.applications.foreign_producer_approval_required') }}</div>
+                                    </div>
+                                </div>
+                            @endif
                         </div>
                         <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mt-4">
                             <div class="d-flex gap-2 flex-wrap">
@@ -480,15 +495,21 @@
                                     <a class="btn btn-light" href="{{ route('applications.edit', $application) }}">{{ __('app.applications.edit_action') }}</a>
                                 @endif
                                 @if ($application->canBeSubmittedByApplicant() && $canSubmitApplication)
-                                    <form method="POST" action="{{ route('applications.submit', $application) }}"
-                                        data-application-submit-confirm
-                                        data-confirm-title="{{ __('app.applications.submit_confirm_title') }}"
-                                        data-confirm-text="{{ __('app.applications.submit_confirm_body') }}"
-                                        data-confirm-button="{{ __('app.applications.submit_confirm_confirm') }}"
-                                        data-cancel-button="{{ __('app.applications.submit_confirm_cancel') }}">
-                                        @csrf
-                                        <button class="btn btn-danger" type="submit">{{ __('app.applications.submit_action') }}</button>
-                                    </form>
+                                    @if ($foreignProducerApprovalPending)
+                                        <button class="btn btn-danger" type="button" disabled aria-disabled="true">
+                                            {{ __('app.applications.foreign_producer_approval_pending_action') }}
+                                        </button>
+                                    @else
+                                        <form method="POST" action="{{ route('applications.submit', $application) }}"
+                                            data-application-submit-confirm
+                                            data-confirm-title="{{ __('app.applications.submit_confirm_title') }}"
+                                            data-confirm-text="{{ __('app.applications.submit_confirm_body') }}"
+                                            data-confirm-button="{{ __('app.applications.submit_confirm_confirm') }}"
+                                            data-cancel-button="{{ __('app.applications.submit_confirm_cancel') }}">
+                                            @csrf
+                                            <button class="btn btn-danger" type="submit">{{ __('app.applications.submit_action') }}</button>
+                                        </form>
+                                    @endif
                                 @endif
                             </div>
                         </div>

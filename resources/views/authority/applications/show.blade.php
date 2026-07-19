@@ -28,8 +28,11 @@
     $rfcDecision = (array) data_get($metadata, 'rfc_decision', []);
     $rfcDecisionStatus = data_get($rfcDecision, 'status');
     $rfcDecisionNote = data_get($rfcDecision, 'note') ?: $application->review_note;
-    $rfcFacilitationIssuedAt = $asDate(data_get($rfcDecision, 'facilitation_issued_at'));
-    $rfcDate = $rfcFacilitationIssuedAt
+    $rfcOfficialBooksPreparedAt = $asDate(
+        data_get($rfcDecision, 'official_books_prepared_at')
+            ?: data_get($rfcDecision, 'facilitation_issued_at')
+    );
+    $rfcDate = $rfcOfficialBooksPreparedAt
         ?? $asDate(data_get($rfcDecision, 'decided_at'))
         ?? $asDate($application->reviewed_at)
         ?? $asDate($application->submitted_at)
@@ -37,18 +40,18 @@
     $rfcTimelineStatus = match (true) {
         $rfcDecisionStatus === 'rejected', $application->status === 'rejected' => 'rejected',
         $rfcDecisionStatus === 'returned', $application->status === 'needs_clarification' => 'needs_clarification',
-        $rfcDecisionStatus === 'accepted' || $rfcFacilitationIssuedAt !== null => 'approved',
+        $rfcDecisionStatus === 'accepted' || $rfcOfficialBooksPreparedAt !== null => 'approved',
         in_array($application->status, ['submitted', 'under_review'], true) => 'under_review',
         default => $application->status,
     };
     $rfcTimelineStatusLabel = match (true) {
-        $rfcDecisionStatus === 'accepted' || $rfcFacilitationIssuedAt !== null => __('app.rfc_decision.statuses.accepted'),
+        $rfcDecisionStatus === 'accepted' || $rfcOfficialBooksPreparedAt !== null => __('app.rfc_decision.statuses.accepted'),
         $rfcDecisionStatus === 'returned' => __('app.rfc_decision.statuses.returned'),
         $rfcDecisionStatus === 'rejected' => __('app.rfc_decision.statuses.rejected'),
         default => $application->localizedStatus(),
     };
     $rfcTimelineNote = match (true) {
-        $rfcFacilitationIssuedAt !== null => __('app.rfc_decision.history.facilitation_issued'),
+        $rfcOfficialBooksPreparedAt !== null => __('app.rfc_decision.history.official_books_prepared'),
         $rfcDecisionStatus === 'accepted' => __('app.rfc_decision.history.accepted'),
         $rfcDecisionStatus === 'returned' || $rfcDecisionStatus === 'rejected' => $rfcDecisionNote,
         default => $application->localizedStage(),
@@ -57,16 +60,18 @@
     $decisionBadgeClass = match ($currentApproval->status) {
         'approved' => 'success',
         'rejected' => 'danger',
+        'changes_requested' => 'warning text-dark',
         'in_review' => 'warning',
         default => 'secondary',
     };
     $canResolveAuthorityDecision = auth()->user()?->can('applications.approve') ?? false;
     $approvalIsResolved = in_array($currentApproval->status, ['approved', 'rejected'], true);
+    $approvalIsWaitingApplicant = $currentApproval->status === 'changes_requested';
     $statusClass = static fn (?string $status): string => match ($status) {
         'draft' => 'secondary',
         'submitted', 'pending_review', 'pending' => 'warning',
         'under_review', 'in_review' => 'info',
-        'needs_clarification' => 'warning',
+        'needs_clarification', 'changes_requested' => 'warning',
         'approved', 'issued' => 'success',
         'rejected' => 'danger',
         default => 'secondary',
@@ -254,29 +259,79 @@
             padding: .875rem;
         }
 
-        .authority-request-show-layout .authority-decision-actions {
+        .authority-request-show-layout .authority-decision-summary {
             display: grid;
-            gap: .75rem;
+            gap: .5rem;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            margin-bottom: 1rem;
         }
 
-        .authority-request-show-layout .authority-decision-action {
-            align-items: flex-start;
-            border-radius: 6px;
+        .authority-request-show-layout .authority-decision-summary-item {
+            background: #f8f9fa;
+            border-inline-start: 3px solid rgba(111, 29, 23, .45);
+            min-width: 0;
+            padding: .75rem;
+        }
+
+        .authority-request-show-layout .authority-decision-summary-item small {
+            color: #667085;
+            display: block;
+            margin-bottom: .25rem;
+        }
+
+        .authority-request-show-layout .authority-decision-choices {
+            display: grid;
+            gap: .5rem;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .authority-request-show-layout .authority-decision-choice {
+            align-items: center;
+            display: flex;
+            gap: .5rem;
             justify-content: flex-start;
-            min-height: 0;
-            padding: .875rem;
+            min-height: 3.25rem;
+            padding: .65rem;
             text-align: start;
             white-space: normal;
         }
 
-        .authority-request-show-layout .authority-decision-action i {
-            font-size: 1.25rem;
-            line-height: 1.2;
-            margin-top: .125rem;
+        .authority-request-show-layout .authority-decision-choice i {
+            flex: 0 0 auto;
+            font-size: 1.2rem;
         }
 
-        .authority-request-show-layout .authority-decision-action span {
-            line-height: 1.45;
+        .authority-request-show-layout .authority-decision-dependent[hidden] {
+            display: none !important;
+        }
+
+        .authority-request-show-layout .authority-correction-items {
+            display: grid;
+            gap: .75rem;
+        }
+
+        .authority-request-show-layout .authority-correction-heading {
+            align-items: flex-start;
+            display: flex;
+            flex-wrap: wrap;
+            gap: .75rem;
+            justify-content: space-between;
+        }
+
+        .authority-request-show-layout .authority-correction-item {
+            background: #f8f9fa;
+            border-inline-start: 3px solid #c38a14;
+            padding: .75rem;
+        }
+
+        .authority-request-show-layout .authority-correction-item-grid {
+            display: grid;
+            gap: .65rem;
+            grid-template-columns: 1fr;
+        }
+
+        .authority-request-show-layout .authority-correction-remove {
+            justify-self: end;
         }
 
         .authority-request-show-layout .timeline-note {
@@ -342,6 +397,20 @@
             white-space: pre-line;
         }
 
+        .authority-request-show-layout .correspondence-recipient-options {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: .5rem;
+        }
+
+        .authority-request-show-layout .correspondence-recipient-options .btn {
+            align-items: center;
+            display: flex;
+            justify-content: center;
+            min-height: 3.5rem;
+            white-space: normal;
+        }
+
         @media (max-width: 991.98px) {
             .authority-request-show-layout .authority-hero-card {
                 margin: 0 .75rem 1rem;
@@ -353,6 +422,16 @@
 
             .authority-request-show-layout .approval-overview-table {
                 min-width: 760px;
+            }
+
+            .authority-request-show-layout .correspondence-recipient-options {
+                grid-template-columns: 1fr;
+            }
+
+            .authority-request-show-layout .authority-decision-summary,
+            .authority-request-show-layout .authority-decision-choices,
+            .authority-request-show-layout .authority-correction-item-grid {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -731,49 +810,50 @@
                                         </div>
                                     </div>
                                 @endif
-                                <div class="approval-sla-banner {{ ($approvalSlaSignal['is_overdue'] ?? false) ? 'overdue' : '' }}">
-                                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
-                                        <div>
-                                            @if ($approvalSlaSignal['label'] ?? null)
-                                                <span class="badge bg-{{ ($approvalSlaSignal['is_overdue'] ?? false) ? 'danger' : (($approvalSlaSignal['is_due_soon'] ?? false) ? 'warning text-dark' : 'secondary') }}">{{ $approvalSlaSignal['label'] }}</span>
-                                            @else
-                                                <span class="badge bg-light text-dark">{{ __('app.admin.authority_escalations.unconfigured_badge') }}</span>
-                                            @endif
-                                            @if ($approvalSlaSignal['is_escalated'] ?? false)
-                                                <span class="badge bg-dark">{{ __('app.admin.authority_escalations.escalated_badge') }}</span>
-                                            @endif
-                                            <div class="small mt-2">{{ __('app.authority.applications.sla_banner_summary') }}</div>
-                                        </div>
-                                        @if ($approvalSlaSignal['due_at'] ?? null)
-                                            <div>
-                                                <div class="small text-muted">{{ __('app.admin.authority_escalations.due_at_label', ['date' => $approvalSlaSignal['due_at']->format('Y-m-d h:i A')]) }}</div>
-                                                <div
-                                                    class="small text-muted mt-1"
-                                                    data-sla-countdown
-                                                    data-due-at="{{ $approvalSlaSignal['due_at']->toIso8601String() }}"
-                                                    data-remaining-template="{{ __('app.admin.authority_escalations.countdown_remaining') }}"
-                                                    data-overdue-template="{{ __('app.admin.authority_escalations.countdown_overdue') }}"
-                                                ></div>
-                                            </div>
+                                <div class="authority-decision-summary">
+                                    <div class="authority-decision-summary-item">
+                                        <small>{{ __('app.authority.applications.current_decision') }}</small>
+                                        <span class="badge bg-{{ $decisionBadgeClass }}">{{ $currentApproval->localizedStatus() }}</span>
+                                    </div>
+                                    <div class="authority-decision-summary-item">
+                                        <small>{{ __('app.authority.applications.response_window') }}</small>
+                                        @if ($approvalIsWaitingApplicant)
+                                            <strong>{{ __('app.authority_change_requests.waiting_applicant_short') }}</strong>
+                                        @elseif ($approvalSlaSignal['label'] ?? null)
+                                            <span class="badge bg-{{ ($approvalSlaSignal['is_overdue'] ?? false) ? 'danger' : (($approvalSlaSignal['is_due_soon'] ?? false) ? 'warning text-dark' : 'secondary') }}">{{ $approvalSlaSignal['label'] }}</span>
+                                        @else
+                                            <span>{{ __('app.admin.authority_escalations.unconfigured_badge') }}</span>
                                         @endif
+                                        @if (! $approvalIsWaitingApplicant && ($approvalSlaSignal['is_escalated'] ?? false))
+                                            <span class="badge bg-dark ms-1">{{ __('app.admin.authority_escalations.escalated_badge') }}</span>
+                                        @endif
+                                        @if (! $approvalIsWaitingApplicant && ($approvalSlaSignal['due_at'] ?? null))
+                                            <div class="small text-muted mt-1">
+                                                {{ __('app.admin.authority_escalations.due_at_label', ['date' => $approvalSlaSignal['due_at']->format('Y-m-d h:i A')]) }}
+                                            </div>
+                                            <div
+                                                class="small mt-1"
+                                                data-sla-countdown
+                                                data-due-at="{{ $approvalSlaSignal['due_at']->toIso8601String() }}"
+                                                data-remaining-template="{{ __('app.admin.authority_escalations.countdown_remaining') }}"
+                                                data-overdue-template="{{ __('app.admin.authority_escalations.countdown_overdue') }}"
+                                            ></div>
+                                        @endif
+                                    </div>
+                                    <div class="authority-decision-summary-item">
+                                        <small>{{ __('app.authority.applications.last_updated') }}</small>
+                                        <strong>{{ ($currentApproval->decided_at ?? $currentApproval->updated_at)?->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</strong>
                                     </div>
                                 </div>
-                                <div class="authority-decision-current mb-3">
-                                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
-                                        <div>
-                                            <small class="text-muted d-block">{{ __('app.authority.applications.current_decision') }}</small>
-                                            <span class="badge bg-{{ $decisionBadgeClass }}">{{ $currentApproval->localizedStatus() }}</span>
-                                        </div>
-                                        @if ($currentApproval->decided_at)
-                                            <div class="small text-muted">{{ $currentApproval->decided_at->format('Y-m-d H:i') }}</div>
-                                        @endif
-                                    </div>
+
+                                @if ($currentApproval->note || $currentApproval->response_attachment_path)
+                                    <div class="authority-decision-current mb-3">
                                     @if ($currentApproval->note)
-                                        <div class="small text-muted mt-3">{{ __('app.authority.applications.current_note_label') }}</div>
+                                        <div class="small text-muted">{{ __('app.authority.applications.current_note_label') }}</div>
                                         <div class="mt-1">{{ $currentApproval->note }}</div>
                                     @endif
                                     @if ($currentApproval->response_attachment_path)
-                                        <div class="small text-muted mt-3">{{ __('app.approvals.response_book') }}</div>
+                                        <div class="small text-muted {{ $currentApproval->note ? 'mt-3' : '' }}">{{ __('app.approvals.response_book') }}</div>
                                         <div class="mt-1 d-flex flex-wrap align-items-center gap-2">
                                             <a class="btn btn-sm btn-outline-primary" href="{{ route('authority.applications.approvals.attachment.download', [$application, $currentApproval]) }}">
                                                 <i class="ph ph-download-simple me-1"></i>{{ __('app.approvals.response_book_download') }}
@@ -785,54 +865,158 @@
                                         @endif
                                     @endif
                                 </div>
-                                @if (! $canResolveAuthorityDecision && $approvalIsResolved)
+                                @endif
+
+                                @if (! $approvalIsWaitingApplicant && $authorityChangeRequests->where('status', \App\Models\ApplicationAuthorityChangeRequest::STATUS_RESUBMITTED)->isNotEmpty())
+                                    @include('applications.partials.authority-change-requests', [
+                                        'changeRequestViewer' => 'authority',
+                                        'changeRequestItems' => $authorityChangeRequests,
+                                    ])
+                                @endif
+
+                                @if ($approvalIsWaitingApplicant)
+                                    <div class="alert alert-warning">
+                                        <div class="fw-semibold">{{ __('app.authority_change_requests.waiting_applicant_title') }}</div>
+                                        <div class="small mt-1">{{ __('app.authority_change_requests.waiting_applicant_body') }}</div>
+                                    </div>
+                                    <div class="authority-correction-items">
+                                        @foreach ($authorityChangeRequests->where('status', \App\Models\ApplicationAuthorityChangeRequest::STATUS_REQUESTED) as $item)
+                                            <div class="authority-correction-item">
+                                                <div class="d-flex justify-content-between align-items-start gap-2">
+                                                    <strong>{{ $item->section_label }}</strong>
+                                                    <span class="badge bg-warning text-dark">{{ __('app.authority_change_requests.statuses.requested') }}</span>
+                                                </div>
+                                                <div class="small mt-2" style="white-space: pre-line;">{{ $item->details }}</div>
+                                                @if ($item->attachment_path)
+                                                    <a class="btn btn-sm btn-outline-primary mt-2" href="{{ route('authority.applications.change-requests.attachment.download', [$application, $item]) }}">
+                                                        <i class="ph ph-paperclip me-1"></i>{{ __('app.authority_change_requests.download_attachment') }}
+                                                    </a>
+                                                @endif
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                @elseif ($approvalIsResolved)
                                     <div class="alert alert-secondary mb-0">{{ __('app.authority.applications.reviewer_decision_locked') }}</div>
                                 @else
-                                    <form method="POST" action="{{ route('authority.applications.approval.update', $application) }}" class="authority-decision-panel" enctype="multipart/form-data">
+                                    @if ($currentApproval->status === 'pending')
+                                        <form method="POST" action="{{ route('authority.applications.approval.update', $application) }}" class="mb-3">
+                                            @csrf
+                                            <input type="hidden" name="status" value="in_review">
+                                            <button class="btn btn-outline-primary w-100" type="submit">
+                                                <i class="ph ph-list-checks me-2"></i>{{ __('app.authority.applications.start_review_action') }}
+                                            </button>
+                                        </form>
+                                    @endif
+
+                                    @if ($canResolveAuthorityDecision)
+                                    <form method="POST" action="{{ route('authority.applications.approval.update', $application) }}" class="authority-decision-panel" enctype="multipart/form-data" data-authority-decision-form>
                                         @csrf
                                         <div class="mb-3">
-                                            <div class="fw-semibold">{{ __('app.authority.applications.decision_actions_title') }}</div>
-                                            <div class="small text-muted">{{ __('app.authority.applications.decision_actions_intro') }}</div>
+                                            <div class="fw-semibold">{{ __('app.authority.applications.choose_decision') }}</div>
+                                            <div class="small text-muted">{{ __('app.authority.applications.choose_decision_intro') }}</div>
                                         </div>
-                                        <div class="mb-3">
-                                            <label class="form-label" for="note">{{ __('app.authority.applications.approval_note') }}</label>
-                                            <textarea id="note" name="note" rows="5" class="form-control" placeholder="{{ __('app.authority.applications.note_placeholder') }}">{{ old('note', $currentApproval->note) }}</textarea>
+                                        <div class="authority-decision-choices mb-3">
+                                            <input class="btn-check" id="authority_decision_approved" name="status" type="radio" value="approved" @checked(old('status') === 'approved') required>
+                                            <label class="btn btn-outline-success authority-decision-choice" for="authority_decision_approved">
+                                                <i class="ph ph-seal-check"></i><span>{{ __('app.authority.applications.approve_action') }}</span>
+                                            </label>
+
+                                            <input class="btn-check" id="authority_decision_changes_requested" name="status" type="radio" value="changes_requested" @checked(old('status') === 'changes_requested') required>
+                                            <label class="btn btn-outline-warning authority-decision-choice" for="authority_decision_changes_requested">
+                                                <i class="ph ph-pencil-simple-line"></i><span>{{ __('app.authority.applications.request_changes_action') }}</span>
+                                            </label>
+
+                                            <input class="btn-check" id="authority_decision_rejected" name="status" type="radio" value="rejected" @checked(old('status') === 'rejected') required>
+                                            <label class="btn btn-outline-danger authority-decision-choice" for="authority_decision_rejected">
+                                                <i class="ph ph-x-circle"></i><span>{{ __('app.authority.applications.reject_action') }}</span>
+                                            </label>
                                         </div>
-                                        @if ($canResolveAuthorityDecision)
-                                            <div class="mb-3">
-                                                <label class="form-label" for="response_attachment">{{ __('app.approvals.response_book') }}</label>
-                                                <input id="response_attachment" name="response_attachment" type="file" class="form-control" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                                <div class="form-text">{{ __('app.approvals.response_book_hint') }}</div>
+
+                                        <div class="authority-decision-dependent mb-3" data-decision-panel="note" hidden>
+                                            <label class="form-label" for="authority_decision_note">{{ __('app.authority.applications.approval_note') }} <span class="text-danger" data-note-required hidden>*</span></label>
+                                            <textarea id="authority_decision_note" name="note" rows="4" class="form-control" placeholder="{{ __('app.authority.applications.note_placeholder') }}">{{ old('note') }}</textarea>
+                                        </div>
+
+                                        <div class="authority-decision-dependent mb-3" data-decision-panel="approved" hidden>
+                                            <label class="form-label" for="response_attachment">{{ __('app.approvals.response_book') }} <span class="text-danger">*</span></label>
+                                            <input id="response_attachment" name="response_attachment" type="file" class="form-control" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                            <div class="form-text">{{ __('app.approvals.response_book_hint') }}</div>
+                                        </div>
+
+                                        <div class="authority-decision-dependent mb-3" data-decision-panel="changes_requested" hidden>
+                                            <div class="authority-correction-heading mb-2">
+                                                <div>
+                                                    <div class="fw-semibold">{{ __('app.authority_change_requests.items_title') }}</div>
+                                                    <div class="small text-muted">{{ __('app.authority_change_requests.items_intro') }}</div>
+                                                </div>
+                                                <button class="btn btn-sm btn-outline-primary" type="button" data-add-correction>
+                                                    <i class="ph ph-plus me-1"></i>{{ __('app.authority_change_requests.add_item') }}
+                                                </button>
                                             </div>
-                                        @endif
-                                        <div class="authority-decision-actions">
-                                            <button class="btn btn-warning authority-decision-action d-flex gap-2" type="submit" name="status" value="in_review">
-                                                <i class="ph ph-list-checks"></i>
-                                                <span>
-                                                    <span class="fw-semibold d-block">{{ __('app.authority.applications.start_review_action') }}</span>
-                                                    <span class="small d-block">{{ __('app.authority.applications.start_review_description') }}</span>
-                                                </span>
-                                            </button>
-                                            @if ($canResolveAuthorityDecision)
-                                                <button class="btn btn-success authority-decision-action d-flex gap-2" type="submit" name="status" value="approved">
-                                                    <i class="ph ph-seal-check"></i>
-                                                    <span>
-                                                        <span class="fw-semibold d-block">{{ __('app.authority.applications.approve_action') }}</span>
-                                                        <span class="small d-block">{{ __('app.authority.applications.approve_description') }}</span>
-                                                    </span>
-                                                </button>
-                                                <button class="btn btn-outline-danger authority-decision-action d-flex gap-2" type="submit" name="status" value="rejected">
-                                                    <i class="ph ph-x-circle"></i>
-                                                    <span>
-                                                        <span class="fw-semibold d-block">{{ __('app.authority.applications.reject_action') }}</span>
-                                                        <span class="small d-block">{{ __('app.authority.applications.reject_description') }}</span>
-                                                    </span>
-                                                </button>
-                                            @else
-                                                <div class="alert alert-info mb-0">{{ __('app.authority.applications.reviewer_resolution_hint') }}</div>
-                                            @endif
+                                            <div class="authority-correction-items" data-correction-items>
+                                                @foreach (old('change_requests', [['section_key' => '', 'details' => '']]) as $index => $changeRequest)
+                                                    <div class="authority-correction-item" data-correction-item>
+                                                        <div class="authority-correction-item-grid">
+                                                            <div>
+                                                                <label class="form-label">{{ __('app.authority_change_requests.section') }}</label>
+                                                                <select class="form-select" name="change_requests[{{ $index }}][section_key]" data-field="section_key" data-correction-required disabled>
+                                                                    <option value="">{{ __('app.admin.select_placeholder') }}</option>
+                                                                    @foreach ($correctionSectionOptions as $sectionKey => $sectionLabel)
+                                                                        <option value="{{ $sectionKey }}" @selected(data_get($changeRequest, 'section_key') === $sectionKey)>{{ $sectionLabel }}</option>
+                                                                    @endforeach
+                                                                </select>
+                                                            </div>
+                                                            <div>
+                                                                <label class="form-label">{{ __('app.authority_change_requests.details') }}</label>
+                                                                <textarea class="form-control" name="change_requests[{{ $index }}][details]" rows="2" data-field="details" data-correction-required disabled>{{ data_get($changeRequest, 'details') }}</textarea>
+                                                            </div>
+                                                            <button class="btn btn-sm btn-outline-danger authority-correction-remove" type="button" data-remove-correction title="{{ __('app.authority_change_requests.remove_item') }}">
+                                                                <i class="ph ph-trash"></i>
+                                                            </button>
+                                                        </div>
+                                                        <div class="mt-2">
+                                                            <label class="form-label">{{ __('app.authority_change_requests.attachment') }}</label>
+                                                            <input class="form-control" name="change_requests[{{ $index }}][attachment]" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png" data-field="attachment" data-correction-input disabled>
+                                                        </div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
                                         </div>
+
+                                        <button class="btn btn-danger w-100" type="submit">
+                                            <i class="ph ph-floppy-disk-back me-2"></i>{{ __('app.authority.applications.save_decision') }}
+                                        </button>
+
+                                        <template data-correction-template>
+                                            <div class="authority-correction-item" data-correction-item>
+                                                <div class="authority-correction-item-grid">
+                                                    <div>
+                                                        <label class="form-label">{{ __('app.authority_change_requests.section') }}</label>
+                                                        <select class="form-select" data-field="section_key" data-correction-required disabled>
+                                                            <option value="">{{ __('app.admin.select_placeholder') }}</option>
+                                                            @foreach ($correctionSectionOptions as $sectionKey => $sectionLabel)
+                                                                <option value="{{ $sectionKey }}">{{ $sectionLabel }}</option>
+                                                            @endforeach
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label class="form-label">{{ __('app.authority_change_requests.details') }}</label>
+                                                        <textarea class="form-control" rows="2" data-field="details" data-correction-required disabled></textarea>
+                                                    </div>
+                                                    <button class="btn btn-sm btn-outline-danger authority-correction-remove" type="button" data-remove-correction title="{{ __('app.authority_change_requests.remove_item') }}">
+                                                        <i class="ph ph-trash"></i>
+                                                    </button>
+                                                </div>
+                                                <div class="mt-2">
+                                                    <label class="form-label">{{ __('app.authority_change_requests.attachment') }}</label>
+                                                    <input class="form-control" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png" data-field="attachment" data-correction-input disabled>
+                                                </div>
+                                            </div>
+                                        </template>
                                     </form>
+                                    @else
+                                        <div class="alert alert-info mb-0">{{ __('app.authority.applications.reviewer_resolution_hint') }}</div>
+                                    @endif
                                 @endif
                             </div>
                         </div>
@@ -860,6 +1044,7 @@
                                                     <div class="small text-muted authority-correspondence-meta">
                                                         <span>{{ $message->sender_name }}</span>
                                                         <span>{{ $message->localizedSenderType() }}</span>
+                                                        <span>{{ __('app.correspondence.recipient') }}: {{ $message->localizedRecipientType() }}</span>
                                                         <span>{{ $message->created_at?->format('Y-m-d H:i') }}</span>
                                                     </div>
                                                 </div>
@@ -886,6 +1071,26 @@
                                 <div class="offcanvas-body">
                                     @csrf
                                     <div class="section-form">
+                                        <fieldset class="mb-4" data-correspondence-recipient-selector>
+                                            <legend class="form-label mb-2">{{ __('app.correspondence.recipient') }} <span class="text-danger">*</span></legend>
+                                            <div class="correspondence-recipient-options" role="group" aria-label="{{ __('app.correspondence.recipient') }}">
+                                                <input class="btn-check" id="authority_correspondence_recipient_rfc" name="recipient_type" type="radio" value="rfc" required @checked(old('recipient_type', 'rfc') === 'rfc')>
+                                                <label class="btn btn-outline-primary py-3" for="authority_correspondence_recipient_rfc">
+                                                    <i class="ph ph-buildings me-2"></i>{{ __('app.correspondence.recipients.rfc') }}
+                                                </label>
+
+                                                <input class="btn-check" id="authority_correspondence_recipient_applicant" name="recipient_type" type="radio" value="applicant" required @checked(old('recipient_type') === 'applicant')>
+                                                <label class="btn btn-outline-primary py-3" for="authority_correspondence_recipient_applicant">
+                                                    <i class="ph ph-user me-2"></i>{{ __('app.correspondence.recipients.applicant') }}
+                                                </label>
+
+                                                <input class="btn-check" id="authority_correspondence_recipient_all" name="recipient_type" type="radio" value="all" required @checked(old('recipient_type') === 'all')>
+                                                <label class="btn btn-outline-primary py-3" for="authority_correspondence_recipient_all">
+                                                    <i class="ph ph-users-three me-2"></i>{{ __('app.correspondence.recipients.all') }}
+                                                </label>
+                                            </div>
+                                            <div class="form-text">{{ __('app.correspondence.recipient_help') }}</div>
+                                        </fieldset>
                                         <div class="mb-3">
                                             <label class="form-label" for="authority_correspondence_subject">{{ __('app.correspondence.subject') }}</label>
                                             <input id="authority_correspondence_subject" name="subject" type="text" class="form-control" value="{{ old('subject') }}" placeholder="{{ __('app.correspondence.subject_placeholder') }}">
@@ -928,7 +1133,7 @@
                                             <div class="form-control bg-light authority-message-readonly">{{ $message->subject ?: __('app.correspondence.message_fallback_subject') }}</div>
                                         </div>
                                         <div class="row g-3">
-                                            <div class="col-md-6">
+                                            <div class="col-md-4">
                                                 <label class="form-label">{{ __('app.correspondence.sender') }}</label>
                                                 <div class="form-control bg-light authority-message-readonly">{{ $message->sender_name }}</div>
                                             </div>
@@ -937,6 +1142,10 @@
                                                 <div class="form-control bg-light authority-message-readonly">{{ $message->localizedSenderType() }}</div>
                                             </div>
                                             <div class="col-md-3">
+                                                <label class="form-label">{{ __('app.correspondence.recipient') }}</label>
+                                                <div class="form-control bg-light authority-message-readonly">{{ $message->localizedRecipientType() }}</div>
+                                            </div>
+                                            <div class="col-md-2">
                                                 <label class="form-label">{{ __('app.correspondence.sent_at') }}</label>
                                                 <div class="form-control bg-light authority-message-readonly">{{ $message->created_at?->format('Y-m-d H:i') ?: __('app.dashboard.not_available') }}</div>
                                             </div>
@@ -970,4 +1179,123 @@
 
 @push('scripts')
     @include('partials.sla-countdown-script')
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const form = document.querySelector('[data-authority-decision-form]');
+
+            if (!form) {
+                return;
+            }
+
+            const decisionInputs = Array.from(form.querySelectorAll('input[name="status"]'));
+            const notePanel = form.querySelector('[data-decision-panel="note"]');
+            const approvedPanel = form.querySelector('[data-decision-panel="approved"]');
+            const changesPanel = form.querySelector('[data-decision-panel="changes_requested"]');
+            const noteInput = form.querySelector('[name="note"]');
+            const noteRequiredMark = form.querySelector('[data-note-required]');
+            const responseAttachment = form.querySelector('[name="response_attachment"]');
+            const correctionItems = form.querySelector('[data-correction-items]');
+            const correctionTemplate = form.querySelector('[data-correction-template]');
+            const addCorrectionButton = form.querySelector('[data-add-correction]');
+
+            const selectedDecision = function () {
+                return decisionInputs.find(function (input) {
+                    return input.checked;
+                })?.value || '';
+            };
+
+            const reindexCorrections = function () {
+                if (!correctionItems) {
+                    return;
+                }
+
+                correctionItems.querySelectorAll('[data-correction-item]').forEach(function (item, index) {
+                    item.querySelectorAll('[data-field]').forEach(function (field) {
+                        field.name = 'change_requests[' + index + '][' + field.dataset.field + ']';
+                    });
+                });
+            };
+
+            const setCorrectionFieldsEnabled = function (enabled) {
+                if (!correctionItems) {
+                    return;
+                }
+
+                correctionItems.querySelectorAll('[data-correction-required]').forEach(function (field) {
+                    field.disabled = !enabled;
+                    field.required = enabled;
+                });
+                correctionItems.querySelectorAll('[data-correction-input]').forEach(function (field) {
+                    field.disabled = !enabled;
+                });
+            };
+
+            const syncDecisionPanels = function () {
+                const decision = selectedDecision();
+                const isApproved = decision === 'approved';
+                const isChangesRequested = decision === 'changes_requested';
+                const noteIsRequired = isChangesRequested || decision === 'rejected';
+
+                if (notePanel) {
+                    notePanel.hidden = decision === '';
+                }
+                if (approvedPanel) {
+                    approvedPanel.hidden = !isApproved;
+                }
+                if (changesPanel) {
+                    changesPanel.hidden = !isChangesRequested;
+                }
+                if (noteInput) {
+                    noteInput.required = noteIsRequired;
+                }
+                if (noteRequiredMark) {
+                    noteRequiredMark.hidden = !noteIsRequired;
+                }
+                if (responseAttachment) {
+                    responseAttachment.disabled = !isApproved;
+                    responseAttachment.required = isApproved;
+                }
+
+                setCorrectionFieldsEnabled(isChangesRequested);
+            };
+
+            decisionInputs.forEach(function (input) {
+                input.addEventListener('change', syncDecisionPanels);
+            });
+
+            addCorrectionButton?.addEventListener('click', function () {
+                if (!correctionItems || !correctionTemplate) {
+                    return;
+                }
+
+                correctionItems.appendChild(correctionTemplate.content.cloneNode(true));
+                reindexCorrections();
+                setCorrectionFieldsEnabled(selectedDecision() === 'changes_requested');
+            });
+
+            correctionItems?.addEventListener('click', function (event) {
+                const removeButton = event.target.closest('[data-remove-correction]');
+
+                if (!removeButton) {
+                    return;
+                }
+
+                const item = removeButton.closest('[data-correction-item]');
+                const items = correctionItems.querySelectorAll('[data-correction-item]');
+
+                if (items.length === 1) {
+                    item.querySelectorAll('select, textarea, input[type="file"]').forEach(function (field) {
+                        field.value = '';
+                    });
+                    return;
+                }
+
+                item.remove();
+                reindexCorrections();
+            });
+
+            reindexCorrections();
+            syncDecisionPanels();
+        });
+    </script>
 @endpush

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -11,11 +12,17 @@ use Illuminate\Support\Str;
 class FormLookupOption extends Model
 {
     public const TYPE_EQUIPMENT_CATEGORY = 'equipment_category';
+
     public const TYPE_EQUIPMENT_SHIPPING_METHOD = 'equipment_shipping_method';
+
     public const TYPE_EQUIPMENT_ENTRY_POINT = 'equipment_entry_point';
+
     public const TYPE_AIRPORT = 'airport';
+
     public const TYPE_SPECIAL_LOCATION_REQUIREMENT = 'special_location_requirement';
+
     public const TYPE_BUDGET_SPENDING_CATEGORY = 'budget_spending_category';
+
     public const TYPE_DRONE_REQUEST_TYPE = 'drone_request_type';
 
     /**
@@ -70,6 +77,20 @@ class FormLookupOption extends Model
         $locale ??= app()->getLocale();
 
         return $locale === 'ar' ? $this->name_ar : $this->name_en;
+    }
+
+    public function entities(): BelongsToMany
+    {
+        return $this->belongsToMany(Entity::class, 'entity_form_lookup_option')
+            ->withTimestamps();
+    }
+
+    public function notesPrompt(?string $locale = null): ?string
+    {
+        $locale ??= app()->getLocale();
+        $prompt = data_get($this->metadata ?? [], 'notes_prompt_'.$locale);
+
+        return filled($prompt) ? (string) $prompt : null;
     }
 
     /**

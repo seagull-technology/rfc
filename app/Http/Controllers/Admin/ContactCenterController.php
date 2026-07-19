@@ -139,6 +139,7 @@ class ContactCenterController extends Controller
 
         $applicationMessages = ApplicationCorrespondence::query()
             ->with(['application.entity', 'createdBy'])
+            ->visibleToRfc()
             ->latest()
             ->get()
             ->map(function (ApplicationCorrespondence $message): array {

@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Application;
 use App\Models\ApplicationAnnexSubmission;
 use App\Models\ApplicationAuthorityApproval;
+use App\Models\ApplicationAuthorityChangeRequest;
+use App\Models\ApplicationCorrespondence;
 use App\Models\ApplicationDocument;
 use App\Models\ApprovalRoutingRule;
 use App\Models\Entity;
@@ -15,10 +17,12 @@ use App\Models\ReleaseMethod;
 use App\Models\ScoutingRequest;
 use App\Models\User;
 use App\Models\WorkCategory;
+use App\Notifications\ForeignProducerInvitationNotification;
 use App\Notifications\RegistrationApprovedNotification;
 use App\Services\ApplicationAuthorityApprovalSyncService;
 use App\Services\AuthorityApprovalNotificationService;
 use App\Services\AuthorityEscalationService;
+use App\Support\MinistryInteriorPersonalDetails;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -26,6 +30,8 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Spatie\Permission\PermissionRegistrar;
@@ -95,6 +101,7 @@ class ApplicationWorkflowTest extends TestCase
             ->assertDontSee('data-confirm-submit', false)
             ->assertDontSeeText(__('app.applications.submit_confirm_body'))
             ->assertSee('id="form-wizard1"', false)
+            ->assertSee('data-page-validation-message=', false)
             ->assertSee('id="step1"', false)
             ->assertSee('id="step2"', false)
             ->assertSee('class="btn btn-danger request-wizard-next action-button float-end btn-lg"', false)
@@ -105,24 +112,52 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText(__('app.applications.traveler_customs_instruction_after_project'))
             ->assertSee('data-traveler-customs-project-name', false)
             ->assertSee('data-equipment-traveler-select', false)
+            ->assertSee('name="equipment_travelers[0][passport_image]"', false)
             ->assertSee('name="imported_equipment[traveler_0][traveler_name]"', false)
+            ->assertSee('data-equipment-row-total readonly', false)
+            ->assertDontSee('name="imported_equipment[traveler_0][shipping_method]"', false)
             ->assertSeeText('Equipment Handler')
             ->assertSee('name="airport_people[airport-person][nationality]"', false)
             ->assertSee('data-airport-person-nationality', false)
             ->assertSee('name="airport_people[airport-person][first_name]"', false)
             ->assertSee('data-airport-person-name-output', false)
+            ->assertSee('data-import-cast-crew-to-airport', false)
+            ->assertSeeText(__('app.applications.import_cast_crew_to_airport'))
+            ->assertSee('importApplicationCastCrewToAirportPeople', false)
             ->assertSee('application-annex-offcanvas', false)
             ->assertDontSee('PublicSecuritySupport', false)
             ->assertDontSee('MilitarySupport', false)
             ->assertDontSeeText(__('app.applications.annex_sections.public_security_support'))
             ->assertDontSeeText(__('app.applications.annex_sections.military_support'))
             ->assertSeeText(__('app.applications.location_support_requirements_title'))
+            ->assertSee('data-location-support-editor', false)
+            ->assertSee('name="location_support_requirements[0][assignments][0][selected]"', false)
+            ->assertSee('refreshSharedLocationSupportRequirements', false)
             ->assertSee('data-cast-crew-nationality', false)
             ->assertSee('name="cast_crew[lead][first_name]"', false)
             ->assertSee('data-cast-crew-name-output', false)
+            ->assertSee('data-cast-crew-identity-feedback', false)
+            ->assertSee('name="cast_crew[lead][passport_image]"', false)
+            ->assertSee('data-cast-crew-passport-image', false)
+            ->assertSeeText(__('app.applications.cast_crew_national_id_digits'))
             ->assertSee('data-row-count-for', false)
-            ->assertSee('data-application-password-strength', false)
-            ->assertSeeText(__('app.auth.password_rule_mixed'))
+            ->assertSee('name="work_content_summary_attachment"', false)
+            ->assertSeeText(__('app.applications.annex_fields.work_summary_english_attachment_note'))
+            ->assertSee('data-bs-target="#ProductionTerms"', false)
+            ->assertSee('data-requirement-incomplete', false)
+            ->assertSeeText(__('app.applications.form_incomplete_status'))
+            ->assertSee('data-annex-save', false)
+            ->assertSee('name="production_terms_accepted"', false)
+            ->assertSeeText(__('app.applications.production_terms.legal_document'))
+            ->assertSee('value="Applicant Owner"', false)
+            ->assertSee('data-bs-target="#MinistryInteriorPersonalDetails"', false)
+            ->assertSee('name="ministry_interior_personal_details[0][current_full_name]"', false)
+            ->assertSee('data-ministry-personal-details-add', false)
+            ->assertSee('data-ministry-personal-details-template', false)
+            ->assertDontSee('ministry-personal-details-form__heading', false)
+            ->assertSeeText(__('app.applications.annex_sections.ministry_interior_personal_details'))
+            ->assertDontSee('data-application-password-strength', false)
+            ->assertDontSee('name="international_account_password"', false)
             ->assertSee('formnovalidate', false)
             ->assertSee('js/form-wizard.js', false);
 
@@ -133,6 +168,14 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertMatchesRegularExpression('/name="contact_address"[^>]*value="Amman, Jordan"[^>]*readonly/s', $content);
         $this->assertMatchesRegularExpression('/name="contact_phone"[^>]*value="0793333111"[^>]*readonly/s', $content);
         $this->assertMatchesRegularExpression('/name="contact_email"[^>]*value="studio@applicant\.test"[^>]*readonly/s', $content);
+        $this->assertTrue(
+            strpos($content, 'data-bs-target="#RFCGuidelines"') < strpos($content, 'data-bs-target="#ProductionTerms"'),
+            'General terms must be the last item in the mandatory permit forms list.',
+        );
+        $this->assertTrue(
+            strpos($content, 'data-bs-target="#ProductionTerms"') < strpos($content, 'data-bs-target="#MinistryInteriorPersonalDetails"'),
+            'The Ministry of Interior form must be listed under project-needs forms after the mandatory forms.',
+        );
     }
 
     public function test_application_profile_contact_fields_are_locked_to_approved_account_data(): void
@@ -206,6 +249,51 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertSame('studio@applicant.test', data_get($application->metadata, 'producer.contact_email'));
     }
 
+    public function test_work_type_controls_work_content_summary_minimum_words(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        WorkCategory::query()
+            ->where('code', 'feature_film')
+            ->update(['work_summary_min_words' => 5]);
+
+        [$user] = $this->createApplicantContext();
+
+        $this
+            ->actingAs($user)
+            ->get(route('applications.create'))
+            ->assertOk()
+            ->assertSee('data-work-summary-min-words="5"', false)
+            ->assertSeeText(__('app.applications.work_summary_instruction', ['min' => 5]));
+
+        $this->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'work_content_summary_synopsis' => $this->arabicWorkContentSummary(4),
+            ]))
+            ->assertRedirect();
+
+        $application = Application::query()->firstOrFail();
+
+        $this->actingAs($user)
+            ->post(route('applications.submit', $application))
+            ->assertSessionHasErrors('work_content_summary_synopsis');
+
+        $this->assertSame('draft', $application->fresh()->status);
+
+        $this->actingAs($user)
+            ->post(route('applications.update', $application), $this->applicationPayload([
+                'work_content_summary_synopsis' => $this->arabicWorkContentSummary(5),
+            ]))
+            ->assertRedirect(route('applications.show', $application));
+
+        $this->actingAs($user)
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application));
+
+        $this->assertSame('submitted', $application->fresh()->status);
+    }
+
     public function test_cast_crew_birth_date_must_be_before_today(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -219,6 +307,10 @@ class ApplicationWorkflowTest extends TestCase
             ->post(route('applications.store'), $this->applicationPayload([
                 'cast_crew' => [[
                     'name' => 'Future Actor',
+                    'first_name' => 'Future',
+                    'second_name' => 'Jordanian',
+                    'third_name' => 'Test',
+                    'family_name' => 'Actor',
                     'role' => 'Actor',
                     'nationality' => 'jordanian',
                     'gender' => 'male',
@@ -243,6 +335,10 @@ class ApplicationWorkflowTest extends TestCase
             ->post(route('applications.store'), $this->applicationPayload([
                 'cast_crew' => [[
                     'name' => 'Jordanian Actor',
+                    'first_name' => 'Jordanian',
+                    'second_name' => 'Identity',
+                    'third_name' => 'Test',
+                    'family_name' => 'Actor',
                     'role' => 'Actor',
                     'nationality' => 'jordanian',
                     'gender' => 'male',
@@ -252,6 +348,65 @@ class ApplicationWorkflowTest extends TestCase
             ]))
             ->assertRedirect(route('applications.create'))
             ->assertSessionHasErrors('cast_crew.0.identity_number');
+    }
+
+    public function test_jordanian_cast_crew_identity_rejects_short_and_long_numeric_values(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        foreach (['123456789', '12345678901'] as $identityNumber) {
+            $this
+                ->actingAs($user)
+                ->from(route('applications.create'))
+                ->post(route('applications.store'), $this->applicationPayload([
+                    'cast_crew' => [[
+                        'name' => 'Jordanian Identity Test Actor',
+                        'first_name' => 'Jordanian',
+                        'second_name' => 'Identity',
+                        'third_name' => 'Test',
+                        'family_name' => 'Actor',
+                        'role' => 'Actor',
+                        'nationality' => 'jordanian',
+                        'gender' => 'male',
+                        'birth_date' => '1990-03-15',
+                        'identity_number' => $identityNumber,
+                    ]],
+                ]))
+                ->assertRedirect(route('applications.create'))
+                ->assertSessionHasErrors('cast_crew.0.identity_number');
+        }
+    }
+
+    public function test_jordanian_cast_crew_requires_all_four_name_parts(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $this
+            ->actingAs($user)
+            ->from(route('applications.create'))
+            ->post(route('applications.store'), $this->applicationPayload([
+                'cast_crew' => [[
+                    'name' => 'Incomplete Jordanian Name',
+                    'role' => 'Actor',
+                    'nationality' => 'jordanian',
+                    'gender' => 'male',
+                    'birth_date' => '1990-03-15',
+                    'identity_number' => '1234567890',
+                ]],
+            ]))
+            ->assertRedirect(route('applications.create'))
+            ->assertSessionHasErrors([
+                'cast_crew.0.first_name',
+                'cast_crew.0.second_name',
+                'cast_crew.0.third_name',
+                'cast_crew.0.family_name',
+            ]);
     }
 
     public function test_jordanian_airport_person_identity_must_be_ten_digits(): void
@@ -316,25 +471,114 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertSame('Airport', data_get($application->metadata, 'annex.airport_people.0.first_name'));
     }
 
-    public function test_international_account_password_validation_uses_localized_label(): void
+    public function test_foreign_producer_account_is_created_by_secure_invitation_without_applicant_password_fields(): void
     {
-        $this->refreshApplicationWithLocale('ar');
+        $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
+        Notification::fake();
 
         [$user] = $this->createApplicantContext();
 
         $this
             ->actingAs($user)
             ->post(route('applications.store'), $this->applicationPayload([
-                'international_account_password' => 'lowercase1!',
-                'international_account_password_confirmation' => 'lowercase1!',
+                'project_nationalities' => ['international'],
+                'international_producer_email' => 'invited-producer@example.com',
+                'international_producer_profile_url' => 'https://example.com/invited-producer',
+                'international_producer_address' => 'Madrid',
+                'international_producer_website' => 'https://invited-producer.example.com',
+                'international_liaison_email' => 'invited-liaison@example.com',
+                'international_liaison_mobile' => '+962799123456',
             ]))
-            ->assertSessionHasErrors(['international_account_password']);
+            ->assertSessionHasNoErrors();
 
-        $errors = session('errors')->get('international_account_password');
+        $application = Application::query()->firstOrFail();
+        $foreignProducer = User::query()->findOrFail($application->foreignProducerUserId());
 
-        $this->assertNotEmpty($errors);
-        $this->assertStringContainsString('كلمة مرور حساب ضابط الارتباط الدولي', $errors[0]);
+        $this->assertTrue($foreignProducer->requiresPasswordSetup());
+        $this->assertNotNull($foreignProducer->invitation_sent_at);
+        $this->assertFalse($foreignProducer->canSignIn());
+
+        Notification::assertSentTo($foreignProducer, ForeignProducerInvitationNotification::class);
+
+        $this
+            ->actingAs($user)
+            ->get(route('applications.edit', $application))
+            ->assertOk()
+            ->assertDontSee('name="international_account_password"', false)
+            ->assertDontSee('name="international_account_password_confirmation"', false)
+            ->assertSeeText(__('app.applications.foreign_producer_account_linked_title'));
+    }
+
+    public function test_foreign_producer_must_activate_account_before_login_and_signing(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+        Notification::fake();
+
+        [$applicant] = $this->createApplicantContext();
+
+        $this
+            ->actingAs($applicant)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'project_nationalities' => ['international'],
+                'international_producer_email' => 'activation-producer@example.com',
+                'international_producer_profile_url' => 'https://example.com/activation-producer',
+                'international_producer_address' => 'Paris',
+                'international_producer_website' => 'https://activation-producer.example.com',
+                'international_liaison_email' => 'activation-liaison@example.com',
+                'international_liaison_mobile' => '+962799222333',
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $application = Application::query()->firstOrFail();
+        $foreignProducer = User::query()->findOrFail($application->foreignProducerUserId());
+
+        auth()->logout();
+
+        $this
+            ->post(route('login.store'), [
+                'identifier' => $foreignProducer->email,
+                'password' => 'AnyPassword@123',
+            ])
+            ->assertSessionHasErrors([
+                'identifier' => __('app.auth.account_activation_required'),
+            ]);
+
+        $this
+            ->actingAs($foreignProducer)
+            ->post(route('profile.foreign-producer.applications.declaration.store', $application), [
+                'declaration_accepted' => '1',
+            ])
+            ->assertForbidden();
+
+        auth()->logout();
+        $token = Password::broker()->createToken($foreignProducer);
+
+        $this
+            ->post(route('password.store'), [
+                'token' => $token,
+                'email' => $foreignProducer->email,
+                'password' => 'Activated@Password123',
+                'password_confirmation' => 'Activated@Password123',
+            ])
+            ->assertRedirect(route('login'))
+            ->assertSessionHasNoErrors();
+
+        $foreignProducer->refresh();
+
+        $this->assertFalse($foreignProducer->requiresPasswordSetup());
+        $this->assertNotNull($foreignProducer->password_changed_at);
+        $this->assertTrue(Hash::check('Activated@Password123', $foreignProducer->password));
+
+        $this
+            ->actingAs($foreignProducer)
+            ->post(route('profile.foreign-producer.applications.declaration.store', $application), [
+                'declaration_accepted' => '1',
+            ])
+            ->assertRedirect(route('profile.show', ['variant' => 'foreign_producer']));
+
+        $this->assertTrue($application->fresh()->foreignProducerDeclarationIsSigned());
     }
 
     public function test_non_jordanian_project_requires_international_section_before_submission(): void
@@ -378,8 +622,6 @@ class ApplicationWorkflowTest extends TestCase
                 'international_liaison_email',
                 'international_liaison_mobile',
                 'international_account_exists',
-                'international_account_password',
-                'international_account_password_confirmation',
             ]);
 
         $this
@@ -396,17 +638,48 @@ class ApplicationWorkflowTest extends TestCase
                 'international_liaison_name' => 'Global Liaison',
                 'international_liaison_email' => 'liaison-submit@example.com',
                 'international_liaison_mobile' => '+962799000111',
-                'international_account_password' => 'International@12345',
-                'international_account_password_confirmation' => 'International@12345',
             ]))
             ->assertRedirect(route('applications.show', $application));
 
         $this->assertNotEmpty(data_get($application->fresh()->metadata, 'international.account.user_id'));
 
+        $application->refresh();
+        $foreignProducer = User::query()->findOrFail($application->foreignProducerUserId());
+
+        $foreignProducer->forceFill([
+            'must_change_password' => false,
+            'password_changed_at' => now(),
+        ])->save();
+
+        $this
+            ->actingAs($user)
+            ->get(route('applications.show', $application))
+            ->assertOk()
+            ->assertSeeText(__('app.applications.foreign_producer_approval_pending_title'))
+            ->assertSeeText(__('app.applications.foreign_producer_approval_pending_action'));
+
         $this
             ->actingAs($user)
             ->post(route('applications.submit', $application))
-            ->assertRedirect(route('applications.show', $application));
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasErrors('foreign_producer_declaration');
+
+        $this->assertSame('draft', $application->fresh()->status);
+
+        $this
+            ->actingAs($foreignProducer)
+            ->post(route('profile.foreign-producer.applications.declaration.store', $application), [
+                'declaration_accepted' => '1',
+            ])
+            ->assertRedirect(route('profile.show', ['variant' => 'foreign_producer']));
+
+        $this->assertTrue($application->fresh()->foreignProducerDeclarationIsSigned());
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasNoErrors();
 
         $this->assertSame('submitted', $application->fresh()->status);
     }
@@ -828,6 +1101,258 @@ class ApplicationWorkflowTest extends TestCase
         $this->travelBack();
     }
 
+    public function test_one_shared_location_support_requirement_can_be_assigned_to_multiple_filming_locations(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+        $firstStart = now()->addDays(30)->toDateString();
+        $firstEnd = now()->addDays(36)->toDateString();
+        $secondStart = now()->addDays(32)->toDateString();
+        $secondEnd = now()->addDays(38)->toDateString();
+        $sharedDate = now()->addDays(34)->toDateString();
+
+        $response = $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'filming_locations' => [
+                    [
+                        'location_key' => 'amman_street',
+                        'governorate' => 'amman',
+                        'location_name' => 'Amman Street',
+                        'address' => 'Central Amman',
+                        'nature' => 'Public street',
+                        'location_type' => 'public_locations',
+                        'start_date' => $firstStart,
+                        'end_date' => $firstEnd,
+                    ],
+                    [
+                        'location_key' => 'zarqa_street',
+                        'governorate' => 'zarqa',
+                        'location_name' => 'Zarqa Street',
+                        'address' => 'Central Zarqa',
+                        'nature' => 'Public street',
+                        'location_type' => 'public_locations',
+                        'start_date' => $secondStart,
+                        'end_date' => $secondEnd,
+                    ],
+                ],
+                'location_support_requirements' => [[
+                    'requirement_key' => 'shared_road_closure',
+                    'authority' => 'public_security',
+                    'requirement' => 'road_closures',
+                    'notes' => 'Close both streets using the same traffic management plan.',
+                    'schedule_mode' => 'shared',
+                    'shared_date' => $sharedDate,
+                    'shared_time_from' => '08:00',
+                    'shared_time_to' => '12:00',
+                    'assignments' => [
+                        ['location_key' => 'amman_street', 'selected' => '1'],
+                        ['location_key' => 'zarqa_street', 'selected' => '1'],
+                    ],
+                ]],
+            ]));
+
+        $application = Application::query()->firstOrFail();
+
+        $response
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasNoErrors();
+
+        $requirements = data_get($application->metadata, 'annex.location_support_requirements');
+        $locations = data_get($application->metadata, 'annex.filming_locations');
+        $legacyRows = data_get($application->metadata, 'annex.public_security_support');
+        $publicSecurity = Entity::query()->where('code', 'public-security-directorate')->firstOrFail();
+
+        $this->assertCount(1, $requirements);
+        $this->assertCount(2, data_get($requirements, '0.assignments'));
+        $this->assertSame($publicSecurity->code, data_get($requirements, '0.authority'));
+        $this->assertSame($publicSecurity->name_en, data_get($requirements, '0.authority_name_en'));
+        $this->assertSame('Road closures', data_get($requirements, '0.requirement_name_en'));
+        $this->assertSame('shared', data_get($requirements, '0.schedule_mode'));
+        $this->assertSame($sharedDate, data_get($requirements, '0.shared_date'));
+        $this->assertSame('road_closures', data_get($locations, '0.support_requirements.0.requirement'));
+        $this->assertSame($sharedDate, data_get($locations, '0.support_requirements.0.date'));
+        $this->assertSame($sharedDate, data_get($locations, '1.support_requirements.0.date'));
+        $this->assertCount(2, $legacyRows);
+        $this->assertSame(['Amman Street', 'Zarqa Street'], collect($legacyRows)->pluck('location')->all());
+    }
+
+    public function test_location_support_requirement_must_be_assigned_to_the_selected_authority(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $response = $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'filming_locations' => [[
+                    'location_key' => 'mismatched_location',
+                    'governorate' => 'amman',
+                    'location_name' => 'Mismatched Location',
+                    'address' => 'Amman',
+                    'nature' => 'Public location',
+                    'location_type' => 'public_locations',
+                    'start_date' => now()->addDays(30)->toDateString(),
+                    'end_date' => now()->addDays(32)->toDateString(),
+                ]],
+                'location_support_requirements' => [[
+                    'authority' => 'public-security-directorate',
+                    'requirement' => 'armed_forces',
+                    'notes' => 'This requirement belongs to another authority.',
+                    'schedule_mode' => 'shared',
+                    'shared_date' => now()->addDays(31)->toDateString(),
+                    'assignments' => [[
+                        'location_key' => 'mismatched_location',
+                        'selected' => '1',
+                    ]],
+                ]],
+            ]));
+
+        $response
+            ->assertRedirect()
+            ->assertSessionHasErrors('location_support_requirements.0.requirement');
+
+        $this->assertDatabaseCount('applications', 0);
+    }
+
+    public function test_location_support_requirement_can_keep_separate_schedules_for_each_assigned_location(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+        $firstDate = now()->addDays(31)->toDateString();
+        $secondDate = now()->addDays(35)->toDateString();
+
+        $response = $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'filming_locations' => [
+                    [
+                        'location_key' => 'first_location',
+                        'governorate' => 'amman',
+                        'location_name' => 'First Location',
+                        'address' => 'Amman',
+                        'nature' => 'Public site',
+                        'location_type' => 'public_locations',
+                        'start_date' => now()->addDays(30)->toDateString(),
+                        'end_date' => now()->addDays(32)->toDateString(),
+                    ],
+                    [
+                        'location_key' => 'second_location',
+                        'governorate' => 'zarqa',
+                        'location_name' => 'Second Location',
+                        'address' => 'Zarqa',
+                        'nature' => 'Public site',
+                        'location_type' => 'public_locations',
+                        'start_date' => now()->addDays(34)->toDateString(),
+                        'end_date' => now()->addDays(36)->toDateString(),
+                    ],
+                ],
+                'location_support_requirements' => [[
+                    'requirement_key' => 'separate_police_presence',
+                    'authority' => 'public_security',
+                    'requirement' => 'police_presence',
+                    'notes' => 'Coordinate separate teams and schedules for both sites.',
+                    'schedule_mode' => 'per_location',
+                    'assignments' => [
+                        [
+                            'location_key' => 'first_location',
+                            'selected' => '1',
+                            'date' => $firstDate,
+                            'time_from' => '07:00',
+                            'time_to' => '09:00',
+                        ],
+                        [
+                            'location_key' => 'second_location',
+                            'selected' => '1',
+                            'date' => $secondDate,
+                            'time_from' => '14:00',
+                            'time_to' => '16:00',
+                        ],
+                    ],
+                ]],
+            ]));
+
+        $application = Application::query()->firstOrFail();
+
+        $response
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasNoErrors();
+
+        $requirements = data_get($application->metadata, 'annex.location_support_requirements');
+        $locations = data_get($application->metadata, 'annex.filming_locations');
+
+        $this->assertSame('per_location', data_get($requirements, '0.schedule_mode'));
+        $this->assertSame($firstDate, data_get($requirements, '0.assignments.0.date'));
+        $this->assertSame($secondDate, data_get($requirements, '0.assignments.1.date'));
+        $this->assertSame($firstDate, data_get($locations, '0.support_requirements.0.date'));
+        $this->assertSame('07:00', data_get($locations, '0.support_requirements.0.time_from'));
+        $this->assertSame($secondDate, data_get($locations, '1.support_requirements.0.date'));
+        $this->assertSame('14:00', data_get($locations, '1.support_requirements.0.time_from'));
+    }
+
+    public function test_shared_location_support_date_must_fit_every_selected_location(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'filming_locations' => [
+                    [
+                        'location_key' => 'first_location',
+                        'governorate' => 'amman',
+                        'location_name' => 'First Location',
+                        'address' => 'Amman',
+                        'nature' => 'Public site',
+                        'location_type' => 'public_locations',
+                        'start_date' => now()->addDays(30)->toDateString(),
+                        'end_date' => now()->addDays(32)->toDateString(),
+                    ],
+                    [
+                        'location_key' => 'second_location',
+                        'governorate' => 'zarqa',
+                        'location_name' => 'Second Location',
+                        'address' => 'Zarqa',
+                        'nature' => 'Public site',
+                        'location_type' => 'public_locations',
+                        'start_date' => now()->addDays(31)->toDateString(),
+                        'end_date' => now()->addDays(34)->toDateString(),
+                    ],
+                ],
+                'location_support_requirements' => [[
+                    'authority' => 'public_security',
+                    'requirement' => 'road_closures',
+                    'notes' => 'Shared closure details for both sites.',
+                    'schedule_mode' => 'shared',
+                    'shared_date' => now()->addDays(34)->toDateString(),
+                    'assignments' => [
+                        ['location_key' => 'first_location', 'selected' => '1'],
+                        ['location_key' => 'second_location', 'selected' => '1'],
+                    ],
+                ]],
+            ]));
+
+        $application = Application::query()->firstOrFail();
+
+        $this
+            ->from(route('applications.show', $application))
+            ->actingAs($user)
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasErrors('location_support_requirements.0.shared_date');
+
+        $this->assertSame('draft', $application->fresh()->status);
+    }
+
     public function test_location_type_approval_days_use_jordan_business_days(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -907,7 +1432,7 @@ class ApplicationWorkflowTest extends TestCase
                 'schedule_phases' => [
                     'preparation' => ['start_date' => '2026-04-20', 'end_date' => '2026-05-02'],
                     'wrap' => ['start_date' => '2026-05-09', 'end_date' => '2026-05-12'],
-                    'post_production' => ['start_date' => '2026-05-11', 'end_date' => '2026-06-01'],
+                    'post_production' => ['start_date' => '2026-04-30', 'end_date' => '2026-06-01'],
                 ],
             ]))
             ->assertRedirect(route('applications.create'))
@@ -918,6 +1443,32 @@ class ApplicationWorkflowTest extends TestCase
             ]);
 
         $this->assertDatabaseCount('applications', 0);
+    }
+
+    public function test_post_production_can_start_when_filming_starts_before_wrap_ends(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'planned_start_date' => '2026-05-01',
+                'planned_end_date' => '2026-05-10',
+                'schedule_phases' => [
+                    'preparation' => ['start_date' => '2026-04-20', 'end_date' => '2026-04-30'],
+                    'wrap' => ['start_date' => '2026-05-10', 'end_date' => '2026-05-12'],
+                    'post_production' => ['start_date' => '2026-05-01', 'end_date' => '2026-06-01'],
+                ],
+            ]))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $application = Application::query()->firstOrFail();
+
+        $this->assertSame('2026-05-01', data_get($application->metadata, 'schedule.phases.post_production.start_date'));
     }
 
     public function test_application_requires_budget_breakdown_when_local_spend_reaches_threshold(): void
@@ -1158,17 +1709,18 @@ class ApplicationWorkflowTest extends TestCase
             ->assertOk()
             ->assertSeeText('RFC decision recorded by')
             ->assertSeeText($admin->displayName())
-            ->assertSeeText('Issue facilitation book')
+            ->assertSeeText('Official books prepared by')
+            ->assertSeeText('Issue Official Books')
+            ->assertSee('admin-official-letters-table', false)
+            ->assertDontSeeText('Issue facilitation book')
             ->assertDontSeeText('Waiting on authority responses');
-
-        $issueResponse = $this->actingAs($admin)->post(route('admin.applications.issue-facilitation-letter', $application));
-
-        $issueResponse->assertRedirect(route('admin.applications.show', $application));
 
         $this->assertSame(
             ['public_security', 'environment'],
             data_get($application->fresh()->metadata, 'requirements.required_approvals')
         );
+        $this->assertNotNull(data_get($application->fresh()->metadata, 'rfc_decision.official_books_prepared_at'));
+        $this->assertSame($admin->getKey(), data_get($application->fresh()->metadata, 'rfc_decision.official_books_prepared_by_user_id'));
         $this->assertNotNull(data_get($application->fresh()->metadata, 'rfc_decision.facilitation_issued_at'));
         $this->assertSame($admin->getKey(), data_get($application->fresh()->metadata, 'rfc_decision.facilitation_issued_by_user_id'));
         $this->assertDatabaseMissing('application_authority_approvals', [
@@ -1277,11 +1829,129 @@ class ApplicationWorkflowTest extends TestCase
         ));
     }
 
+    public function test_applicant_cannot_submit_without_accepting_general_terms_and_conditions(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $this->actingAs($user)->post(route('applications.store'), $this->applicationPayload([
+            'production_terms_accepted' => '0',
+        ]));
+
+        $application = Application::query()->firstOrFail();
+
+        $this
+            ->from(route('applications.show', $application))
+            ->actingAs($user)
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasErrors('production_terms_accepted');
+
+        $this->assertSame('draft', $application->fresh()->status);
+    }
+
+    public function test_ministry_of_interior_personal_details_form_stores_authenticated_signature_and_is_displayed(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $details = [
+            'personal_number' => 'VISITOR-2048',
+            'current_nationality' => 'jordanian',
+            'current_full_name' => 'Applicant Owner Full Name',
+            'original_nationality' => 'jordanian',
+            'original_full_name' => 'Applicant Owner Original Name',
+            'gender' => 'male',
+            'passport_number' => 'P12345678',
+            'passport_type' => 'Ordinary',
+            'passport_issue_place' => 'Amman',
+            'passport_issue_date' => '2024-01-15',
+            'passport_expiry_date' => '2029-01-14',
+            'birth_place' => 'Amman',
+            'birth_date' => '1990-06-20',
+            'education_qualification' => 'Bachelor degree',
+            'profession' => 'Producer',
+            'workplace' => 'Applicant Studio',
+            'mother_full_name' => 'Mother Full Name',
+            'mother_nationality' => 'jordanian',
+            'spouse_full_name' => 'Spouse Full Name',
+            'spouse_nationality' => 'jordanian',
+            'spouse_birth_date' => '1992-04-10',
+            'spouse_mother_full_name' => 'Spouse Mother Full Name',
+            'visit_residence_reason' => 'Filming and production activity',
+            'country_of_arrival' => 'Jordan',
+            'country_of_residence' => 'Jordan',
+            'residence_issue_date' => '2025-01-01',
+            'residence_expiry_date' => '2027-01-01',
+            'jordan_residence_address' => 'Amman, Jordan',
+            'signature' => 'Forged Signature',
+            'confirmed' => '1',
+        ];
+
+        $secondDetails = array_merge($details, [
+            'personal_number' => 'VISITOR-4096',
+            'current_full_name' => 'Second Visitor Full Name',
+            'original_full_name' => 'Second Visitor Original Name',
+            'passport_number' => 'P87654321',
+            'signature' => 'Another Forged Signature',
+        ]);
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'ministry_interior_personal_details' => [$details, $secondDetails],
+            ]))
+            ->assertRedirect();
+
+        $application = Application::query()->firstOrFail();
+        $storedDetails = MinistryInteriorPersonalDetails::rows(
+            data_get($application->metadata, 'annex.ministry_interior_personal_details', []),
+        );
+
+        $this->assertCount(2, $storedDetails);
+        $this->assertSame('Applicant Owner Full Name', data_get($storedDetails, '0.current_full_name'));
+        $this->assertSame('P12345678', data_get($storedDetails, '0.passport_number'));
+        $this->assertSame('Second Visitor Full Name', data_get($storedDetails, '1.current_full_name'));
+        $this->assertSame('P87654321', data_get($storedDetails, '1.passport_number'));
+
+        foreach ($storedDetails as $storedDetail) {
+            $this->assertTrue((bool) data_get($storedDetail, 'confirmed'));
+            $this->assertSame('Applicant Owner', data_get($storedDetail, 'signature'));
+            $this->assertSame($user->getKey(), data_get($storedDetail, 'signed_by_user_id'));
+            $this->assertNotNull(data_get($storedDetail, 'signed_at'));
+        }
+
+        $this
+            ->actingAs($user)
+            ->get(route('applications.edit', $application))
+            ->assertOk()
+            ->assertSee('name="ministry_interior_personal_details[0][current_full_name]"', false)
+            ->assertSee('name="ministry_interior_personal_details[1][current_full_name]"', false)
+            ->assertSee('data-ministry-personal-details-add', false)
+            ->assertSee('value="Applicant Owner Full Name"', false)
+            ->assertSee('value="Second Visitor Full Name"', false)
+            ->assertSee('value="Applicant Owner"', false);
+
+        $this
+            ->actingAs($user)
+            ->get(route('applications.show', $application))
+            ->assertOk()
+            ->assertSee('MinistryInteriorPersonalDetailsView', false)
+            ->assertSee('value="Applicant Owner Full Name"', false)
+            ->assertSee('value="Second Visitor Full Name"', false)
+            ->assertSeeText(__('app.applications.annex_sections.ministry_interior_personal_details'));
+    }
+
     public function test_application_stores_and_displays_structured_annex_forms(): void
     {
         $this->refreshApplicationWithLocale('en');
         $this->travelTo(Carbon::parse('2026-04-01 09:00:00'));
         $this->seed(AccessControlSeeder::class);
+        Storage::fake('local');
 
         $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
         [$applicant, $applicantEntity] = $this->createApplicantContext();
@@ -1314,12 +1984,16 @@ class ApplicationWorkflowTest extends TestCase
             'international_liaison_name' => 'Global Liaison',
             'international_liaison_email' => 'liaison.global@example.com',
             'international_liaison_mobile' => '+962799999999',
-            'international_account_password' => 'International@12345',
-            'international_account_password_confirmation' => 'International@12345',
             'work_content_summary_synopsis' => $workContentSummary,
             'work_content_summary_confirmed' => '1',
+            'work_content_summary_attachment' => UploadedFile::fake()->create(
+                'english-work-content-summary.pdf',
+                320,
+                'application/pdf',
+            ),
             'cast_crew' => [
-                ['name' => 'Jordanian Lead', 'role' => 'Actor', 'nationality' => 'jordanian', 'gender' => 'male', 'birth_date' => '1990-03-15', 'identity_number' => '1234567890'],
+                ['name' => 'Jordanian Lead Test Actor', 'first_name' => 'Jordanian', 'second_name' => 'Lead', 'third_name' => 'Test', 'family_name' => 'Actor', 'role' => 'Actor', 'nationality' => 'jordanian', 'gender' => 'male', 'birth_date' => '1990-03-15', 'identity_number' => '1234567890', 'passport_image' => UploadedFile::fake()->image('ignored-jordanian-passport.png', 800, 600)->size(200)],
+                ['name' => 'International Supporting Actor', 'role' => 'Supporting actor', 'nationality' => 'egyptian', 'gender' => 'female', 'birth_date' => '1992-07-21', 'identity_number' => 'P9876543', 'passport_image' => UploadedFile::fake()->image('international-actor-passport.png', 800, 600)->size(280)],
             ],
             'filming_locations' => [
                 [
@@ -1355,12 +2029,19 @@ class ApplicationWorkflowTest extends TestCase
             'safety_guidelines_acknowledged' => '1',
             'safety_guidelines_notes' => 'No pyrotechnics. Traffic marshals requested.',
             'equipment_travelers' => [
-                ['traveler_name' => 'Equipment Handler', 'arrival_date' => '2026-04-28', 'arrival_flight_number' => 'RJ102', 'departure_date' => '2026-05-12', 'departure_flight_number' => 'RJ103'],
+                [
+                    'traveler_name' => 'Equipment Handler',
+                    'arrival_date' => '2026-04-28',
+                    'arrival_flight_number' => 'RJ102',
+                    'departure_date' => '2026-05-12',
+                    'departure_flight_number' => 'RJ103',
+                    'passport_image' => UploadedFile::fake()->image('equipment-handler-passport.jpg', 800, 600)->size(300),
+                ],
             ],
             'traveler_equipment_acknowledged' => '1',
             'imported_equipment' => [
-                ['transport_group' => 'shipping', 'shipping_company_name' => 'Jordan Freight', 'invoice_number' => 'INV-7788', 'bill_of_lading_number' => 'BL-7788', 'arrival_date' => '2026-04-28', 'departure_date' => '2026-05-12', 'customs_center' => 'queen_alia_international_airport'],
-                ['transport_group' => 'traveler', 'item' => 'Camera crane', 'serial_number' => 'CR-7788', 'flight_reference' => 'RJ102', 'traveler_name' => 'Equipment Handler', 'quantity' => 1, 'unit_value' => 9000, 'total_value' => 9000, 'classification' => 'camera_equipment', 'shipping_method' => 'luggage', 'origin_country' => 'Germany', 'entry_point' => 'queen_alia_international_airport'],
+                ['transport_group' => 'shipping', 'shipping_company_name' => 'Jordan Freight', 'invoice_number' => 'INV-7788', 'bill_of_lading_number' => '', 'arrival_date' => '2026-04-28', 'departure_date' => '', 'customs_center' => 'queen_alia_international_airport'],
+                ['transport_group' => 'traveler', 'item' => 'Camera crane', 'serial_number' => 'CR-7788', 'flight_reference' => 'RJ102', 'traveler_name' => 'Equipment Handler', 'quantity' => 3, 'unit_value' => 9000, 'total_value' => 1, 'classification' => 'camera_equipment', 'shipping_method' => 'luggage', 'origin_country' => 'Germany', 'entry_point' => 'queen_alia_international_airport'],
             ],
             'airport_filming_airport_name' => 'Queen Alia International Airport',
             'airport_filming_area' => 'Departures hall',
@@ -1379,6 +2060,11 @@ class ApplicationWorkflowTest extends TestCase
         $application = Application::query()->firstOrFail();
 
         $this->assertSame($workContentSummary, data_get($application->metadata, 'annex.work_content_summary.synopsis'));
+        $this->assertTrue(data_get($application->metadata, 'annex.production_terms.accepted'));
+        $this->assertSame('production_form_2025', data_get($application->metadata, 'annex.production_terms.version'));
+        $this->assertSame('Applicant Owner', data_get($application->metadata, 'annex.production_terms.local_applicant_name'));
+        $this->assertSame('Applicant Owner', data_get($application->metadata, 'annex.production_terms.local_signature'));
+        $this->assertSame('Global Partner', data_get($application->metadata, 'annex.production_terms.foreign_applicant_name'));
         $this->assertSame(['feature_film'], data_get($application->metadata, 'project.work_categories'));
         $this->assertSame('Hybrid docudrama', data_get($application->metadata, 'project.work_category_other'));
         $this->assertSame('2026-04-20', data_get($application->metadata, 'schedule.phases.preparation.start_date'));
@@ -1388,9 +2074,16 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertSame('liaison.global@example.com', data_get($application->metadata, 'international.account.email'));
         $this->assertTrue(data_get($application->metadata, 'international.account.read_only'));
         $this->assertTrue(data_get($application->metadata, 'annex.work_content_summary.confirmed'));
-        $this->assertSame('Jordanian Lead', data_get($application->metadata, 'annex.cast_crew.0.name'));
+        $this->assertSame('english-work-content-summary.pdf', data_get($application->metadata, 'annex.work_content_summary.attachment_name'));
+        Storage::disk('local')->assertExists(data_get($application->metadata, 'annex.work_content_summary.attachment_path'));
+        $this->assertSame('Jordanian Lead Test Actor', data_get($application->metadata, 'annex.cast_crew.0.name'));
         $this->assertSame('male', data_get($application->metadata, 'annex.cast_crew.0.gender'));
         $this->assertSame('1990-03-15', data_get($application->metadata, 'annex.cast_crew.0.birth_date'));
+        $this->assertNull(data_get($application->metadata, 'annex.cast_crew.0.passport_image_path'));
+        $this->assertSame('International Supporting Actor', data_get($application->metadata, 'annex.cast_crew.1.name'));
+        $this->assertSame('international-actor-passport.png', data_get($application->metadata, 'annex.cast_crew.1.passport_image_name'));
+        Storage::disk('local')->assertExists(data_get($application->metadata, 'annex.cast_crew.1.passport_image_path'));
+        $this->assertCount(1, Storage::disk('local')->allFiles('application-annex/cast-crew-passports'));
         $this->assertSame('Downtown Amman', data_get($application->metadata, 'annex.filming_locations.0.location_name'));
         $this->assertSame('GPS pin 31.9,35.9', data_get($application->metadata, 'annex.filming_locations.0.address'));
         $this->assertSame(['road_closures', 'police_presence'], data_get($application->metadata, 'annex.filming_locations.0.special_requirements'));
@@ -1398,10 +2091,16 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertSame('Road lockup from 6 AM', data_get($application->metadata, 'annex.special_location_requirements.road_closures.notes'));
         $this->assertSame(['Downtown Amman'], data_get($application->metadata, 'annex.special_location_requirements.police_presence.locations'));
         $this->assertSame('Equipment Handler', data_get($application->metadata, 'annex.equipment_travelers.0.traveler_name'));
+        $this->assertSame('equipment-handler-passport.jpg', data_get($application->metadata, 'annex.equipment_travelers.0.passport_image_name'));
+        Storage::disk('local')->assertExists(data_get($application->metadata, 'annex.equipment_travelers.0.passport_image_path'));
         $this->assertSame('Jordan Freight', data_get($application->metadata, 'annex.imported_equipment.0.shipping_company_name'));
         $this->assertSame('INV-7788', data_get($application->metadata, 'annex.imported_equipment.0.invoice_number'));
+        $this->assertNull(data_get($application->metadata, 'annex.imported_equipment.0.bill_of_lading_number'));
+        $this->assertNull(data_get($application->metadata, 'annex.imported_equipment.0.departure_date'));
         $this->assertSame('Camera crane', data_get($application->metadata, 'annex.imported_equipment.1.item'));
         $this->assertSame('RJ102', data_get($application->metadata, 'annex.imported_equipment.1.flight_reference'));
+        $this->assertEquals(27000, data_get($application->metadata, 'annex.imported_equipment.1.total_value'));
+        $this->assertArrayNotHasKey('shipping_method', data_get($application->metadata, 'annex.imported_equipment.1'));
         $this->assertNull(data_get($application->metadata, 'annex.military_border_locations'));
         $this->assertNull(data_get($application->metadata, 'annex.military_border_equipment'));
         $this->assertSame('Traffic escort', data_get($application->metadata, 'annex.public_security_support.0.requirement'));
@@ -1413,7 +2112,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $internationalUser = User::query()->where('email', 'liaison.global@example.com')->firstOrFail();
 
-        $this->assertTrue(Hash::check('International@12345', $internationalUser->password));
+        $this->assertTrue($internationalUser->requiresPasswordSetup());
         $this->assertTrue($internationalUser->entities()->whereKey($applicantEntity->getKey())->exists());
 
         $registrar = app(PermissionRegistrar::class);
@@ -1438,6 +2137,8 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSee('applicant-annex-table', false)
             ->assertSee('data-annex-add-button', false)
             ->assertSee('WorkContentSummary', false)
+            ->assertSee('ProductionTerms', false)
+            ->assertSeeText(__('app.applications.production_terms.legal_document'))
             ->assertDontSee('EquipmentMilitaryBorder', false)
             ->assertDontSee('PublicSecuritySupport', false)
             ->assertDontSee('MilitarySupport', false)
@@ -1450,11 +2151,30 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('View form')
             ->assertDontSeeText('Uploaded files')
             ->assertSeeText('Jordanian Lead')
+            ->assertSeeText('international-actor-passport.png')
             ->assertSeeText('Downtown Amman')
+            ->assertSee('attached-location-list', false)
+            ->assertSee('attached-location-card', false)
+            ->assertSee('attached-support-item', false)
             ->assertSeeText('GPS pin 31.9,35.9')
             ->assertSeeText('Traffic escort')
             ->assertSeeText('Military escort')
+            ->assertSeeText('equipment-handler-passport.jpg')
             ->assertSeeText('Queen Alia International Airport');
+
+        $foreignProducer = User::query()->findOrFail($application->foreignProducerUserId());
+
+        $foreignProducer->forceFill([
+            'must_change_password' => false,
+            'password_changed_at' => now(),
+        ])->save();
+
+        $this
+            ->actingAs($foreignProducer)
+            ->post(route('profile.foreign-producer.applications.declaration.store', $application), [
+                'declaration_accepted' => '1',
+            ])
+            ->assertSessionHasNoErrors();
 
         $this
             ->actingAs($applicant)
@@ -1470,6 +2190,7 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('INV-7788')
             ->assertSeeText('Camera crane')
             ->assertSeeText('Equipment Handler')
+            ->assertSeeText('international-actor-passport.png')
             ->assertSeeText('Traffic escort')
             ->assertSeeText('Military escort')
             ->assertSeeText('Airport Crew Member')
@@ -1525,6 +2246,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $application = Application::query()->firstOrFail();
         $originalWorkContentSummary = data_get($application->metadata, 'annex.work_content_summary.synopsis');
+        $this->assertTrue(data_get($application->metadata, 'annex.production_terms.accepted'));
 
         $this
             ->actingAs($applicant)
@@ -1549,7 +2271,7 @@ class ApplicationWorkflowTest extends TestCase
             'work_content_summary_synopsis' => $updatedWorkContentSummary,
             'work_content_summary_confirmed' => '1',
             'cast_crew' => [
-                ['name' => 'New Annex Actor', 'role' => 'Lead', 'nationality' => 'jordanian', 'gender' => 'female', 'birth_date' => '1995-08-20', 'identity_number' => '1234567890'],
+                ['name' => 'New Annex Test Actor', 'first_name' => 'New', 'second_name' => 'Annex', 'third_name' => 'Test', 'family_name' => 'Actor', 'role' => 'Lead', 'nationality' => 'jordanian', 'gender' => 'female', 'birth_date' => '1995-08-20', 'identity_number' => '1234567890'],
             ],
             'safety_guidelines_acknowledged' => '1',
             'airport_filming_airport_name' => 'Queen Alia International Airport',
@@ -1601,7 +2323,7 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertSame(ApplicationAnnexSubmission::STATUS_SUBMITTED, $submission->status);
         $this->assertSame($updatedWorkContentSummary, data_get($submission->payload, 'work_content_summary.synopsis'));
         $this->assertTrue(data_get($submission->payload, 'work_content_summary.confirmed'));
-        $this->assertSame('New Annex Actor', data_get($submission->payload, 'cast_crew.0.name'));
+        $this->assertSame('New Annex Test Actor', data_get($submission->payload, 'cast_crew.0.name'));
         $this->assertSame('female', data_get($submission->payload, 'cast_crew.0.gender'));
         $this->assertSame('1995-08-20', data_get($submission->payload, 'cast_crew.0.birth_date'));
         $this->assertSame('Queen Alia International Airport', data_get($submission->payload, 'airport_filming.airport_name'));
@@ -1629,7 +2351,7 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSee('WorkContentSummary', false)
             ->assertSeeText('Annex 1')
             ->assertSeeText('تصوير تصوير تصوير')
-            ->assertSeeText('New Annex Actor')
+            ->assertSeeText('New Annex Test Actor')
             ->assertSeeText('Patrol support')
             ->assertSeeText('Airport Access Lead');
 
@@ -1642,7 +2364,7 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Attached Annexes:')
             ->assertSeeText('Annex awaiting RFC review')
             ->assertSeeText('تصوير تصوير تصوير')
-            ->assertSeeText('New Annex Actor')
+            ->assertSeeText('New Annex Test Actor')
             ->assertSeeText('Patrol support');
 
         $this->actingAs($admin)->post(route('admin.applications.annex-submissions.review', [$application, $submission]), [
@@ -1655,7 +2377,7 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertSame(ApplicationAnnexSubmission::STATUS_APPROVED, $submission->status);
         $this->assertSame($updatedWorkContentSummary, data_get($application->metadata, 'annex.work_content_summary.synopsis'));
         $this->assertTrue(data_get($application->metadata, 'annex.work_content_summary.confirmed'));
-        $this->assertSame('New Annex Actor', data_get($application->metadata, 'annex.cast_crew.0.name'));
+        $this->assertSame('New Annex Test Actor', data_get($application->metadata, 'annex.cast_crew.0.name'));
         $this->assertSame('Queen Alia International Airport', data_get($application->metadata, 'annex.airport_filming.airport_name'));
         $this->assertSame('Patrol support', data_get($application->metadata, 'annex.public_security_support.0.requirement'));
         $this->assertSame('Reserve liaison', data_get($application->metadata, 'annex.military_support.0.requirement'));
@@ -2022,7 +2744,7 @@ class ApplicationWorkflowTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.applications.show', $application))
             ->assertOk()
-            ->assertSeeText('Facilitation book issued by')
+            ->assertSeeText('Official books prepared by')
             ->assertSeeText($admin->displayName());
         $this->assertDatabaseHas('application_official_letters', [
             'application_id' => $application->getKey(),
@@ -2412,10 +3134,25 @@ class ApplicationWorkflowTest extends TestCase
             data_get($application->fresh()->statusHistory()->latest('id')->first()?->metadata, 'type')
         );
 
+        $missingRecipientResponse = $this->actingAs($authorityUser)->post(route('authority.applications.correspondence.store', $application), [
+            'subject' => 'Missing Recipient',
+            'message' => 'This message must not be stored without a recipient.',
+        ]);
+
+        $missingRecipientResponse->assertSessionHasErrors('recipient_type');
+
+        $adminCorrespondenceCount = $admin->fresh()->unreadNotifications
+            ->where('data.type_key', 'application_correspondence')
+            ->count();
+        $applicantCorrespondenceCount = $applicant->fresh()->unreadNotifications
+            ->where('data.type_key', 'application_correspondence')
+            ->count();
+
         $correspondenceResponse = $this->actingAs($authorityUser)->post(route('authority.applications.correspondence.store', $application), [
-            'subject' => 'Authority Note',
+            'recipient_type' => ApplicationCorrespondence::RECIPIENT_RFC,
+            'subject' => 'RFC-only Authority Note',
             'message' => 'Security authority has approved the request.',
-            'attachment' => UploadedFile::fake()->create('authority-letter.pdf', 50, 'application/pdf'),
+            'attachment' => UploadedFile::fake()->create('rfc-authority-letter.pdf', 50, 'application/pdf'),
         ]);
 
         $correspondenceResponse->assertRedirect(route('authority.applications.show', $application));
@@ -2424,14 +3161,107 @@ class ApplicationWorkflowTest extends TestCase
             'application_id' => $application->getKey(),
             'sender_type' => 'authority',
             'sender_name' => $authorityEntity->displayName('en'),
-            'subject' => 'Authority Note',
+            'recipient_type' => ApplicationCorrespondence::RECIPIENT_RFC,
+            'subject' => 'RFC-only Authority Note',
         ]);
-        $this->assertTrue($admin->fresh()->unreadNotifications->contains(
-            fn ($notification) => data_get($notification->data, 'type_key') === 'application_correspondence'
-        ));
-        $this->assertTrue($applicant->fresh()->unreadNotifications->contains(
-            fn ($notification) => data_get($notification->data, 'type_key') === 'application_correspondence'
-        ));
+        $this->assertSame(
+            $adminCorrespondenceCount + 1,
+            $admin->fresh()->unreadNotifications->where('data.type_key', 'application_correspondence')->count(),
+        );
+        $this->assertSame(
+            $applicantCorrespondenceCount,
+            $applicant->fresh()->unreadNotifications->where('data.type_key', 'application_correspondence')->count(),
+        );
+
+        $applicantCorrespondenceResponse = $this->actingAs($authorityUser)->post(route('authority.applications.correspondence.store', $application), [
+            'recipient_type' => ApplicationCorrespondence::RECIPIENT_APPLICANT,
+            'subject' => 'Applicant-only Authority Note',
+            'message' => 'Please review the attached authority instructions.',
+            'attachment' => UploadedFile::fake()->create('applicant-authority-letter.pdf', 50, 'application/pdf'),
+        ]);
+
+        $applicantCorrespondenceResponse->assertRedirect(route('authority.applications.show', $application));
+
+        $this->assertDatabaseHas('application_correspondences', [
+            'application_id' => $application->getKey(),
+            'sender_type' => 'authority',
+            'recipient_type' => ApplicationCorrespondence::RECIPIENT_APPLICANT,
+            'subject' => 'Applicant-only Authority Note',
+        ]);
+        $this->assertSame(
+            $adminCorrespondenceCount + 1,
+            $admin->fresh()->unreadNotifications->where('data.type_key', 'application_correspondence')->count(),
+        );
+        $this->assertSame(
+            $applicantCorrespondenceCount + 1,
+            $applicant->fresh()->unreadNotifications->where('data.type_key', 'application_correspondence')->count(),
+        );
+
+        $sharedCorrespondenceResponse = $this->actingAs($authorityUser)->post(route('authority.applications.correspondence.store', $application), [
+            'recipient_type' => ApplicationCorrespondence::RECIPIENT_ALL,
+            'subject' => 'Shared Authority Note',
+            'message' => 'This authority message is addressed to the RFC and the applicant.',
+            'attachment' => UploadedFile::fake()->create('shared-authority-letter.pdf', 50, 'application/pdf'),
+        ]);
+
+        $sharedCorrespondenceResponse->assertRedirect(route('authority.applications.show', $application));
+
+        $this->assertDatabaseHas('application_correspondences', [
+            'application_id' => $application->getKey(),
+            'sender_type' => 'authority',
+            'recipient_type' => ApplicationCorrespondence::RECIPIENT_ALL,
+            'subject' => 'Shared Authority Note',
+        ]);
+        $this->assertSame(
+            $adminCorrespondenceCount + 2,
+            $admin->fresh()->unreadNotifications->where('data.type_key', 'application_correspondence')->count(),
+        );
+        $this->assertSame(
+            $applicantCorrespondenceCount + 2,
+            $applicant->fresh()->unreadNotifications->where('data.type_key', 'application_correspondence')->count(),
+        );
+
+        $rfcMessage = ApplicationCorrespondence::query()->where('subject', 'RFC-only Authority Note')->firstOrFail();
+        $applicantMessage = ApplicationCorrespondence::query()->where('subject', 'Applicant-only Authority Note')->firstOrFail();
+        $sharedMessage = ApplicationCorrespondence::query()->where('subject', 'Shared Authority Note')->firstOrFail();
+
+        $this->actingAs($admin)
+            ->get(route('admin.applications.show', $application))
+            ->assertOk()
+            ->assertSeeText('RFC-only Authority Note')
+            ->assertSeeText('Shared Authority Note')
+            ->assertDontSeeText('Applicant-only Authority Note');
+
+        $this->actingAs($applicant)
+            ->get(route('applications.show', $application))
+            ->assertOk()
+            ->assertSeeText('Applicant-only Authority Note')
+            ->assertSeeText('Shared Authority Note')
+            ->assertDontSeeText('RFC-only Authority Note');
+
+        $this->actingAs($admin)
+            ->get(route('admin.applications.correspondence.download', [$application, $sharedMessage]))
+            ->assertOk();
+
+        $this->actingAs($applicant)
+            ->get(route('applications.correspondence.download', [$application, $sharedMessage]))
+            ->assertOk();
+
+        $this->actingAs($applicant)
+            ->get(route('applications.correspondence.download', [$application, $rfcMessage]))
+            ->assertNotFound();
+
+        $this->actingAs($admin)
+            ->get(route('admin.applications.correspondence.download', [$application, $applicantMessage]))
+            ->assertNotFound();
+
+        $this->actingAs($authorityUser)
+            ->get(route('authority.applications.show', $application))
+            ->assertOk()
+            ->assertSee('data-correspondence-recipient-selector', false)
+            ->assertSeeText('Royal Film Commission (RFC)')
+            ->assertSeeText('Application submitter')
+            ->assertSeeText('RFC and applicant');
     }
 
     public function test_authority_page_shows_form_sections_that_drove_routing(): void
@@ -2497,6 +3327,137 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Traveler One')
             ->assertSee('data-authority-annex-sections="equipment_travelers,imported_equipment"', false)
             ->assertDontSee('authority-documents-table', false);
+    }
+
+    public function test_authority_can_request_structured_changes_and_only_its_review_reopens_after_resubmission(): void
+    {
+        Storage::fake('local');
+
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        [$applicant] = $this->createApplicantContext();
+        [$authorityUser] = $this->createAuthorityContext();
+
+        $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
+            'required_approvals' => ['public_security', 'environment'],
+        ]));
+
+        $application = Application::query()->firstOrFail();
+        $this->actingAs($applicant)->post(route('applications.submit', $application));
+        $this->routeApplicationToAuthorities($admin, $application);
+
+        $requestingApproval = ApplicationAuthorityApproval::query()
+            ->where('application_id', $application->getKey())
+            ->where('authority_code', 'public_security')
+            ->firstOrFail();
+        $completedApproval = ApplicationAuthorityApproval::query()
+            ->where('application_id', $application->getKey())
+            ->where('authority_code', 'environment')
+            ->firstOrFail();
+
+        $completedApproval->forceFill([
+            'status' => 'approved',
+            'note' => 'Environment approval remains final.',
+            'decided_at' => now(),
+        ])->save();
+
+        $changeResponse = $this->actingAs($authorityUser)->post(
+            route('authority.applications.approval.update', $application),
+            [
+                'status' => 'changes_requested',
+                'note' => 'Please correct the filming location information.',
+                'change_requests' => [
+                    [
+                        'section_key' => 'filming_locations',
+                        'details' => 'Add the complete street address and filming dates.',
+                        'attachment' => UploadedFile::fake()->create('location-guidance.pdf', 40, 'application/pdf'),
+                    ],
+                    [
+                        'section_key' => 'cast_crew',
+                        'details' => 'Correct the national number for the second crew member.',
+                    ],
+                ],
+            ],
+        );
+
+        $changeResponse->assertRedirect(route('authority.applications.show', $application));
+
+        $requestingApproval->refresh();
+        $application->refresh();
+
+        $this->assertSame('changes_requested', $requestingApproval->status);
+        $this->assertSame('needs_clarification', $application->status);
+        $this->assertSame('clarification', $application->current_stage);
+        $this->assertSame('approved', $completedApproval->fresh()->status);
+        $this->assertDatabaseCount('application_authority_change_requests', 2);
+        $this->assertDatabaseHas('application_authority_change_requests', [
+            'application_authority_approval_id' => $requestingApproval->getKey(),
+            'section_key' => 'filming_locations',
+            'status' => ApplicationAuthorityChangeRequest::STATUS_REQUESTED,
+            'requested_by_user_id' => $authorityUser->getKey(),
+        ]);
+
+        $storedAttachment = $requestingApproval->changeRequests()
+            ->where('section_key', 'filming_locations')
+            ->firstOrFail();
+        Storage::disk('local')->assertExists($storedAttachment->attachment_path);
+
+        $this->actingAs($authorityUser)
+            ->get(route('authority.applications.show', $application))
+            ->assertOk()
+            ->assertSeeText('Changes requested from the applicant')
+            ->assertSeeText('Add the complete street address and filming dates.')
+            ->assertDontSee('class="authority-decision-panel" enctype="multipart/form-data" data-authority-decision-form', false);
+
+        $this->actingAs($applicant)
+            ->get(route('applications.show', $application))
+            ->assertOk()
+            ->assertSeeText('Requested application corrections')
+            ->assertSeeText('Filming locations list')
+            ->assertSeeText('Correct the national number for the second crew member.');
+
+        $adminOverrideResponse = $this->actingAs($admin)->post(
+            route('admin.applications.approvals.update', [$application, $requestingApproval]),
+            [
+                'status' => 'approved',
+                'note' => 'This shortcut must remain blocked.',
+            ],
+        );
+
+        $adminOverrideResponse
+            ->assertRedirect(route('admin.applications.show', $application))
+            ->assertSessionHasErrors('status');
+        $this->assertSame('changes_requested', $requestingApproval->fresh()->status);
+
+        $this->actingAs($applicant)
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasNoErrors();
+
+        $application->refresh();
+        $requestingApproval->refresh();
+
+        $this->assertSame('under_review', $application->status);
+        $this->assertSame('authority_review', $application->current_stage);
+        $this->assertSame('pending', $requestingApproval->status);
+        $this->assertSame('approved', $completedApproval->fresh()->status);
+        $this->assertSame(
+            2,
+            $requestingApproval->changeRequests()
+                ->where('status', ApplicationAuthorityChangeRequest::STATUS_RESUBMITTED)
+                ->count(),
+        );
+        $this->assertTrue($authorityUser->fresh()->unreadNotifications->contains(
+            fn ($notification) => data_get($notification->data, 'type_key') === 'authority_changes_resubmitted'
+        ));
+
+        $this->actingAs($authorityUser)
+            ->get(route('authority.applications.show', $application))
+            ->assertOk()
+            ->assertSeeText('The applicant resubmitted these corrections for this authority to review.')
+            ->assertSee('class="authority-decision-panel" enctype="multipart/form-data" data-authority-decision-form', false);
     }
 
     public function test_authority_approval_requires_response_book_and_rfc_can_download_it(): void
@@ -2884,6 +3845,8 @@ class ApplicationWorkflowTest extends TestCase
         $delegateDashboard = $this->actingAs($delegate)->get(route('dashboard'));
         $delegateDashboard
             ->assertOk()
+            ->assertSee('data-authority-home-link', false)
+            ->assertSeeText('Home')
             ->assertSee('authority-requests-table', false)
             ->assertSeeText('My assigned approvals')
             ->assertSeeText('Shared inbox approvals')
@@ -4047,7 +5010,14 @@ class ApplicationWorkflowTest extends TestCase
             ->actingAs($foreignProducer)
             ->get(route('applications.show', $linkedApplication))
             ->assertOk()
-            ->assertSeeText('Linked International Feature');
+            ->assertSeeText('Linked International Feature')
+            ->assertDontSee('href="'.route('applications.edit', $linkedApplication).'"', false)
+            ->assertDontSeeText(__('app.applications.submit_action'));
+
+        $this
+            ->actingAs($foreignProducer)
+            ->get(route('applications.edit', $linkedApplication))
+            ->assertForbidden();
 
         $this
             ->actingAs($foreignProducer)
@@ -4479,6 +5449,124 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertStringNotContainsString('Airport Only Request', $content);
     }
 
+    public function test_application_forms_can_be_printed_with_results_for_each_allowed_role(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        [$applicant, $applicantEntity] = $this->createApplicantContext();
+        [$authorityUser, $authorityEntity] = $this->createAuthorityContext();
+
+        $application = Application::query()->create([
+            'code' => 'REQ-PRINT-001',
+            'entity_id' => $applicantEntity->getKey(),
+            'submitted_by_user_id' => $applicant->getKey(),
+            'project_name' => 'Printable Forms Project',
+            'project_nationality' => 'jordanian',
+            'work_category' => 'feature_film',
+            'release_method' => 'cinema',
+            'planned_start_date' => '2026-08-01',
+            'planned_end_date' => '2026-08-10',
+            'estimated_crew_count' => 8,
+            'status' => 'under_review',
+            'current_stage' => 'authority_review',
+            'metadata' => [
+                'annex' => [
+                    'work_content_summary' => [
+                        'synopsis' => 'ملخص عربي معد لنسخة الطباعة',
+                        'confirmed' => true,
+                    ],
+                    'cast_crew' => [[
+                        'name' => 'Printable Crew Member',
+                        'role' => 'Director',
+                        'nationality' => 'jordanian',
+                        'gender' => 'male',
+                        'birth_date' => '1990-01-01',
+                        'identity_number' => '1234567890',
+                    ]],
+                ],
+            ],
+        ]);
+
+        $routingRule = ApprovalRoutingRule::query()->create([
+            'name' => 'Printable cast and crew route',
+            'request_type' => 'application',
+            'approval_code' => 'public_security',
+            'target_entity_id' => $authorityEntity->getKey(),
+            'conditions' => ['annex_flags' => ['cast_crew']],
+            'priority' => 10,
+            'is_active' => true,
+        ]);
+
+        ApplicationAuthorityApproval::query()->create([
+            'application_id' => $application->getKey(),
+            'authority_code' => 'public_security',
+            'entity_id' => $authorityEntity->getKey(),
+            'approval_routing_rule_id' => $routingRule->getKey(),
+            'status' => 'pending',
+        ]);
+
+        $this->actingAs($applicant)
+            ->get(route('applications.show', $application))
+            ->assertOk()
+            ->assertSee(route('applications.forms.print', $application), false)
+            ->assertSee(route('applications.forms.print', $application).'?form=work_content_summary', false)
+            ->assertSee(route('applications.forms.print', $application).'?form=cast_crew', false)
+            ->assertSeeText('Print all forms');
+
+        $applicantPrint = $this->actingAs($applicant)
+            ->get(route('applications.forms.print', $application));
+
+        $applicantPrint
+            ->assertOk()
+            ->assertSeeText('All application forms')
+            ->assertSeeText('REQ-PRINT-001')
+            ->assertSeeText('Printable Forms Project')
+            ->assertSeeText('Printable Crew Member')
+            ->assertSee('data-print-form="work_content_summary"', false)
+            ->assertSee('data-print-form="cast_crew"', false)
+            ->assertSeeText('Form completed')
+            ->assertDontSeeText('Form not completed')
+            ->assertDontSee('data-print-form="governmental_scenes"', false)
+            ->assertSee('images/logo.svg', false)
+            ->assertDontSee('images/logo-full.png', false);
+
+        $this->actingAs($applicant)
+            ->get(route('applications.forms.print', $application).'?form=cast_crew')
+            ->assertOk()
+            ->assertSeeText('Cast and crew list')
+            ->assertSeeText('Printable Crew Member')
+            ->assertSee('data-print-form="cast_crew"', false)
+            ->assertDontSee('data-print-form="work_content_summary"', false)
+            ->assertDontSee('data-print-form="governmental_scenes"', false);
+
+        $this->actingAs($admin)
+            ->get(route('admin.applications.show', $application))
+            ->assertOk()
+            ->assertSee('data-bs-target="#WorkContentSummaryView"', false)
+            ->assertSee('data-bs-target="#CastCrewListView"', false)
+            ->assertDontSee('data-bs-target="#FilmingGovernmentalView"', false);
+
+        $this->actingAs($admin)
+            ->get(route('admin.applications.forms.print', $application))
+            ->assertOk()
+            ->assertSeeText('Printable Forms Project')
+            ->assertSee('data-print-form="work_content_summary"', false)
+            ->assertSee('data-print-form="cast_crew"', false)
+            ->assertDontSee('data-print-form="governmental_scenes"', false);
+
+        $authorityPrint = $this->actingAs($authorityUser)
+            ->get(route('authority.applications.forms.print', $application));
+
+        $authorityPrint
+            ->assertOk()
+            ->assertSeeText('Printable Crew Member')
+            ->assertSee('data-print-form="cast_crew"', false)
+            ->assertDontSee('data-print-form="work_content_summary"', false)
+            ->assertDontSee('data-print-form="airport_filming"', false);
+    }
+
     /**
      * @param  array<string, mixed>  $userOverrides
      * @param  array<string, mixed>  $entityOverrides
@@ -4489,9 +5577,6 @@ class ApplicationWorkflowTest extends TestCase
         $this->actingAs($admin)->post(route('admin.applications.review', $application), [
             'decision' => 'accepted',
         ])->assertRedirect(route('admin.applications.show', $application));
-
-        $this->actingAs($admin)->post(route('admin.applications.issue-facilitation-letter', $application))
-            ->assertRedirect(route('admin.applications.show', $application));
 
         $approvals = app(ApplicationAuthorityApprovalSyncService::class)->sync($application);
 
@@ -4716,6 +5801,7 @@ class ApplicationWorkflowTest extends TestCase
                 ],
             ],
             'safety_guidelines_acknowledged' => '1',
+            'production_terms_accepted' => '1',
             'work_content_summary_synopsis' => $this->arabicWorkContentSummary(),
             'work_content_summary_confirmed' => '1',
             'supporting_notes' => 'Need desert location and crowd management support.',

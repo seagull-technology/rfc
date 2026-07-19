@@ -6,7 +6,7 @@
 @push('styles')
     <style>
         .form-lookup-table {
-            min-width: 1080px;
+            min-width: 1560px;
         }
 
         .lookup-code {
@@ -133,6 +133,29 @@
                     <div class="col-lg-1 col-md-4 d-grid">
                         <button type="submit" class="btn btn-primary">{{ __('app.admin.form_lookups.create_action') }}</button>
                     </div>
+                    <div class="col-12" data-support-requirement-fields @if (old('type', $filters['type']) !== \App\Models\FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT) hidden @endif>
+                        <div class="border p-3">
+                            <div class="row g-3">
+                                <div class="col-lg-6">
+                                    <label for="new-entity-ids" class="form-label">{{ __('app.admin.form_lookups.authority_entities') }}</label>
+                                    <select id="new-entity-ids" name="entity_ids[]" class="form-select" multiple size="6">
+                                        @foreach ($authorityEntities as $entity)
+                                            <option value="{{ $entity->getKey() }}" @selected(in_array($entity->getKey(), array_map('intval', (array) old('entity_ids', [])), true))>{{ $entity->displayName() }}</option>
+                                        @endforeach
+                                    </select>
+                                    <div class="form-text">{{ __('app.admin.form_lookups.authority_entities_help') }}</div>
+                                </div>
+                                <div class="col-lg-3">
+                                    <label for="new-notes-prompt-en" class="form-label">{{ __('app.admin.form_lookups.notes_prompt_en') }}</label>
+                                    <textarea id="new-notes-prompt-en" name="notes_prompt_en" class="form-control" rows="5">{{ old('notes_prompt_en') }}</textarea>
+                                </div>
+                                <div class="col-lg-3">
+                                    <label for="new-notes-prompt-ar" class="form-label">{{ __('app.admin.form_lookups.notes_prompt_ar') }}</label>
+                                    <textarea id="new-notes-prompt-ar" name="notes_prompt_ar" class="form-control" rows="5">{{ old('notes_prompt_ar') }}</textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </form>
             </div>
         </div>
@@ -152,6 +175,8 @@
                                 <th>{{ __('app.admin.form_lookups.name_en') }}</th>
                                 <th>{{ __('app.admin.form_lookups.name_ar') }}</th>
                                 <th>{{ __('app.admin.form_lookups.sort_order') }}</th>
+                                <th>{{ __('app.admin.form_lookups.authority_entities') }}</th>
+                                <th>{{ __('app.admin.form_lookups.notes_prompt') }}</th>
                                 <th>{{ __('app.admin.form_lookups.availability') }}</th>
                                 <th>{{ __('app.admin.form_lookups.actions') }}</th>
                             </tr>
@@ -164,6 +189,25 @@
                                     <td><input form="option-update-{{ $option->getKey() }}" name="name_en" class="form-control" value="{{ $option->name_en }}" required></td>
                                     <td><input form="option-update-{{ $option->getKey() }}" name="name_ar" class="form-control" value="{{ $option->name_ar }}" required></td>
                                     <td><input form="option-update-{{ $option->getKey() }}" name="sort_order" type="number" min="0" class="form-control" value="{{ $option->sort_order }}"></td>
+                                    <td>
+                                        @if ($option->type === \App\Models\FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT)
+                                            <select form="option-update-{{ $option->getKey() }}" name="entity_ids[]" class="form-select" multiple size="5">
+                                                @foreach ($authorityEntities as $entity)
+                                                    <option value="{{ $entity->getKey() }}" @selected($option->entities->contains('id', $entity->getKey()))>{{ $entity->displayName() }}</option>
+                                                @endforeach
+                                            </select>
+                                        @else
+                                            <span class="text-muted">{{ __('app.dashboard.not_available') }}</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if ($option->type === \App\Models\FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT)
+                                            <input form="option-update-{{ $option->getKey() }}" name="notes_prompt_en" class="form-control mb-2" value="{{ data_get($option->metadata, 'notes_prompt_en') }}" placeholder="{{ __('app.admin.form_lookups.notes_prompt_en') }}">
+                                            <input form="option-update-{{ $option->getKey() }}" name="notes_prompt_ar" class="form-control" value="{{ data_get($option->metadata, 'notes_prompt_ar') }}" placeholder="{{ __('app.admin.form_lookups.notes_prompt_ar') }}">
+                                        @else
+                                            <span class="text-muted">{{ __('app.dashboard.not_available') }}</span>
+                                        @endif
+                                    </td>
                                     <td>
                                         <input form="option-update-{{ $option->getKey() }}" type="hidden" name="is_active" value="0">
                                         <input form="option-update-{{ $option->getKey() }}" id="option-active-{{ $option->getKey() }}" name="is_active" type="checkbox" class="form-check-input" value="1" @checked($option->is_active)>
@@ -186,7 +230,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="7" class="text-center text-muted py-5">{{ __('app.admin.form_lookups.empty') }}</td>
+                                    <td colspan="9" class="text-center text-muted py-5">{{ __('app.admin.form_lookups.empty') }}</td>
                                 </tr>
                             @endforelse
                         </tbody>
@@ -201,3 +245,20 @@
         </div>
     </div>
 @endsection
+
+@push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const typeSelect = document.getElementById('new-type');
+            const supportFields = document.querySelector('[data-support-requirement-fields]');
+
+            const syncSupportFields = () => {
+                if (!typeSelect || !supportFields) return;
+                supportFields.hidden = typeSelect.value !== @json(\App\Models\FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT);
+            };
+
+            typeSelect?.addEventListener('change', syncSupportFields);
+            syncSupportFields();
+        });
+    </script>
+@endpush

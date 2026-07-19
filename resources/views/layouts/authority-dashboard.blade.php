@@ -72,6 +72,14 @@
                     <div class="collapse navbar-collapse" id="navbarSupportedContent">
                         <ul class="mb-2 navbar-nav ms-auto align-items-center navbar-list mb-lg-0">
                             <li class="nav-item">
+                                <a href="{{ route('dashboard') }}"
+                                   class="nav-link d-flex align-items-center gap-2 {{ request()->routeIs('dashboard') ? 'active' : '' }}"
+                                   data-authority-home-link>
+                                    <i class="ph ph-house fs-4 align-middle" aria-hidden="true"></i>
+                                    <span>{{ __('app.authority.navigation.home') }}</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
                                 <a href="{{ \Mcamara\LaravelLocalization\Facades\LaravelLocalization::getLocalizedURL(app()->getLocale() === 'ar' ? 'en' : 'ar', null, [], true) }}" class="nav-link" id="langues-drop">
                                     {{ app()->getLocale() === 'ar' ? __('app.meta.english') : __('app.meta.arabic') }}
                                 </a>

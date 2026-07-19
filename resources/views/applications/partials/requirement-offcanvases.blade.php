@@ -2,12 +2,14 @@
     $annexSaveButtonAttributes = ($submitAnnexForms ?? false)
         ? 'type="submit"'
         : 'type="button" data-bs-dismiss="offcanvas"';
+    $annexSaveButtonAttributes .= ' data-annex-save';
     $annexSaveButtonAttributes .= ($annexSaveDisabled ?? false) ? ' disabled' : '';
+    $productionTerms = $productionTerms ?? data_get($annex ?? [], 'production_terms', []);
+    $ministryInteriorPersonalDetails = $ministryInteriorPersonalDetails ?? data_get($annex ?? [], 'ministry_interior_personal_details', []);
     $safetyGuidelinesRequired = ($requireSafetyGuidelines ?? true) ? 'required' : '';
     $filledFilter = static fn ($row): bool => collect($row)->filter(fn ($value) => filled($value))->isNotEmpty();
     $formLookupOptions = $formLookupOptions ?? [];
     $equipmentClassificationOptions = $equipmentClassificationOptions ?? collect(data_get($formLookupOptions, 'equipment_categories', []));
-    $equipmentShippingMethodOptions = $equipmentShippingMethodOptions ?? collect(data_get($formLookupOptions, 'equipment_shipping_methods', []));
     $equipmentEntryPointOptions = $equipmentEntryPointOptions ?? collect(data_get($formLookupOptions, 'equipment_entry_points', []));
     $airportOptions = $airportOptions ?? collect(data_get($formLookupOptions, 'airports', []));
     $specialLocationRequirementOptions = $specialLocationRequirementOptions ?? collect(data_get($formLookupOptions, 'special_location_requirements', []));
@@ -92,9 +94,9 @@
     $equipmentFlightRows = collect($equipmentFlightRows ?? old('equipment_flights', data_get($annex ?? [], 'equipment_flights', [['flight_type' => '', 'flight_number' => '', 'flight_date' => '', 'flight_time' => '', 'departure_city' => '', 'arrival_city' => '']])))
         ->values()
         ->whenEmpty(fn ($rows) => $rows->push(['flight_type' => '', 'flight_number' => '', 'flight_date' => '', 'flight_time' => '', 'departure_city' => '', 'arrival_city' => '']));
-    $equipmentTravelerRows = collect($equipmentTravelerRows ?? old('equipment_travelers', data_get($annex ?? [], 'equipment_travelers', [['traveler_name' => '', 'arrival_date' => '', 'arrival_flight_number' => '', 'departure_date' => '', 'departure_flight_number' => '']])))
+    $equipmentTravelerRows = collect($equipmentTravelerRows ?? old('equipment_travelers', data_get($annex ?? [], 'equipment_travelers', [['traveler_name' => '', 'arrival_date' => '', 'arrival_flight_number' => '', 'departure_date' => '', 'departure_flight_number' => '', 'passport_image_path' => '', 'passport_image_name' => '']])))
         ->values()
-        ->whenEmpty(fn ($rows) => $rows->push(['traveler_name' => '', 'arrival_date' => '', 'arrival_flight_number' => '', 'departure_date' => '', 'departure_flight_number' => '']));
+        ->whenEmpty(fn ($rows) => $rows->push(['traveler_name' => '', 'arrival_date' => '', 'arrival_flight_number' => '', 'departure_date' => '', 'departure_flight_number' => '', 'passport_image_path' => '', 'passport_image_name' => '']));
     $importedEquipmentRows = collect($importedEquipmentRows)
         ->values()
         ->whenEmpty(fn ($rows) => $rows->push(['transport_group' => 'shipping', 'shipping_company_name' => '', 'invoice_number' => '', 'bill_of_lading_number' => '', 'arrival_date' => '', 'departure_date' => '', 'customs_center' => '', 'attachment_path' => '', 'attachment_name' => '']));
@@ -105,10 +107,17 @@
     $travelerEquipmentRows = collect($importedEquipmentRows)
         ->filter(fn ($row) => data_get($row, 'transport_group') === 'traveler')
         ->values()
-        ->whenEmpty(fn ($rows) => $rows->push(['transport_group' => 'traveler', 'item' => '', 'serial_number' => '', 'traveler_name' => '', 'quantity' => '', 'unit_value' => '', 'total_value' => '', 'classification' => '', 'shipping_method' => '', 'entry_point' => '']));
+        ->whenEmpty(fn ($rows) => $rows->push(['transport_group' => 'traveler', 'item' => '', 'serial_number' => '', 'traveler_name' => '', 'quantity' => '', 'unit_value' => '', 'total_value' => '', 'classification' => '', 'entry_point' => '']));
     $castCrewNationalityOptions = collect($directorNationalityOptions ?? data_get($nationalityOptions ?? [], 'director', []));
     $airportPeopleNationalityOptions = $castCrewNationalityOptions;
     $travelerCustomsProjectName = old('project_name', data_get($application ?? null, 'project_name', ''));
+    $savedWorkCategory = old(
+        'work_category',
+        data_get($application ?? null, 'work_category')
+            ?: data_get($application ?? null, 'metadata.project.work_categories.0')
+    );
+    $selectedWorkSummaryMinWords = $selectedWorkSummaryMinWords
+        ?? \App\Models\WorkCategory::workSummaryMinWordsFor($savedWorkCategory);
 @endphp
 
 @once
@@ -307,6 +316,27 @@
     </style>
 @endonce
 
+<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="ProductionTerms">
+    <div class="offcanvas-header">
+        <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.production_terms') }}</span></h2>
+        <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
+    </div>
+    <div class="offcanvas-body">
+        <div class="section-form">
+            @include('applications.partials.production-terms-form', [
+                'productionTerms' => $productionTerms,
+                'productionTermsReadOnly' => false,
+            ])
+        </div>
+    </div>
+    <div class="offcanvas-footer border-top">
+        <div class="d-flex gap-3 p-3 justify-content-end">
+            <button {!! $annexSaveButtonAttributes !!} class="btn btn-danger d-flex align-items-center gap-2"><i class="ph-fill ph-floppy-disk-back"></i>{{ __('app.save') }}</button>
+            <button type="button" class="btn btn-outline-primary d-flex align-items-center gap-2" data-bs-dismiss="offcanvas"><i class="ph ph-caret-double-left"></i>{{ __('app.close') }}</button>
+        </div>
+    </div>
+</div>
+
 <div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="WorkContentSummary">
     <div class="offcanvas-header">
         <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.work_content_summary') }}</span></h2>
@@ -317,13 +347,34 @@
             <div class="form-group">
                 <p class="text-danger fontSize13 fw-600">
                     <i class="ph ph-info fa-xl me-2 lh-lg"></i>
-                    <span>{{ __('app.applications.work_summary_instruction') }}</span>
+                    <span data-work-summary-instruction>{{ __('app.applications.work_summary_instruction', ['min' => $selectedWorkSummaryMinWords]) }}</span>
                 </p>
-                <textarea class="form-control" name="work_content_summary_synopsis" rows="15" required data-work-summary-input data-work-summary-min-words="500" data-work-summary-counter="#work_content_summary_word_count_drawer">{{ old('work_content_summary_synopsis', data_get($workContentSummary, 'synopsis')) }}</textarea>
+                <textarea class="form-control" name="work_content_summary_synopsis" rows="15" required data-work-summary-input data-work-summary-min-words="{{ $selectedWorkSummaryMinWords }}" data-work-summary-counter="#work_content_summary_word_count_drawer">{{ old('work_content_summary_synopsis', data_get($workContentSummary, 'synopsis')) }}</textarea>
                 <div class="d-flex justify-content-between gap-3 flex-wrap small mt-2">
                     <span class="text-muted">{{ __('app.applications.work_summary_arabic_only_hint') }}</span>
                     <span id="work_content_summary_word_count_drawer" class="text-muted" aria-live="polite"></span>
                 </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="work_content_summary_attachment_drawer">{{ __('app.applications.annex_fields.work_summary_english_attachment') }}</label>
+                <p class="text-muted small mb-2">
+                    <i class="ph ph-info me-1"></i>{{ __('app.applications.annex_fields.work_summary_english_attachment_note') }}
+                </p>
+                <input
+                    type="file"
+                    class="form-control"
+                    id="work_content_summary_attachment_drawer"
+                    name="work_content_summary_attachment"
+                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                >
+                @foreach (['path', 'name', 'mime_type', 'size', 'uploaded_at'] as $attachmentField)
+                    <input type="hidden" name="work_content_summary_attachment_{{ $attachmentField }}" value="{{ old('work_content_summary_attachment_'.$attachmentField, data_get($workContentSummary, 'attachment_'.$attachmentField)) }}">
+                @endforeach
+                @if (filled(data_get($workContentSummary, 'attachment_name')))
+                    <div class="small text-muted mt-2 text-break">
+                        <i class="ph ph-file-text me-1"></i>{{ data_get($workContentSummary, 'attachment_name') }}
+                    </div>
+                @endif
             </div>
             <div class="form-check form-group">
                 <input type="hidden" name="work_content_summary_confirmed" value="0">
@@ -365,12 +416,18 @@
 	                            <th>{{ __('app.applications.annex_fields.gender') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.birth_date') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.identity_number') }}</th>
+	                            <th class="d-none" data-cast-crew-passport-heading>{{ __('app.applications.annex_fields.passport_image') }}</th>
 	                            <th>{{ __('app.applications.actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach ($castCrewRows as $index => $row)
                             @php
+                                $castCrewNationalityText = trim((string) ($row['nationality'] ?? ''));
+                                $legacyJordanianNationalities = ['jordanian', 'Jordanian', 'أردني', 'اردني'];
+                                $castCrewNationalityValue = in_array($castCrewNationalityText, $legacyJordanianNationalities, true) ? 'jordanian' : $castCrewNationalityText;
+                                $castCrewIsJordanian = $castCrewNationalityValue === 'jordanian';
+                                $castCrewShowsPassportImage = filled($castCrewNationalityValue) && ! $castCrewIsJordanian;
                                 $castCrewNameParts = preg_split('/\s+/', trim((string) ($row['name'] ?? '')), 4) ?: [];
                                 $castCrewFirstName = $row['first_name'] ?? ($castCrewNameParts[0] ?? '');
                                 $castCrewSecondName = $row['second_name'] ?? ($castCrewNameParts[1] ?? '');
@@ -380,37 +437,51 @@
                             <tr>
                                 <td class="row-number">{{ $loop->iteration }}</td>
                                 <td>
-                                    <select class="form-select" name="cast_crew[{{ $index }}][nationality]" data-cast-crew-nationality>
+                                    <select class="form-select" name="cast_crew[{{ $index }}][nationality]" data-cast-crew-nationality required>
                                         <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                        @if (filled($row['nationality'] ?? null) && ! $castCrewNationalityOptions->contains('code', $row['nationality']))
-                                            <option value="{{ $row['nationality'] }}" selected>{{ \App\Models\Nationality::labelFor($row['nationality']) }}</option>
+                                        @if (filled($castCrewNationalityValue) && ! $castCrewNationalityOptions->contains('code', $castCrewNationalityValue))
+                                            <option value="{{ $castCrewNationalityValue }}" selected>{{ \App\Models\Nationality::labelFor($castCrewNationalityValue) }}</option>
                                         @endif
                                         @foreach ($castCrewNationalityOptions as $nationality)
-                                            <option value="{{ $nationality->code }}" @selected(($row['nationality'] ?? '') === $nationality->code)>{{ $nationality->displayName() }}</option>
+                                            <option value="{{ $nationality->code }}" @selected($castCrewNationalityValue === $nationality->code)>{{ $nationality->displayName() }}</option>
 	                                        @endforeach
 	                                    </select>
 	                                </td>
                                 <td class="cast-crew-name-cell">
                                     <input type="hidden" name="cast_crew[{{ $index }}][name]" value="{{ $row['name'] ?? '' }}" data-cast-crew-name-output>
-                                    <div class="row g-2 cast-crew-jordanian-name d-none" data-cast-crew-jordanian-name>
-                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][first_name]" value="{{ $castCrewFirstName }}" placeholder="{{ __('app.applications.annex_fields.first_name') }}" data-cast-crew-name-part></div>
-                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][second_name]" value="{{ $castCrewSecondName }}" placeholder="{{ __('app.applications.annex_fields.second_name') }}" data-cast-crew-name-part></div>
-                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][third_name]" value="{{ $castCrewThirdName }}" placeholder="{{ __('app.applications.annex_fields.third_name') }}" data-cast-crew-name-part></div>
-                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][family_name]" value="{{ $castCrewFamilyName }}" placeholder="{{ __('app.applications.annex_fields.family_name') }}" data-cast-crew-name-part></div>
+                                    <div class="row g-2 cast-crew-jordanian-name {{ $castCrewIsJordanian ? '' : 'd-none' }}" data-cast-crew-jordanian-name>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][first_name]" value="{{ $castCrewFirstName }}" placeholder="{{ __('app.applications.annex_fields.first_name') }}" data-cast-crew-name-part @required($castCrewIsJordanian) @disabled(! $castCrewIsJordanian)></div>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][second_name]" value="{{ $castCrewSecondName }}" placeholder="{{ __('app.applications.annex_fields.second_name') }}" data-cast-crew-name-part @required($castCrewIsJordanian) @disabled(! $castCrewIsJordanian)></div>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][third_name]" value="{{ $castCrewThirdName }}" placeholder="{{ __('app.applications.annex_fields.third_name') }}" data-cast-crew-name-part @required($castCrewIsJordanian) @disabled(! $castCrewIsJordanian)></div>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][family_name]" value="{{ $castCrewFamilyName }}" placeholder="{{ __('app.applications.annex_fields.family_name') }}" data-cast-crew-name-part @required($castCrewIsJordanian) @disabled(! $castCrewIsJordanian)></div>
                                     </div>
-                                    <input type="text" class="form-control" value="{{ $row['name'] ?? '' }}" data-cast-crew-full-name-input>
+                                    <input type="text" class="form-control {{ $castCrewIsJordanian ? 'd-none' : '' }}" value="{{ $row['name'] ?? '' }}" data-cast-crew-full-name-input @required(! $castCrewIsJordanian)>
                                 </td>
-                                <td><input type="text" class="form-control" name="cast_crew[{{ $index }}][role]" value="{{ $row['role'] ?? '' }}"></td>
+                                <td><input type="text" class="form-control" name="cast_crew[{{ $index }}][role]" value="{{ $row['role'] ?? '' }}" required></td>
 	                                <td>
-	                                    <select class="form-select" name="cast_crew[{{ $index }}][gender]">
+	                                    <select class="form-select" name="cast_crew[{{ $index }}][gender]" required>
 	                                        <option value="">{{ __('app.admin.select_placeholder') }}</option>
 	                                        @foreach (['male', 'female'] as $gender)
 	                                            <option value="{{ $gender }}" @selected(($row['gender'] ?? '') === $gender)>{{ __('app.auth.gender_options.'.$gender) }}</option>
 	                                        @endforeach
 	                                    </select>
 	                                </td>
-	                                <td><input type="date" class="form-control" name="cast_crew[{{ $index }}][birth_date]" value="{{ $row['birth_date'] ?? '' }}" max="{{ $maxCrewBirthDate }}"></td>
-	                                <td><input type="text" class="form-control" name="cast_crew[{{ $index }}][identity_number]" value="{{ $row['identity_number'] ?? '' }}"></td>
+	                                <td><input type="date" class="form-control" name="cast_crew[{{ $index }}][birth_date]" value="{{ $row['birth_date'] ?? '' }}" max="{{ $maxCrewBirthDate }}" required></td>
+	                                <td>
+	                                    <input type="text" class="form-control" name="cast_crew[{{ $index }}][identity_number]" value="{{ $row['identity_number'] ?? '' }}" placeholder="{{ $castCrewIsJordanian ? __('app.applications.annex_fields.national_id') : __('app.applications.annex_fields.passport_number') }}" inputmode="{{ $castCrewIsJordanian ? 'numeric' : 'text' }}" required @if ($castCrewIsJordanian) minlength="10" maxlength="10" pattern="\d{10}" @endif data-cast-crew-identity>
+	                                    <div class="invalid-feedback" data-cast-crew-identity-feedback>{{ __('app.applications.cast_crew_national_id_digits') }}</div>
+	                                </td>
+	                                <td class="d-none" data-cast-crew-passport-cell>
+	                                    <div class="{{ $castCrewShowsPassportImage ? '' : 'd-none' }}" data-cast-crew-passport-image>
+	                                        <input type="file" class="form-control" name="cast_crew[{{ $index }}][passport_image]" accept="image/jpeg,image/png,.jpg,.jpeg,.png" @disabled(! $castCrewShowsPassportImage)>
+	                                        @foreach (['path', 'name', 'mime_type', 'size', 'uploaded_at'] as $passportField)
+	                                            <input type="hidden" name="cast_crew[{{ $index }}][passport_image_{{ $passportField }}]" value="{{ $row['passport_image_'.$passportField] ?? '' }}" @disabled(! $castCrewShowsPassportImage)>
+	                                        @endforeach
+	                                        @if (filled($row['passport_image_name'] ?? null))
+	                                            <small class="text-muted d-block mt-1">{{ $row['passport_image_name'] }}</small>
+	                                        @endif
+	                                    </div>
+	                                </td>
                                 <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeApplicationAnnexRow(this, '#castCrewRequestTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
                             </tr>
                         @endforeach
@@ -450,6 +521,9 @@
                     </tbody>
                 </table>
             </div>
+            @include('applications.partials.location-support-requirements-editor', [
+                'locationTableId' => 'filmingLocationsRequestTable',
+            ])
         </div>
     </div>
     <div class="offcanvas-footer border-top">
@@ -494,6 +568,29 @@
                 <label class="form-label">{{ __('app.applications.annex_fields.safety_notes') }}</label>
                 <textarea class="form-control" name="safety_guidelines_notes" rows="4">{{ old('safety_guidelines_notes', data_get($safetyGuidelines, 'notes')) }}</textarea>
             </div>
+        </div>
+    </div>
+    <div class="offcanvas-footer border-top">
+        <div class="d-flex gap-3 p-3 justify-content-end">
+            <button {!! $annexSaveButtonAttributes !!} class="btn btn-danger d-flex align-items-center gap-2"><i class="ph-fill ph-floppy-disk-back"></i>{{ __('app.save') }}</button>
+            <button type="button" class="btn btn-outline-primary d-flex align-items-center gap-2" data-bs-dismiss="offcanvas"><i class="ph ph-caret-double-left"></i>{{ __('app.close') }}</button>
+        </div>
+    </div>
+</div>
+
+<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="MinistryInteriorPersonalDetails">
+    <div class="offcanvas-header">
+        <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.ministry_interior_personal_details') }}</span></h2>
+        <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
+    </div>
+    <div class="offcanvas-body">
+        <div class="section-form">
+            @include('applications.partials.ministry-interior-personal-details-form', [
+                'ministryInteriorPersonalDetails' => $ministryInteriorPersonalDetails,
+                'ministryInteriorPersonalDetailsReadOnly' => false,
+                'ministryInteriorPersonalDetailsIdPrefix' => 'ministry_interior_personal_details_drawer',
+                'ministryNationalityOptions' => $castCrewNationalityOptions,
+            ])
         </div>
     </div>
     <div class="offcanvas-footer border-top">
@@ -610,6 +707,7 @@
                                 <th>{{ __('app.applications.annex_fields.flight_number') }}</th>
                                 <th>{{ __('app.applications.annex_fields.departure_date') }}</th>
                                 <th>{{ __('app.applications.annex_fields.departure_flight_number') }}</th>
+                                <th>{{ __('app.applications.annex_fields.passport_image') }}</th>
                                 <th>{{ __('app.applications.actions') }}</th>
                             </tr>
                         </thead>
@@ -622,6 +720,15 @@
                                     <td><input type="text" class="form-control" name="equipment_travelers[{{ $index }}][arrival_flight_number]" value="{{ $row['arrival_flight_number'] ?? '' }}"></td>
                                     <td><input type="date" class="form-control" name="equipment_travelers[{{ $index }}][departure_date]" value="{{ $row['departure_date'] ?? '' }}"></td>
                                     <td><input type="text" class="form-control" name="equipment_travelers[{{ $index }}][departure_flight_number]" value="{{ $row['departure_flight_number'] ?? '' }}"></td>
+                                    <td>
+                                        <input type="file" class="form-control" name="equipment_travelers[{{ $index }}][passport_image]" accept="image/jpeg,image/png,.jpg,.jpeg,.png">
+                                        @foreach (['passport_image_path', 'passport_image_name', 'passport_image_mime_type', 'passport_image_size', 'passport_image_uploaded_at'] as $passportField)
+                                            <input type="hidden" name="equipment_travelers[{{ $index }}][{{ $passportField }}]" value="{{ $row[$passportField] ?? '' }}">
+                                        @endforeach
+                                        @if (filled($row['passport_image_name'] ?? null))
+                                            <div class="small text-muted mt-1 text-break">{{ $row['passport_image_name'] }}</div>
+                                        @endif
+                                    </td>
                                     <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeApplicationAnnexRow(this, '#equipmentTravelersTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
                                 </tr>
                             @endforeach
@@ -645,7 +752,6 @@
                                 <th>{{ __('app.applications.annex_fields.unit_value_usd') }}</th>
                                 <th>{{ __('app.applications.annex_fields.total_value') }}</th>
                                 <th>{{ __('app.applications.annex_fields.classification') }}</th>
-                                <th>{{ __('app.applications.annex_fields.shipping_method') }}</th>
                                 <th>{{ __('app.applications.annex_fields.entry_point') }}</th>
                                 <th>{{ __('app.applications.actions') }}</th>
                             </tr>
@@ -680,9 +786,9 @@
                                             @endif
                                         </select>
                                     </td>
-                                    <td><input type="number" min="0" class="form-control" name="imported_equipment[{{ $rowKey }}][quantity]" value="{{ $row['quantity'] ?? '' }}"></td>
-                                    <td><input type="number" step="0.01" min="0" class="form-control" name="imported_equipment[{{ $rowKey }}][unit_value]" value="{{ $row['unit_value'] ?? '' }}"></td>
-                                    <td><input type="number" step="0.01" min="0" class="form-control" name="imported_equipment[{{ $rowKey }}][total_value]" value="{{ $row['total_value'] ?? '' }}"></td>
+                                    <td><input type="number" min="0" class="form-control" name="imported_equipment[{{ $rowKey }}][quantity]" value="{{ $row['quantity'] ?? '' }}" data-equipment-quantity></td>
+                                    <td><input type="number" step="0.01" min="0" class="form-control" name="imported_equipment[{{ $rowKey }}][unit_value]" value="{{ $row['unit_value'] ?? '' }}" data-equipment-unit-value></td>
+                                    <td><input type="number" step="0.01" min="0" class="form-control" name="imported_equipment[{{ $rowKey }}][total_value]" value="{{ $row['total_value'] ?? '' }}" data-equipment-row-total readonly></td>
                                     <td>
                                         @php
                                             $selectedClassification = (string) ($row['classification'] ?? '');
@@ -694,20 +800,6 @@
                                             @endif
                                             @foreach ($equipmentClassificationOptions as $option)
                                                 <option value="{{ $option->code }}" @selected($selectedClassification === $option->code)>{{ $option->displayName() }}</option>
-                                            @endforeach
-                                        </select>
-                                    </td>
-                                    <td>
-                                        @php
-                                            $selectedShippingMethod = (string) ($row['shipping_method'] ?? '');
-                                        @endphp
-                                        <select class="form-select" name="imported_equipment[{{ $rowKey }}][shipping_method]">
-                                            <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                            @if (filled($selectedShippingMethod) && ! $equipmentShippingMethodOptions->contains('code', $selectedShippingMethod))
-                                                <option value="{{ $selectedShippingMethod }}" selected>{{ $selectedShippingMethod }}</option>
-                                            @endif
-                                            @foreach ($equipmentShippingMethodOptions as $option)
-                                                <option value="{{ $option->code }}" @selected($selectedShippingMethod === $option->code)>{{ $option->displayName() }}</option>
                                             @endforeach
                                         </select>
                                     </td>
@@ -788,8 +880,20 @@
                     <input type="number" min="0" class="form-control" name="airport_filming_crew_count" value="{{ old('airport_filming_crew_count', data_get($airportFilming, 'crew_count')) }}">
                 </div>
             </div>
-            <div class="d-flex justify-content-end py-3">
+            <div class="d-flex justify-content-end align-items-center gap-2 py-3 flex-wrap">
+                <button
+                    type="button"
+                    class="btn btn-outline-primary"
+                    data-import-cast-crew-to-airport
+                    data-empty-message="{{ __('app.applications.import_cast_crew_to_airport_empty') }}"
+                    data-success-message="{{ __('app.applications.import_cast_crew_to_airport_success') }}"
+                    data-no-new-message="{{ __('app.applications.import_cast_crew_to_airport_no_new') }}"
+                    onclick="importApplicationCastCrewToAirportPeople(this)"
+                >
+                    <i class="ph ph-download-simple me-2"></i>{{ __('app.applications.import_cast_crew_to_airport') }}
+                </button>
                 <button type="button" class="btn btn-success" onclick="addApplicationAnnexRow('airportPeopleTable', 'airport_people')"><i class="fa-solid fa-plus me-2"></i>{{ __('app.add') }}</button>
+                <span class="small text-muted w-100 text-end" data-airport-crew-import-status aria-live="polite"></span>
             </div>
             <div class="table-responsive">
                 <table class="table align-middle" id="airportPeopleTable">
@@ -878,6 +982,227 @@
     </div>
 </div>
 
+@once
+    @push('scripts')
+        <script>
+            (function () {
+                function normalizedValue(value) {
+                    return String(value || '').trim().replace(/\s+/g, ' ');
+                }
+
+                function namedControlValue(row, suffix) {
+                    return normalizedValue(row.querySelector('[name$="[' + suffix + ']"]')?.value);
+                }
+
+                function personKey(person) {
+                    const identity = normalizedValue(person.identityNumber).toLowerCase();
+
+                    if (identity !== '') {
+                        return 'identity:' + identity;
+                    }
+
+                    return 'name:' + normalizedValue(person.nationality).toLowerCase()
+                        + ':' + normalizedValue(person.fullName).toLowerCase();
+                }
+
+                function castCrewPerson(row) {
+                    const nationalityControl = row.querySelector('[data-cast-crew-nationality]');
+                    const nationality = normalizedValue(nationalityControl?.value);
+                    const nameParts = ['first_name', 'second_name', 'third_name', 'family_name'].map(function (part) {
+                        return namedControlValue(row, part);
+                    });
+                    const splitName = nameParts.filter(Boolean).join(' ');
+                    const fullName = splitName
+                        || normalizedValue(row.querySelector('[data-cast-crew-full-name-input]')?.value)
+                        || normalizedValue(row.querySelector('[data-cast-crew-name-output]')?.value);
+                    const identityNumber = namedControlValue(row, 'identity_number');
+
+                    if (fullName === '' && identityNumber === '') {
+                        return null;
+                    }
+
+                    return {
+                        nationality: nationality,
+                        nationalityLabel: normalizedValue(nationalityControl?.selectedOptions?.[0]?.textContent),
+                        fullName: fullName,
+                        nameParts: nameParts,
+                        identityNumber: identityNumber,
+                        profession: namedControlValue(row, 'role'),
+                    };
+                }
+
+                function airportPerson(row) {
+                    const nameParts = ['first_name', 'second_name', 'third_name', 'family_name'].map(function (part) {
+                        return namedControlValue(row, part);
+                    });
+
+                    return {
+                        nationality: normalizedValue(row.querySelector('[data-airport-person-nationality]')?.value),
+                        fullName: nameParts.filter(Boolean).join(' ')
+                            || normalizedValue(row.querySelector('[data-airport-person-full-name-input]')?.value)
+                            || normalizedValue(row.querySelector('[data-airport-person-name-output]')?.value),
+                        identityNumber: namedControlValue(row, 'identity_number'),
+                    };
+                }
+
+                function airportRowIsEmpty(row) {
+                    return [
+                        row.querySelector('[data-airport-person-nationality]')?.value,
+                        row.querySelector('[data-airport-person-name-output]')?.value,
+                        row.querySelector('[data-airport-person-full-name-input]')?.value,
+                        namedControlValue(row, 'first_name'),
+                        namedControlValue(row, 'second_name'),
+                        namedControlValue(row, 'third_name'),
+                        namedControlValue(row, 'family_name'),
+                        namedControlValue(row, 'mother_name'),
+                        namedControlValue(row, 'identity_number'),
+                        namedControlValue(row, 'profession'),
+                        namedControlValue(row, 'address_phone'),
+                        namedControlValue(row, 'entry_reason'),
+                        namedControlValue(row, 'target_area'),
+                    ].every(function (value) {
+                        return normalizedValue(value) === '';
+                    });
+                }
+
+                function ensureSelectValue(select, value, label) {
+                    if (!select || value === '') {
+                        return;
+                    }
+
+                    const hasOption = Array.from(select.options).some(function (option) {
+                        return option.value === value;
+                    });
+
+                    if (!hasOption) {
+                        select.add(new Option(label || value, value));
+                    }
+
+                    select.value = value;
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+
+                function fillAirportRow(row, person) {
+                    const nationality = row.querySelector('[data-airport-person-nationality]');
+                    ensureSelectValue(nationality, person.nationality, person.nationalityLabel);
+
+                    const isJordanian = normalizedValue(person.nationality).toLowerCase() === 'jordanian';
+                    const sourceParts = person.nameParts.filter(Boolean).length > 0
+                        ? person.nameParts
+                        : normalizedValue(person.fullName).split(' ');
+
+                    if (isJordanian) {
+                        ['first_name', 'second_name', 'third_name', 'family_name'].forEach(function (part, index) {
+                            const field = row.querySelector('[name$="[' + part + ']"]');
+
+                            if (field) {
+                                field.value = index === 3 ? sourceParts.slice(3).join(' ') : (sourceParts[index] || '');
+                            }
+                        });
+                    } else {
+                        const fullName = row.querySelector('[data-airport-person-full-name-input]');
+
+                        if (fullName) {
+                            fullName.value = person.fullName;
+                        }
+                    }
+
+                    const nameOutput = row.querySelector('[data-airport-person-name-output]');
+                    const identity = row.querySelector('[data-airport-person-identity]');
+                    const profession = row.querySelector('[name$="[profession]"]');
+
+                    if (nameOutput) {
+                        nameOutput.value = person.fullName;
+                    }
+
+                    if (identity) {
+                        identity.value = person.identityNumber;
+                    }
+
+                    if (profession) {
+                        profession.value = person.profession;
+                    }
+
+                    const nameTrigger = isJordanian
+                        ? row.querySelector('[data-airport-person-name-part]')
+                        : row.querySelector('[data-airport-person-full-name-input]');
+                    nameTrigger?.dispatchEvent(new Event('input', { bubbles: true }));
+                    identity?.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+
+                function showImportStatus(button, message, isSuccess) {
+                    const status = button.closest('.section-form')?.querySelector('[data-airport-crew-import-status]');
+
+                    if (!status) {
+                        return;
+                    }
+
+                    status.textContent = message;
+                    status.classList.toggle('text-success', isSuccess);
+                    status.classList.toggle('text-muted', !isSuccess);
+                }
+
+                window.importApplicationCastCrewToAirportPeople = function (button) {
+                    const sourceTable = document.getElementById('castCrewRequestTable') || document.getElementById('castCrewTable');
+                    const destinationTable = document.getElementById('airportPeopleTable');
+
+                    if (!sourceTable || !destinationTable) {
+                        showImportStatus(button, button.dataset.emptyMessage || '', false);
+                        return;
+                    }
+
+                    const people = Array.from(sourceTable.querySelectorAll('tbody tr'))
+                        .map(castCrewPerson)
+                        .filter(Boolean);
+
+                    if (people.length === 0) {
+                        showImportStatus(button, button.dataset.emptyMessage || '', false);
+                        return;
+                    }
+
+                    const destinationBody = destinationTable.querySelector('tbody');
+                    const existingKeys = new Set(Array.from(destinationBody.querySelectorAll('tr'))
+                        .filter(function (row) { return !airportRowIsEmpty(row); })
+                        .map(function (row) { return personKey(airportPerson(row)); }));
+                    const emptyRows = Array.from(destinationBody.querySelectorAll('tr')).filter(airportRowIsEmpty);
+                    let importedCount = 0;
+
+                    people.forEach(function (person) {
+                        const key = personKey(person);
+
+                        if (existingKeys.has(key)) {
+                            return;
+                        }
+
+                        let row = emptyRows.shift();
+
+                        if (!row) {
+                            window.addApplicationAnnexRow?.('airportPeopleTable', 'airport_people');
+                            row = destinationBody.lastElementChild;
+                        }
+
+                        if (!row) {
+                            return;
+                        }
+
+                        fillAirportRow(row, person);
+                        existingKeys.add(key);
+                        importedCount++;
+                    });
+
+                    if (importedCount === 0) {
+                        showImportStatus(button, button.dataset.noNewMessage || '', false);
+                        return;
+                    }
+
+                    const message = String(button.dataset.successMessage || '').replace(':count', importedCount);
+                    showImportStatus(button, message, true);
+                };
+            })();
+        </script>
+    @endpush
+@endonce
+
 <div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="FilmingGovernmental">
     <div class="offcanvas-header">
         <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.governmental_scenes') }}</span></h2>
@@ -928,3 +1253,112 @@
         </div>
     </div>
 </div>
+
+@once
+    @push('scripts')
+        <script>
+            (function () {
+                const validationMessage = @js(__('app.applications.requirement_validation_summary'));
+
+                function drawerControls(drawer) {
+                    return Array.from(drawer.querySelectorAll('input, select, textarea')).filter(function (control) {
+                        return !control.disabled
+                            && control.type !== 'hidden'
+                            && !control.closest('.legacy-annex-inline');
+                    });
+                }
+
+                function drawerValidationSummary(drawer) {
+                    let summary = drawer.querySelector('[data-annex-validation-summary]');
+
+                    if (summary) {
+                        return summary;
+                    }
+
+                    summary = document.createElement('div');
+                    summary.className = 'alert alert-danger text-start d-none';
+                    summary.setAttribute('role', 'alert');
+                    summary.setAttribute('data-annex-validation-summary', '');
+                    summary.textContent = validationMessage;
+
+                    const body = drawer.querySelector('.offcanvas-body');
+                    body?.prepend(summary);
+
+                    return summary;
+                }
+
+                function validateAnnexDrawer(drawer, reportFirstInvalid) {
+                    const controls = drawerControls(drawer);
+                    const invalidControls = controls.filter(function (control) {
+                        const invalid = typeof control.checkValidity === 'function' && !control.checkValidity();
+                        control.classList.toggle('is-invalid', invalid);
+
+                        return invalid;
+                    });
+                    const summary = drawerValidationSummary(drawer);
+
+                    summary.classList.toggle('d-none', invalidControls.length === 0);
+
+                    if (invalidControls.length === 0) {
+                        return true;
+                    }
+
+                    if (reportFirstInvalid) {
+                        const firstInvalid = invalidControls[0];
+                        firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        firstInvalid.focus({ preventScroll: true });
+                        firstInvalid.reportValidity?.();
+                    }
+
+                    return false;
+                }
+
+                document.addEventListener('click', function (event) {
+                    const saveButton = event.target.closest('[data-annex-save]');
+
+                    if (!saveButton || saveButton.disabled) {
+                        return;
+                    }
+
+                    const drawer = saveButton.closest('.application-annex-offcanvas');
+
+                    if (!drawer || validateAnnexDrawer(drawer, true)) {
+                        window.updateApplicationRequirementStatuses?.();
+                        return;
+                    }
+
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.stopImmediatePropagation();
+                }, true);
+
+                ['input', 'change'].forEach(function (eventName) {
+                    document.addEventListener(eventName, function (event) {
+                        const drawer = event.target.closest?.('.application-annex-offcanvas');
+
+                        if (!drawer) {
+                            return;
+                        }
+
+                        if (typeof event.target.checkValidity === 'function' && event.target.checkValidity()) {
+                            event.target.classList.remove('is-invalid');
+                        }
+
+                        validateAnnexDrawer(drawer, false);
+                        window.updateApplicationRequirementStatuses?.();
+                    });
+                });
+
+                document.addEventListener('invalid', function (event) {
+                    const drawer = event.target.closest?.('.application-annex-offcanvas');
+
+                    if (drawer) {
+                        drawerValidationSummary(drawer).classList.remove('d-none');
+                    }
+                }, true);
+            })();
+        </script>
+    @endpush
+@endonce
+
+@include('applications.partials.location-support-requirements-scripts')

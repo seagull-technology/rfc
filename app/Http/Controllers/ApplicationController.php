@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Application as FilmApplication;
 use App\Models\ApplicationAnnexSubmission;
+use App\Models\ApplicationAuthorityApproval;
+use App\Models\ApplicationAuthorityChangeRequest;
 use App\Models\ApplicationCorrespondence;
 use App\Models\ApplicationDocument;
 use App\Models\Entity;
@@ -14,11 +16,14 @@ use App\Models\Nationality;
 use App\Models\ReleaseMethod;
 use App\Models\User;
 use App\Models\WorkCategory;
+use App\Notifications\ForeignProducerInvitationNotification;
 use App\Notifications\InboxMessageNotification;
 use App\Rules\SupportRequirementNotesRequired;
 use App\Services\ApprovalRoutingService;
 use App\Support\ApplicantRequestOverview;
 use App\Support\JordanBusinessDays;
+use App\Support\LocationSupportRequirements;
+use App\Support\MinistryInteriorPersonalDetails as MinistryInteriorPersonalDetailsData;
 use App\Support\NotificationRecipients;
 use App\Support\WorkflowMessageMetadata;
 use Illuminate\Database\Eloquent\Builder;
@@ -28,12 +33,12 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\Rules\RequiredIf;
 use Illuminate\View\View;
 use Spatie\Permission\PermissionRegistrar;
@@ -41,6 +46,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ApplicationController extends Controller
 {
+    private const PRODUCTION_TERMS_VERSION = 'production_form_2025';
+
     public function __construct(
         private readonly ApprovalRoutingService $approvalRoutingService,
     ) {}
@@ -144,10 +151,14 @@ class ApplicationController extends Controller
         $this->ensureApplicantPermission($user, 'applications.create');
 
         $this->mergeLockedApplicantProducerFields($request, $user, $entity);
+        $this->mergeProductionTermsSigner($request, $user);
+        $this->mergeMinistryInteriorPersonalDetailsSigner($request, $user);
         $validated = $this->validateApplicationPayload($request, false, $entity, $user);
         $requiresInternationalProject = $this->projectRequiresInternationalSection($validated, $entity, $user);
 
-        $application = DB::transaction(function () use ($validated, $user, $entity, $requiresInternationalProject): FilmApplication {
+        $foreignProducerToInvite = null;
+
+        $application = DB::transaction(function () use ($validated, $user, $entity, $requiresInternationalProject, &$foreignProducerToInvite): FilmApplication {
             $application = FilmApplication::query()->create([
                 ...$this->applicationAttributes($validated, $entity, $user),
                 'code' => $this->nextCode(),
@@ -160,11 +171,15 @@ class ApplicationController extends Controller
             $this->appendHistory($application, 'draft', __('app.applications.history.draft_created'), $user->getKey());
 
             if ($requiresInternationalProject) {
-                $this->syncInternationalProducerAccount($application, $validated, $entity);
+                $foreignProducerToInvite = $this->syncInternationalProducerAccount($application, $validated, $entity);
             }
 
             return $application;
         });
+
+        if ($foreignProducerToInvite) {
+            $this->sendForeignProducerInvitation($foreignProducerToInvite, $application);
+        }
 
         return redirect()
             ->route('applications.show', $application)
@@ -179,6 +194,9 @@ class ApplicationController extends Controller
             'statusHistory.user',
             'authorityApprovals.entity',
             'authorityApprovals.reviewedBy',
+            'authorityApprovals.changeRequests.requestedBy',
+            'authorityChangeRequests.approval.entity',
+            'authorityChangeRequests.requestedBy',
             'documents.uploadedBy',
             'documents.reviewedBy',
             'correspondences.createdBy',
@@ -197,7 +215,9 @@ class ApplicationController extends Controller
             'statusHistory' => $record->statusHistory,
             'authorityApprovals' => $record->authorityApprovals,
             'documents' => $record->documents,
-            'correspondences' => $record->correspondences,
+            'correspondences' => $record->correspondences
+                ->filter(fn (ApplicationCorrespondence $message): bool => $message->isVisibleToApplicant())
+                ->values(),
             'officialLetters' => $record->officialLetters->where('status', 'issued')->values(),
             'annexSubmissions' => $record->annexSubmissions,
             'nationalityOptions' => $this->nationalityOptionsForApplication($record),
@@ -210,6 +230,19 @@ class ApplicationController extends Controller
         ]);
     }
 
+    public function printForms(Request $request, string $application): View
+    {
+        [$user, $entity] = $this->applicantContext($request);
+        $this->ensureApplicantHasAnyPermission($user, ['applications.view.entity', 'applications.view.own']);
+        $record = $this->findApplicantApplication($application, $entity);
+
+        return view('applications.forms-print', [
+            'application' => $record,
+            'requestedForm' => $request->query('form'),
+            'backUrl' => route('applications.show', $record).'#profile-activity',
+        ]);
+    }
+
     public function edit(Request $request, string $application): View
     {
         [$user, $entity] = $this->applicantContext($request);
@@ -218,6 +251,11 @@ class ApplicationController extends Controller
         $this->ensureApplicantCanUpdateApplication($user, $record);
 
         abort_unless($record->canBeEditedByApplicant(), 403);
+
+        $record->load([
+            'authorityChangeRequests.approval.entity',
+            'authorityChangeRequests.requestedBy',
+        ]);
 
         return view('applications.edit', [
             'user' => $user,
@@ -246,6 +284,8 @@ class ApplicationController extends Controller
         abort_unless($record->canBeEditedByApplicant(), 403);
 
         $this->mergeLockedApplicantProducerFields($request, $user, $entity);
+        $this->mergeProductionTermsSigner($request, $user, $record);
+        $this->mergeMinistryInteriorPersonalDetailsSigner($request, $user, $record);
         $validated = $this->validateApplicationPayload($request, false, $entity, $user);
 
         $attributes = $this->applicationAttributes(
@@ -264,7 +304,11 @@ class ApplicationController extends Controller
         $record->forceFill($attributes)->save();
 
         if ($requiresInternationalProject) {
-            $this->syncInternationalProducerAccount($record, $validated, $entity);
+            $foreignProducerToInvite = $this->syncInternationalProducerAccount($record, $validated, $entity);
+
+            if ($foreignProducerToInvite) {
+                $this->sendForeignProducerInvitation($foreignProducerToInvite, $record);
+            }
         }
 
         return redirect()
@@ -281,7 +325,9 @@ class ApplicationController extends Controller
 
         abort_unless($record->canUpdateApplicantAnnex(), 403);
 
-        $validated = $this->validateAnnexPayload($request);
+        $this->mergeProductionTermsSigner($request, $user, $record);
+        $this->mergeMinistryInteriorPersonalDetailsSigner($request, $user, $record);
+        $validated = $this->validateAnnexPayload($request, $record);
         $submittedAt = now();
 
         $submission = DB::transaction(function () use ($record, $validated, $submittedAt, $user): ApplicationAnnexSubmission {
@@ -375,9 +421,61 @@ class ApplicationController extends Controller
         $this->syncLockedApplicantProducerFields($record, $user, $entity);
         $this->validateApplicationForSubmission($record);
 
-        $wasClarificationResponse = $record->status === 'needs_clarification';
+        if (! $record->foreignProducerApprovalIsSatisfied()) {
+            return redirect()
+                ->route('applications.show', $record)
+                ->withErrors([
+                    'foreign_producer_declaration' => __('app.applications.foreign_producer_approval_required'),
+                ]);
+        }
 
-        DB::transaction(function () use ($record, $user): void {
+        $wasClarificationResponse = $record->status === 'needs_clarification';
+        $authorityApprovalsAwaitingApplicant = $record->authorityApprovals()
+            ->with(['entity.group', 'assignedTo'])
+            ->where('status', 'changes_requested')
+            ->get();
+        $wasAuthorityClarification = $authorityApprovalsAwaitingApplicant->isNotEmpty();
+
+        DB::transaction(function () use ($record, $user, $authorityApprovalsAwaitingApplicant, $wasAuthorityClarification): void {
+            if ($wasAuthorityClarification) {
+                $record->forceFill([
+                    'status' => 'under_review',
+                    'current_stage' => 'authority_review',
+                    'submitted_at' => now(),
+                    'review_note' => null,
+                ])->save();
+
+                $authorityApprovalsAwaitingApplicant->each(function (ApplicationAuthorityApproval $approval) use ($user): void {
+                    $approval->forceFill([
+                        'status' => 'pending',
+                        'reviewed_by_user_id' => null,
+                        'decided_at' => null,
+                    ])->save();
+
+                    $approval->changeRequests()
+                        ->where('status', ApplicationAuthorityChangeRequest::STATUS_REQUESTED)
+                        ->update([
+                            'status' => ApplicationAuthorityChangeRequest::STATUS_RESUBMITTED,
+                            'resubmitted_by_user_id' => $user->getKey(),
+                            'resubmitted_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                });
+
+                $this->appendHistory(
+                    $record,
+                    'under_review',
+                    __('app.applications.history.authority_changes_resubmitted'),
+                    $user->getKey(),
+                    [
+                        'type' => 'authority_changes_resubmitted',
+                        'approval_ids' => $authorityApprovalsAwaitingApplicant->pluck('id')->all(),
+                    ],
+                );
+
+                return;
+            }
+
             $record->forceFill([
                 'status' => 'submitted',
                 'current_stage' => 'intake',
@@ -417,6 +515,23 @@ class ApplicationController extends Controller
                     ...$this->adminApplicantResponseNotificationMeta($wasClarificationResponse, __('app.notifications.applicant_response_resubmission')),
                 ],
             )));
+
+        if ($wasAuthorityClarification) {
+            $authorityApprovalsAwaitingApplicant
+                ->flatMap(fn (ApplicationAuthorityApproval $approval) => NotificationRecipients::authorityUsersForApproval($approval))
+                ->unique(fn (User $recipient): int => $recipient->getKey())
+                ->reject(fn (User $recipient): bool => $recipient->getKey() === $user->getKey())
+                ->each(fn (User $recipient) => $recipient->notify(new InboxMessageNotification(
+                    typeKey: 'authority_changes_resubmitted',
+                    title: $record->project_name,
+                    body: __('app.notifications.authority_changes_resubmitted_body', [
+                        'code' => $record->code,
+                    ]),
+                    routeName: 'authority.applications.show',
+                    routeParameters: ['application' => $record->getKey()],
+                    meta: WorkflowMessageMetadata::application($record),
+                )));
+        }
 
         return redirect()
             ->route('applications.show', $record)
@@ -596,6 +711,25 @@ class ApplicationController extends Controller
         return Storage::disk('local')->download($message->attachment_path, $message->attachment_name ?: basename($message->attachment_path));
     }
 
+    public function downloadChangeRequestAttachment(Request $request, string $application, ApplicationAuthorityChangeRequest $changeRequest): StreamedResponse|RedirectResponse
+    {
+        [$user, $entity] = $this->applicantContext($request);
+        $record = $this->findApplicantApplication($application, $entity);
+
+        abort_unless($changeRequest->application_id === $record->getKey(), 404);
+
+        if (! $changeRequest->attachment_path || ! Storage::disk('local')->exists($changeRequest->attachment_path)) {
+            return redirect()
+                ->route('applications.show', $record)
+                ->withErrors(['change_request_attachment' => __('app.authority_change_requests.attachment_missing')]);
+        }
+
+        return Storage::disk('local')->download(
+            $changeRequest->attachment_path,
+            $changeRequest->attachment_name ?: basename($changeRequest->attachment_path),
+        );
+    }
+
     public function downloadFinalLetter(Request $request, string $application): StreamedResponse|RedirectResponse
     {
         [$user, $entity] = $this->applicantContext($request);
@@ -658,6 +792,86 @@ class ApplicationController extends Controller
     private function mergeLockedApplicantProducerFields(Request $request, User $user, Entity $entity): void
     {
         $request->merge($this->lockedApplicantProducerFields($user, $entity));
+    }
+
+    private function mergeProductionTermsSigner(Request $request, User $user, ?FilmApplication $application = null): void
+    {
+        $metadata = $application?->metadata ?? [];
+        $existingTerms = (array) data_get($metadata, 'annex.production_terms', []);
+        $isForeignProducer = $this->isInternationalProducerUser($user);
+        $authenticatedName = $user->displayName();
+        $localApplicantName = $isForeignProducer
+            ? (data_get($metadata, 'producer.producer_name') ?: null)
+            : $authenticatedName;
+        $foreignApplicantName = $isForeignProducer
+            ? $authenticatedName
+            : (data_get($metadata, 'international.international_producer_name')
+                ?: $request->input('international_producer_name'));
+        $foreignDeclaration = (array) data_get($metadata, 'international.account.declaration', []);
+        $foreignSignature = $isForeignProducer
+            ? $authenticatedName
+            : ((bool) data_get($foreignDeclaration, 'accepted')
+                ? data_get($foreignDeclaration, 'signed_by_name')
+                : null);
+        $wasAccepted = (bool) data_get($existingTerms, 'accepted');
+        $accepted = $request->has('production_terms_accepted')
+            ? $request->boolean('production_terms_accepted')
+            : $wasAccepted;
+
+        $request->merge([
+            'production_terms_version' => self::PRODUCTION_TERMS_VERSION,
+            'production_terms_accepted' => $accepted,
+            'production_terms_local_applicant_name' => filled($localApplicantName) ? (string) $localApplicantName : null,
+            'production_terms_local_signature' => filled($localApplicantName) ? (string) $localApplicantName : null,
+            'production_terms_foreign_applicant_name' => filled($foreignApplicantName) ? (string) $foreignApplicantName : null,
+            'production_terms_foreign_signature' => filled($foreignSignature) ? (string) $foreignSignature : null,
+            'production_terms_accepted_at' => $accepted
+                ? ($wasAccepted ? data_get($existingTerms, 'accepted_at') : now()->toDateTimeString())
+                : null,
+            'production_terms_accepted_by_user_id' => $accepted
+                ? ($wasAccepted ? data_get($existingTerms, 'accepted_by_user_id') : $user->getKey())
+                : null,
+        ]);
+    }
+
+    private function mergeMinistryInteriorPersonalDetailsSigner(Request $request, User $user, ?FilmApplication $application = null): void
+    {
+        $rows = MinistryInteriorPersonalDetailsData::rows(
+            $request->input('ministry_interior_personal_details', []),
+        );
+        $existingRows = MinistryInteriorPersonalDetailsData::rows(
+            data_get($application?->metadata, 'annex.ministry_interior_personal_details', []),
+        );
+
+        $signedRows = collect($rows)
+            ->filter(fn (array $row): bool => MinistryInteriorPersonalDetailsData::hasSubmittedData($row)
+                || MinistryInteriorPersonalDetailsData::isConfirmed($row))
+            ->values()
+            ->map(function (array $row, int $index) use ($existingRows, $user): array {
+                $confirmed = MinistryInteriorPersonalDetailsData::isConfirmed($row);
+                $existingRow = collect($existingRows)->first(function (array $candidate) use ($row): bool {
+                    $passportNumber = trim((string) data_get($row, 'passport_number'));
+                    $currentFullName = trim((string) data_get($row, 'current_full_name'));
+
+                    return (filled($passportNumber) && $passportNumber === trim((string) data_get($candidate, 'passport_number')))
+                        || (filled($currentFullName) && $currentFullName === trim((string) data_get($candidate, 'current_full_name')));
+                }) ?? ($existingRows[$index] ?? []);
+                $wasConfirmed = MinistryInteriorPersonalDetailsData::isConfirmed((array) $existingRow);
+
+                $row['confirmed'] = $confirmed;
+                $row['signature'] = $user->displayName();
+                $row['signed_at'] = $confirmed
+                    ? ($wasConfirmed ? data_get($existingRow, 'signed_at') : now()->toDateTimeString())
+                    : null;
+                $row['signed_by_user_id'] = $confirmed
+                    ? ($wasConfirmed ? data_get($existingRow, 'signed_by_user_id') : $user->getKey())
+                    : null;
+
+                return $row;
+            })
+            ->all();
+
+        $request->merge(['ministry_interior_personal_details' => $signedRows]);
     }
 
     private function syncLockedApplicantProducerFields(FilmApplication $application, User $user, Entity $entity): void
@@ -762,6 +976,7 @@ class ApplicationController extends Controller
     {
         return ApplicationCorrespondence::query()
             ->where('application_id', $application->getKey())
+            ->visibleToApplicant()
             ->findOrFail($correspondence);
     }
 
@@ -900,7 +1115,7 @@ class ApplicationController extends Controller
         if ($options->isEmpty() && method_exists($modelClass, 'activeCodes') && method_exists($modelClass, 'labelFor')) {
             $options = collect($modelClass::activeCodes())
                 ->map(function (string $code, int $index) use ($modelClass) {
-                    $option = new $modelClass();
+                    $option = new $modelClass;
                     $option->forceFill([
                         'code' => $code,
                         'name_en' => $modelClass::labelFor($code),
@@ -935,15 +1150,123 @@ class ApplicationController extends Controller
      */
     private function formLookupOptionsForApplication(): array
     {
+        $supportRequirements = FormLookupOption::query()
+            ->with(['entities' => fn ($query) => $query
+                ->where('status', 'active')
+                ->whereHas('group', fn ($groupQuery) => $groupQuery->where('code', 'authorities'))])
+            ->ofType(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT)
+            ->active()
+            ->ordered()
+            ->get();
+
         return [
             'equipment_categories' => FormLookupOption::activeForType(FormLookupOption::TYPE_EQUIPMENT_CATEGORY),
-            'equipment_shipping_methods' => FormLookupOption::activeForType(FormLookupOption::TYPE_EQUIPMENT_SHIPPING_METHOD),
             'equipment_entry_points' => FormLookupOption::activeForType(FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT),
             'airports' => FormLookupOption::activeForType(FormLookupOption::TYPE_AIRPORT),
-            'special_location_requirements' => FormLookupOption::activeForType(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT),
+            'special_location_requirements' => $supportRequirements,
+            'support_authority_entities' => Entity::query()
+                ->where('status', 'active')
+                ->whereHas('group', fn ($query) => $query->where('code', 'authorities'))
+                ->orderBy('name_en')
+                ->orderBy('id')
+                ->get(),
             'budget_spending_categories' => FormLookupOption::activeForType(FormLookupOption::TYPE_BUDGET_SPENDING_CATEGORY),
             'drone_request_types' => FormLookupOption::activeForType(FormLookupOption::TYPE_DRONE_REQUEST_TYPE),
         ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function supportAuthorityCodesForValidation(): array
+    {
+        return Entity::withTrashed()
+            ->whereHas('group', fn ($query) => $query->where('code', 'authorities'))
+            ->pluck('code')
+            ->map(fn ($code): string => (string) $code)
+            ->merge(['public_security', 'military'])
+            ->filter(fn (string $code): bool => filled($code))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function locationSupportRequirementBelongsToAuthorityRule(Request $request): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($request): void {
+            if (! filled($value)) {
+                return;
+            }
+
+            $authorityAttribute = preg_replace('/\.requirement$/', '.authority', $attribute);
+            $submittedAuthority = $authorityAttribute
+                ? $request->input($authorityAttribute)
+                : null;
+            $authorityCode = LocationSupportRequirements::normalizeAuthorityCode($submittedAuthority);
+
+            if (! filled($authorityCode)) {
+                return;
+            }
+
+            $option = FormLookupOption::query()
+                ->ofType(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT)
+                ->where('code', (string) $value)
+                ->first();
+
+            // Nested location rows and stored drafts may contain the free-text values
+            // used before the centralized, lookup-backed requirements editor.
+            if (! $option && (
+                str_starts_with($attribute, 'filming_locations.')
+                || $request->attributes->getBoolean('allow_legacy_location_support_requirements')
+            )) {
+                return;
+            }
+
+            if (! $option || ! $option->entities()->where('entities.code', $authorityCode)->exists()) {
+                $fail(__('validation.location_support_requirement_authority'));
+            }
+        };
+    }
+
+    /**
+     * Store localized snapshots so historical applications remain readable after lookup edits.
+     *
+     * @param  array<int|string, array<string, mixed>>  $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function hydrateLocationSupportRequirementReferences(array $rows): array
+    {
+        $rows = collect(array_values($rows))
+            ->map(function (array $row): array {
+                $row['authority'] = LocationSupportRequirements::normalizeAuthorityCode($row['authority'] ?? null);
+
+                return $row;
+            });
+
+        $entities = Entity::withTrashed()
+            ->whereIn('code', $rows->pluck('authority')->filter()->unique()->all())
+            ->get(['code', 'name_en', 'name_ar'])
+            ->keyBy('code');
+        $options = FormLookupOption::query()
+            ->ofType(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT)
+            ->whereIn('code', $rows->pluck('requirement')->filter()->unique()->all())
+            ->get(['code', 'name_en', 'name_ar'])
+            ->keyBy('code');
+
+        return $rows
+            ->map(function (array $row) use ($entities, $options): array {
+                $entity = $entities->get((string) ($row['authority'] ?? ''));
+                $option = $options->get((string) ($row['requirement'] ?? ''));
+
+                $row['authority_name_en'] = $entity?->name_en ?: ($row['authority_name_en'] ?? null);
+                $row['authority_name_ar'] = $entity?->name_ar ?: ($row['authority_name_ar'] ?? null);
+                $row['requirement_name_en'] = $option?->name_en ?: ($row['requirement_name_en'] ?? null);
+                $row['requirement_name_ar'] = $option?->name_ar ?: ($row['requirement_name_ar'] ?? null);
+
+                return $row;
+            })
+            ->values()
+            ->all();
     }
 
     private function locationTypeBelongsToGovernorateRule(Request $request, string $collection): \Closure
@@ -993,6 +1316,91 @@ class ApplicationController extends Controller
 
             if ($endDate !== false && $supportDate > $endDate) {
                 $fail(__('app.applications.location_support_date_range'));
+            }
+        };
+    }
+
+    private function sharedLocationSupportDateWithinRangeRule(Request $request): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($request): void {
+            if (blank($value)) {
+                return;
+            }
+
+            $requirements = (array) $request->input('location_support_requirements', []);
+            $locations = collect(LocationSupportRequirements::prepareLocations((array) $request->input('filming_locations', [])))
+                ->keyBy(fn (array $location): string => (string) ($location['location_key'] ?? ''));
+            $locationKeys = [];
+
+            if (preg_match('/^location_support_requirements\.([^\.]+)\.shared_date$/', $attribute, $matches)) {
+                $requirement = (array) data_get($requirements, $matches[1], []);
+
+                if (($requirement['schedule_mode'] ?? LocationSupportRequirements::SCHEDULE_SHARED) !== LocationSupportRequirements::SCHEDULE_SHARED) {
+                    return;
+                }
+
+                $locationKeys = collect((array) ($requirement['assignments'] ?? []))
+                    ->filter(fn ($assignment): bool => filter_var(data_get($assignment, 'selected'), FILTER_VALIDATE_BOOLEAN))
+                    ->pluck('location_key')
+                    ->filter()
+                    ->map(fn ($key): string => (string) $key)
+                    ->all();
+            } elseif (preg_match('/^location_support_requirements\.([^\.]+)\.assignments\.([^\.]+)\.date$/', $attribute, $matches)) {
+                $requirement = (array) data_get($requirements, $matches[1], []);
+                $assignment = (array) data_get($requirement, 'assignments.'.$matches[2], []);
+
+                if (($requirement['schedule_mode'] ?? LocationSupportRequirements::SCHEDULE_SHARED) !== LocationSupportRequirements::SCHEDULE_PER_LOCATION
+                    || ! filter_var($assignment['selected'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                    return;
+                }
+
+                $locationKeys = [trim((string) ($assignment['location_key'] ?? ''))];
+            } else {
+                return;
+            }
+
+            $supportDate = strtotime((string) $value);
+
+            if ($supportDate === false) {
+                return;
+            }
+
+            foreach (array_unique($locationKeys) as $locationKey) {
+                $location = (array) $locations->get($locationKey, []);
+                $startDate = filled($location['start_date'] ?? null) ? strtotime((string) $location['start_date']) : false;
+                $endDate = filled($location['end_date'] ?? null) ? strtotime((string) $location['end_date']) : false;
+
+                if (($startDate !== false && $supportDate < $startDate)
+                    || ($endDate !== false && $supportDate > $endDate)) {
+                    $fail(__('app.applications.location_support_date_range'));
+
+                    return;
+                }
+            }
+        };
+    }
+
+    private function sharedLocationSupportAssignmentsRule(Request $request): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($request): void {
+            if (! preg_match('/^location_support_requirements\.([^\.]+)\.assignments$/', $attribute, $matches)) {
+                return;
+            }
+
+            $requirement = (array) data_get((array) $request->input('location_support_requirements', []), $matches[1], []);
+            $hasRequirement = filled($requirement['authority'] ?? null)
+                || filled($requirement['requirement'] ?? null)
+                || filled($requirement['notes'] ?? null);
+
+            if (! $hasRequirement) {
+                return;
+            }
+
+            $hasSelectedLocation = collect((array) $value)
+                ->contains(fn ($assignment): bool => filter_var(data_get($assignment, 'selected'), FILTER_VALIDATE_BOOLEAN));
+
+            if (! $hasSelectedLocation) {
+                $fail(__('app.applications.location_support_location_required'));
             }
         };
     }
@@ -1106,9 +1514,9 @@ class ApplicationController extends Controller
     /**
      * @return array<int, mixed>
      */
-    private function workContentSummarySynopsisRules(): array
+    private function workContentSummarySynopsisRules(int $minimumWords): array
     {
-        return ['required', 'string', 'max:12000', $this->arabicTextRule(), $this->minimumWordCountRule(500)];
+        return ['required', 'string', 'max:50000', $this->arabicTextRule(), $this->minimumWordCountRule($minimumWords)];
     }
 
     private function arabicTextRule(): \Closure
@@ -1232,7 +1640,7 @@ class ApplicationController extends Controller
 
         if (! $requireComplete) {
             $rules = $this->draftApplicationValidationRules($rules);
-            $rules['work_content_summary_synopsis'] = ['nullable', 'string', 'max:12000'];
+            $rules['work_content_summary_synopsis'] = ['nullable', 'string', 'max:50000'];
         }
 
         return $this->normalizeApplicationPayload($request->validate($rules));
@@ -1244,6 +1652,7 @@ class ApplicationController extends Controller
 
         $payload = $this->applicationPayloadFromRecord($application);
         $request = Request::create('/', 'POST', $payload);
+        $request->attributes->set('allow_legacy_location_support_requirements', true);
 
         Validator::make($payload, $this->applicationValidationRules($request, $application->entity, $application->submittedBy))->validate();
     }
@@ -1254,6 +1663,9 @@ class ApplicationController extends Controller
     private function applicationValidationRules(Request $request, ?Entity $entity = null, ?User $user = null): array
     {
         $workCategories = WorkCategory::activeCodes();
+        $workSummaryMinWords = WorkCategory::workSummaryMinWordsFor(
+            $this->normalizedSingleWorkCategory($request->all()),
+        );
         $releaseMethods = ReleaseMethod::activeCodes();
         $governorateCodes = Governorate::activeCodes();
         $locationTypeCodes = FilmingLocationType::activeCodes();
@@ -1265,7 +1677,9 @@ class ApplicationController extends Controller
             ->all();
         $specialRequirementCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT, $request, [
             'filming_locations.*.special_requirements',
+            'location_support_requirements.*.requirement',
         ]);
+        $supportAuthorityCodes = $this->supportAuthorityCodesForValidation();
         $specialRequirementCodes = array_values(array_unique([
             ...$specialRequirementCodes,
             ...array_map('strval', array_keys((array) $request->input('special_location_requirements', []))),
@@ -1273,9 +1687,6 @@ class ApplicationController extends Controller
         $budgetSpendingCategoryCodes = FormLookupOption::activeCodesForType(FormLookupOption::TYPE_BUDGET_SPENDING_CATEGORY);
         $equipmentCategoryCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_EQUIPMENT_CATEGORY, $request, [
             'imported_equipment.*.classification',
-        ]);
-        $equipmentShippingMethodCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_EQUIPMENT_SHIPPING_METHOD, $request, [
-            'imported_equipment.*.shipping_method',
         ]);
         $equipmentEntryPointCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT, $request, [
             'imported_equipment.*.customs_center',
@@ -1285,9 +1696,6 @@ class ApplicationController extends Controller
             'airport_filming_airport_name',
         ]);
         $requiresInternationalProject = $this->projectRequiresInternationalSection($request->all(), $entity, $user);
-        $hasInternationalAccount = filter_var($request->input('international_account_exists'), FILTER_VALIDATE_BOOLEAN)
-            || filled($request->input('international_account_user_id'));
-        $requiresInternationalAccountPassword = $requiresInternationalProject && ! $hasInternationalAccount;
         $requiresBudgetBreakdown = ((float) $request->input('local_spend_estimate', 0)) >= 175000;
         $requiresTravelerEquipmentAcknowledgement = $this->travelerEquipmentAcknowledgementRequired($request);
         $travelerEquipmentAcknowledgementRules = $requiresTravelerEquipmentAcknowledgement
@@ -1335,7 +1743,7 @@ class ApplicationController extends Controller
             'schedule_phases.preparation.end_date' => ['required', 'date', 'after_or_equal:schedule_phases.preparation.start_date'],
             'schedule_phases.wrap.start_date' => ['required', 'date', 'after_or_equal:planned_end_date'],
             'schedule_phases.wrap.end_date' => ['required', 'date', 'after_or_equal:schedule_phases.wrap.start_date'],
-            'schedule_phases.post_production.start_date' => ['required', 'date', 'after_or_equal:schedule_phases.wrap.end_date'],
+            'schedule_phases.post_production.start_date' => ['required', 'date', 'after_or_equal:planned_start_date'],
             'schedule_phases.post_production.end_date' => ['required', 'date', 'after_or_equal:schedule_phases.post_production.start_date'],
             'estimated_crew_count' => ['required', 'integer', 'min:1', 'max:100000'],
             'estimated_budget' => ['nullable', 'numeric', 'min:0', 'max:999999999.99'],
@@ -1366,22 +1774,42 @@ class ApplicationController extends Controller
             'international_liaison_mobile' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:50'],
             'international_account_exists' => $requiresInternationalProject ? ['required', 'accepted'] : ['nullable', 'boolean'],
             'international_account_user_id' => ['nullable', 'integer'],
-            'international_account_password' => [Rule::requiredIf($requiresInternationalAccountPassword), 'nullable', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
-            'international_account_password_confirmation' => [Rule::requiredIf($requiresInternationalAccountPassword), 'nullable', 'string'],
-            'work_content_summary_synopsis' => $this->workContentSummarySynopsisRules(),
+            'production_terms_version' => ['required', 'string', Rule::in([self::PRODUCTION_TERMS_VERSION])],
+            'production_terms_accepted' => ['accepted'],
+            'production_terms_local_applicant_name' => ['required', 'string', 'max:255'],
+            'production_terms_local_signature' => ['required', 'string', 'max:255'],
+            'production_terms_foreign_applicant_name' => ['nullable', 'string', 'max:255'],
+            'production_terms_foreign_signature' => ['nullable', 'string', 'max:255'],
+            'production_terms_accepted_at' => ['nullable', 'date'],
+            'production_terms_accepted_by_user_id' => ['nullable', 'integer'],
+            ...$this->ministryInteriorPersonalDetailsValidationRules($request),
+            'work_content_summary_synopsis' => $this->workContentSummarySynopsisRules($workSummaryMinWords),
             'work_content_summary_confirmed' => ['accepted'],
+            'work_content_summary_attachment' => ['nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx'],
+            'work_content_summary_attachment_path' => ['nullable', 'string', 'max:1000'],
+            'work_content_summary_attachment_name' => ['nullable', 'string', 'max:255'],
+            'work_content_summary_attachment_mime_type' => ['nullable', 'string', 'max:255'],
+            'work_content_summary_attachment_size' => ['nullable', 'integer', 'min:0'],
+            'work_content_summary_attachment_uploaded_at' => ['nullable', 'string', 'max:255'],
             'cast_crew' => ['nullable', 'array'],
             'cast_crew.*.name' => ['nullable', 'string', 'max:255'],
-            'cast_crew.*.first_name' => ['nullable', 'string', 'max:255'],
-            'cast_crew.*.second_name' => ['nullable', 'string', 'max:255'],
-            'cast_crew.*.third_name' => ['nullable', 'string', 'max:255'],
-            'cast_crew.*.family_name' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.first_name' => ['required_if:cast_crew.*.nationality,jordanian', 'nullable', 'string', 'max:255'],
+            'cast_crew.*.second_name' => ['required_if:cast_crew.*.nationality,jordanian', 'nullable', 'string', 'max:255'],
+            'cast_crew.*.third_name' => ['required_if:cast_crew.*.nationality,jordanian', 'nullable', 'string', 'max:255'],
+            'cast_crew.*.family_name' => ['required_if:cast_crew.*.nationality,jordanian', 'nullable', 'string', 'max:255'],
             'cast_crew.*.role' => ['nullable', 'string', 'max:255'],
             'cast_crew.*.nationality' => ['nullable', 'string', 'max:255'],
             'cast_crew.*.gender' => ['nullable', Rule::in(['male', 'female'])],
             'cast_crew.*.birth_date' => ['nullable', 'date', 'before:today'],
-            'cast_crew.*.identity_number' => ['nullable', 'string', 'max:255', $this->castCrewIdentityNumberRule($request)],
+            'cast_crew.*.identity_number' => ['required_if:cast_crew.*.nationality,jordanian', 'nullable', 'string', 'max:255', $this->castCrewIdentityNumberRule($request)],
+            'cast_crew.*.passport_image' => ['nullable', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
+            'cast_crew.*.passport_image_path' => ['nullable', 'string', 'max:1000'],
+            'cast_crew.*.passport_image_name' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.passport_image_mime_type' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.passport_image_size' => ['nullable', 'integer', 'min:0'],
+            'cast_crew.*.passport_image_uploaded_at' => ['nullable', 'string', 'max:255'],
             'filming_locations' => ['nullable', 'array'],
+            'filming_locations.*.location_key' => ['nullable', 'string', 'max:100'],
             'filming_locations.*.governorate' => ['nullable', 'string', Rule::in($governorateCodes)],
             'filming_locations.*.location_name' => ['nullable', 'string', 'max:255'],
             'filming_locations.*.address' => ['nullable', 'string', 'max:500'],
@@ -1390,14 +1818,29 @@ class ApplicationController extends Controller
             'filming_locations.*.special_requirements' => ['nullable', 'array'],
             'filming_locations.*.special_requirements.*' => ['nullable', 'string', Rule::in($specialRequirementCodes)],
             'filming_locations.*.support_requirements' => ['nullable', 'array'],
-            'filming_locations.*.support_requirements.*.authority' => ['nullable', 'string', Rule::in(['public_security', 'military'])],
-            'filming_locations.*.support_requirements.*.requirement' => ['nullable', 'string', 'max:255'],
+            'filming_locations.*.support_requirements.*.authority' => ['nullable', 'string', Rule::in($supportAuthorityCodes)],
+            'filming_locations.*.support_requirements.*.requirement' => ['nullable', 'string', 'max:1000', $this->locationSupportRequirementBelongsToAuthorityRule($request)],
             'filming_locations.*.support_requirements.*.date' => ['nullable', 'date', $this->filmingLocationSupportDateWithinRangeRule($request)],
             'filming_locations.*.support_requirements.*.time_from' => ['nullable', 'date_format:H:i'],
             'filming_locations.*.support_requirements.*.time_to' => ['nullable', 'date_format:H:i'],
-            'filming_locations.*.support_requirements.*.notes' => [new SupportRequirementNotesRequired(), 'nullable', 'string', 'max:1000'],
+            'filming_locations.*.support_requirements.*.notes' => [new SupportRequirementNotesRequired, 'nullable', 'string', 'max:1000'],
             'filming_locations.*.start_date' => ['nullable', 'date', 'after_or_equal:today', $this->filmingLocationStartRespectsApprovalLeadTimeRule($request, 'filming_locations', $locationTypeApprovalDays)],
             'filming_locations.*.end_date' => ['nullable', 'date'],
+            'location_support_requirements' => ['nullable', 'array'],
+            'location_support_requirements.*.requirement_key' => ['nullable', 'string', 'max:100'],
+            'location_support_requirements.*.authority' => ['nullable', 'string', Rule::in($supportAuthorityCodes)],
+            'location_support_requirements.*.requirement' => ['nullable', 'string', Rule::in($specialRequirementCodes), $this->locationSupportRequirementBelongsToAuthorityRule($request)],
+            'location_support_requirements.*.notes' => [new SupportRequirementNotesRequired, 'nullable', 'string', 'max:1000'],
+            'location_support_requirements.*.schedule_mode' => ['nullable', Rule::in([LocationSupportRequirements::SCHEDULE_SHARED, LocationSupportRequirements::SCHEDULE_PER_LOCATION])],
+            'location_support_requirements.*.shared_date' => ['nullable', 'date', $this->sharedLocationSupportDateWithinRangeRule($request)],
+            'location_support_requirements.*.shared_time_from' => ['nullable', 'date_format:H:i'],
+            'location_support_requirements.*.shared_time_to' => ['nullable', 'date_format:H:i'],
+            'location_support_requirements.*.assignments' => ['nullable', 'array', $this->sharedLocationSupportAssignmentsRule($request)],
+            'location_support_requirements.*.assignments.*.location_key' => ['nullable', 'string', 'max:100'],
+            'location_support_requirements.*.assignments.*.selected' => ['nullable', 'boolean'],
+            'location_support_requirements.*.assignments.*.date' => ['nullable', 'date', $this->sharedLocationSupportDateWithinRangeRule($request)],
+            'location_support_requirements.*.assignments.*.time_from' => ['nullable', 'date_format:H:i'],
+            'location_support_requirements.*.assignments.*.time_to' => ['nullable', 'date_format:H:i'],
             'special_location_requirements' => ['nullable', 'array', $this->lookupArrayKeysRule($specialRequirementCodes)],
             'special_location_requirements.*.locations' => ['nullable', 'array'],
             'special_location_requirements.*.locations.*' => ['nullable', 'string', 'max:255'],
@@ -1410,6 +1853,12 @@ class ApplicationController extends Controller
             'equipment_travelers.*.arrival_flight_number' => ['nullable', 'string', 'max:100'],
             'equipment_travelers.*.departure_date' => ['nullable', 'date'],
             'equipment_travelers.*.departure_flight_number' => ['nullable', 'string', 'max:100'],
+            'equipment_travelers.*.passport_image' => ['nullable', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
+            'equipment_travelers.*.passport_image_path' => ['nullable', 'string', 'max:1000'],
+            'equipment_travelers.*.passport_image_name' => ['nullable', 'string', 'max:255'],
+            'equipment_travelers.*.passport_image_mime_type' => ['nullable', 'string', 'max:255'],
+            'equipment_travelers.*.passport_image_size' => ['nullable', 'integer', 'min:0'],
+            'equipment_travelers.*.passport_image_uploaded_at' => ['nullable', 'string', 'max:255'],
             'traveler_equipment_acknowledged' => $travelerEquipmentAcknowledgementRules,
             'imported_equipment' => ['nullable', 'array'],
             'imported_equipment.*.transport_group' => ['nullable', 'string', 'max:100'],
@@ -1419,9 +1868,7 @@ class ApplicationController extends Controller
             'imported_equipment.*.traveler_name' => ['nullable', 'string', 'max:255'],
             'imported_equipment.*.quantity' => ['nullable', 'integer', 'min:0', 'max:100000'],
             'imported_equipment.*.unit_value' => ['nullable', 'numeric', 'min:0', 'max:999999999.99'],
-            'imported_equipment.*.total_value' => ['nullable', 'numeric', 'min:0', 'max:999999999.99'],
             'imported_equipment.*.classification' => ['nullable', 'string', 'max:255', Rule::in($equipmentCategoryCodes)],
-            'imported_equipment.*.shipping_method' => ['nullable', 'string', 'max:255', Rule::in($equipmentShippingMethodCodes)],
             'imported_equipment.*.origin_country' => ['nullable', 'string', 'max:255'],
             'imported_equipment.*.entry_point' => ['nullable', 'string', 'max:255', Rule::in($equipmentEntryPointCodes)],
             'imported_equipment.*.shipping_company_name' => ['nullable', 'string', 'max:255'],
@@ -1492,8 +1939,11 @@ class ApplicationController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function validateAnnexPayload(Request $request): array
+    private function validateAnnexPayload(Request $request, FilmApplication $application): array
     {
+        $workSummaryMinWords = WorkCategory::workSummaryMinWordsFor(
+            $application->work_category ?: data_get($application->metadata, 'project.work_categories.0'),
+        );
         $governorateCodes = Governorate::activeCodes();
         $locationTypeCodes = FilmingLocationType::activeCodes();
         $locationTypeApprovalDays = FilmingLocationType::query()
@@ -1504,7 +1954,9 @@ class ApplicationController extends Controller
             ->all();
         $specialRequirementCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT, $request, [
             'filming_locations.*.special_requirements',
+            'location_support_requirements.*.requirement',
         ]);
+        $supportAuthorityCodes = $this->supportAuthorityCodesForValidation();
         $specialRequirementCodes = array_values(array_unique([
             ...$specialRequirementCodes,
             ...array_map('strval', array_keys((array) $request->input('special_location_requirements', []))),
@@ -1516,9 +1968,6 @@ class ApplicationController extends Controller
         $equipmentCategoryCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_EQUIPMENT_CATEGORY, $request, [
             'imported_equipment.*.classification',
         ]);
-        $equipmentShippingMethodCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_EQUIPMENT_SHIPPING_METHOD, $request, [
-            'imported_equipment.*.shipping_method',
-        ]);
         $airportCodes = $this->lookupCodesForValidation(FormLookupOption::TYPE_AIRPORT, $request, [
             'airport_filming_airport_name',
         ]);
@@ -1528,20 +1977,42 @@ class ApplicationController extends Controller
             : ['nullable', 'boolean'];
 
         return $request->validate([
-            'work_content_summary_synopsis' => $this->workContentSummarySynopsisRules(),
+            'production_terms_version' => ['required', 'string', Rule::in([self::PRODUCTION_TERMS_VERSION])],
+            'production_terms_accepted' => ['accepted'],
+            'production_terms_local_applicant_name' => ['required', 'string', 'max:255'],
+            'production_terms_local_signature' => ['required', 'string', 'max:255'],
+            'production_terms_foreign_applicant_name' => ['nullable', 'string', 'max:255'],
+            'production_terms_foreign_signature' => ['nullable', 'string', 'max:255'],
+            'production_terms_accepted_at' => ['nullable', 'date'],
+            'production_terms_accepted_by_user_id' => ['nullable', 'integer'],
+            ...$this->ministryInteriorPersonalDetailsValidationRules($request),
+            'work_content_summary_synopsis' => $this->workContentSummarySynopsisRules($workSummaryMinWords),
             'work_content_summary_confirmed' => ['accepted'],
+            'work_content_summary_attachment' => ['nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx'],
+            'work_content_summary_attachment_path' => ['nullable', 'string', 'max:1000'],
+            'work_content_summary_attachment_name' => ['nullable', 'string', 'max:255'],
+            'work_content_summary_attachment_mime_type' => ['nullable', 'string', 'max:255'],
+            'work_content_summary_attachment_size' => ['nullable', 'integer', 'min:0'],
+            'work_content_summary_attachment_uploaded_at' => ['nullable', 'string', 'max:255'],
             'cast_crew' => ['nullable', 'array'],
             'cast_crew.*.name' => ['nullable', 'string', 'max:255'],
-            'cast_crew.*.first_name' => ['nullable', 'string', 'max:255'],
-            'cast_crew.*.second_name' => ['nullable', 'string', 'max:255'],
-            'cast_crew.*.third_name' => ['nullable', 'string', 'max:255'],
-            'cast_crew.*.family_name' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.first_name' => ['required_if:cast_crew.*.nationality,jordanian', 'nullable', 'string', 'max:255'],
+            'cast_crew.*.second_name' => ['required_if:cast_crew.*.nationality,jordanian', 'nullable', 'string', 'max:255'],
+            'cast_crew.*.third_name' => ['required_if:cast_crew.*.nationality,jordanian', 'nullable', 'string', 'max:255'],
+            'cast_crew.*.family_name' => ['required_if:cast_crew.*.nationality,jordanian', 'nullable', 'string', 'max:255'],
             'cast_crew.*.role' => ['nullable', 'string', 'max:255'],
             'cast_crew.*.nationality' => ['nullable', 'string', 'max:255'],
             'cast_crew.*.gender' => ['nullable', Rule::in(['male', 'female'])],
             'cast_crew.*.birth_date' => ['nullable', 'date', 'before:today'],
-            'cast_crew.*.identity_number' => ['nullable', 'string', 'max:255', $this->castCrewIdentityNumberRule($request)],
+            'cast_crew.*.identity_number' => ['required_if:cast_crew.*.nationality,jordanian', 'nullable', 'string', 'max:255', $this->castCrewIdentityNumberRule($request)],
+            'cast_crew.*.passport_image' => ['nullable', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
+            'cast_crew.*.passport_image_path' => ['nullable', 'string', 'max:1000'],
+            'cast_crew.*.passport_image_name' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.passport_image_mime_type' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.passport_image_size' => ['nullable', 'integer', 'min:0'],
+            'cast_crew.*.passport_image_uploaded_at' => ['nullable', 'string', 'max:255'],
             'filming_locations' => ['nullable', 'array'],
+            'filming_locations.*.location_key' => ['nullable', 'string', 'max:100'],
             'filming_locations.*.governorate' => ['nullable', 'string', Rule::in($governorateCodes)],
             'filming_locations.*.location_name' => ['nullable', 'string', 'max:255'],
             'filming_locations.*.address' => ['nullable', 'string', 'max:500'],
@@ -1550,14 +2021,29 @@ class ApplicationController extends Controller
             'filming_locations.*.special_requirements' => ['nullable', 'array'],
             'filming_locations.*.special_requirements.*' => ['nullable', 'string', Rule::in($specialRequirementCodes)],
             'filming_locations.*.support_requirements' => ['nullable', 'array'],
-            'filming_locations.*.support_requirements.*.authority' => ['nullable', 'string', Rule::in(['public_security', 'military'])],
-            'filming_locations.*.support_requirements.*.requirement' => ['nullable', 'string', 'max:255'],
+            'filming_locations.*.support_requirements.*.authority' => ['nullable', 'string', Rule::in($supportAuthorityCodes)],
+            'filming_locations.*.support_requirements.*.requirement' => ['nullable', 'string', 'max:1000', $this->locationSupportRequirementBelongsToAuthorityRule($request)],
             'filming_locations.*.support_requirements.*.date' => ['nullable', 'date', $this->filmingLocationSupportDateWithinRangeRule($request)],
             'filming_locations.*.support_requirements.*.time_from' => ['nullable', 'date_format:H:i'],
             'filming_locations.*.support_requirements.*.time_to' => ['nullable', 'date_format:H:i'],
-            'filming_locations.*.support_requirements.*.notes' => [new SupportRequirementNotesRequired(), 'nullable', 'string', 'max:1000'],
+            'filming_locations.*.support_requirements.*.notes' => [new SupportRequirementNotesRequired, 'nullable', 'string', 'max:1000'],
             'filming_locations.*.start_date' => ['nullable', 'date', 'after_or_equal:today', $this->filmingLocationStartRespectsApprovalLeadTimeRule($request, 'filming_locations', $locationTypeApprovalDays)],
             'filming_locations.*.end_date' => ['nullable', 'date'],
+            'location_support_requirements' => ['nullable', 'array'],
+            'location_support_requirements.*.requirement_key' => ['nullable', 'string', 'max:100'],
+            'location_support_requirements.*.authority' => ['nullable', 'string', Rule::in($supportAuthorityCodes)],
+            'location_support_requirements.*.requirement' => ['nullable', 'string', Rule::in($specialRequirementCodes), $this->locationSupportRequirementBelongsToAuthorityRule($request)],
+            'location_support_requirements.*.notes' => [new SupportRequirementNotesRequired, 'nullable', 'string', 'max:1000'],
+            'location_support_requirements.*.schedule_mode' => ['nullable', Rule::in([LocationSupportRequirements::SCHEDULE_SHARED, LocationSupportRequirements::SCHEDULE_PER_LOCATION])],
+            'location_support_requirements.*.shared_date' => ['nullable', 'date', $this->sharedLocationSupportDateWithinRangeRule($request)],
+            'location_support_requirements.*.shared_time_from' => ['nullable', 'date_format:H:i'],
+            'location_support_requirements.*.shared_time_to' => ['nullable', 'date_format:H:i'],
+            'location_support_requirements.*.assignments' => ['nullable', 'array', $this->sharedLocationSupportAssignmentsRule($request)],
+            'location_support_requirements.*.assignments.*.location_key' => ['nullable', 'string', 'max:100'],
+            'location_support_requirements.*.assignments.*.selected' => ['nullable', 'boolean'],
+            'location_support_requirements.*.assignments.*.date' => ['nullable', 'date', $this->sharedLocationSupportDateWithinRangeRule($request)],
+            'location_support_requirements.*.assignments.*.time_from' => ['nullable', 'date_format:H:i'],
+            'location_support_requirements.*.assignments.*.time_to' => ['nullable', 'date_format:H:i'],
             'special_location_requirements' => ['nullable', 'array', $this->lookupArrayKeysRule($specialRequirementCodes)],
             'special_location_requirements.*.locations' => ['nullable', 'array'],
             'special_location_requirements.*.locations.*' => ['nullable', 'string', 'max:255'],
@@ -1570,6 +2056,12 @@ class ApplicationController extends Controller
             'equipment_travelers.*.arrival_flight_number' => ['nullable', 'string', 'max:100'],
             'equipment_travelers.*.departure_date' => ['nullable', 'date'],
             'equipment_travelers.*.departure_flight_number' => ['nullable', 'string', 'max:100'],
+            'equipment_travelers.*.passport_image' => ['nullable', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
+            'equipment_travelers.*.passport_image_path' => ['nullable', 'string', 'max:1000'],
+            'equipment_travelers.*.passport_image_name' => ['nullable', 'string', 'max:255'],
+            'equipment_travelers.*.passport_image_mime_type' => ['nullable', 'string', 'max:255'],
+            'equipment_travelers.*.passport_image_size' => ['nullable', 'integer', 'min:0'],
+            'equipment_travelers.*.passport_image_uploaded_at' => ['nullable', 'string', 'max:255'],
             'traveler_equipment_acknowledged' => $travelerEquipmentAcknowledgementRules,
             'imported_equipment' => ['nullable', 'array'],
             'imported_equipment.*.transport_group' => ['nullable', 'string', 'max:100'],
@@ -1579,9 +2071,7 @@ class ApplicationController extends Controller
             'imported_equipment.*.traveler_name' => ['nullable', 'string', 'max:255'],
             'imported_equipment.*.quantity' => ['nullable', 'integer', 'min:0', 'max:100000'],
             'imported_equipment.*.unit_value' => ['nullable', 'numeric', 'min:0', 'max:999999999.99'],
-            'imported_equipment.*.total_value' => ['nullable', 'numeric', 'min:0', 'max:999999999.99'],
             'imported_equipment.*.classification' => ['nullable', 'string', 'max:255', Rule::in($equipmentCategoryCodes)],
-            'imported_equipment.*.shipping_method' => ['nullable', 'string', 'max:255', Rule::in($equipmentShippingMethodCodes)],
             'imported_equipment.*.origin_country' => ['nullable', 'string', 'max:255'],
             'imported_equipment.*.entry_point' => ['nullable', 'string', 'max:255', Rule::in($equipmentEntryPointCodes)],
             'imported_equipment.*.shipping_company_name' => ['nullable', 'string', 'max:255'],
@@ -1640,6 +2130,63 @@ class ApplicationController extends Controller
     }
 
     /**
+     * @return array<string, array<int, mixed>>
+     */
+    private function ministryInteriorPersonalDetailsValidationRules(Request $request): array
+    {
+        $rows = MinistryInteriorPersonalDetailsData::rows(
+            $request->input('ministry_interior_personal_details', []),
+        );
+        $rules = [
+            'ministry_interior_personal_details' => ['nullable', 'array'],
+        ];
+
+        foreach ($rows as $index => $row) {
+            $requiresDetails = MinistryInteriorPersonalDetailsData::hasSubmittedData($row)
+                || MinistryInteriorPersonalDetailsData::isConfirmed($row);
+            $required = Rule::requiredIf($requiresDetails);
+            $prefix = 'ministry_interior_personal_details.'.$index;
+
+            $rules += [
+                $prefix.'.personal_number' => ['nullable', 'string', 'max:100'],
+                $prefix.'.current_nationality' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.current_full_name' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.original_nationality' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.original_full_name' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.gender' => [$required, 'nullable', Rule::in(['male', 'female'])],
+                $prefix.'.passport_number' => [$required, 'nullable', 'string', 'max:100'],
+                $prefix.'.passport_type' => [$required, 'nullable', 'string', 'max:100'],
+                $prefix.'.passport_issue_place' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.passport_issue_date' => [$required, 'nullable', 'date'],
+                $prefix.'.passport_expiry_date' => [$required, 'nullable', 'date', 'after_or_equal:'.$prefix.'.passport_issue_date'],
+                $prefix.'.birth_place' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.birth_date' => [$required, 'nullable', 'date', 'before:today'],
+                $prefix.'.education_qualification' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.profession' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.workplace' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.mother_full_name' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.mother_nationality' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.spouse_full_name' => ['nullable', 'string', 'max:255'],
+                $prefix.'.spouse_nationality' => ['nullable', 'string', 'max:255'],
+                $prefix.'.spouse_birth_date' => ['nullable', 'date', 'before:today'],
+                $prefix.'.spouse_mother_full_name' => ['nullable', 'string', 'max:255'],
+                $prefix.'.visit_residence_reason' => [$required, 'nullable', 'string', 'max:1000'],
+                $prefix.'.country_of_arrival' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.country_of_residence' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.residence_issue_date' => ['nullable', 'date'],
+                $prefix.'.residence_expiry_date' => ['nullable', 'date', 'after_or_equal:'.$prefix.'.residence_issue_date'],
+                $prefix.'.jordan_residence_address' => ['nullable', 'string', 'max:500'],
+                $prefix.'.signature' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.confirmed' => $requiresDetails ? ['accepted'] : ['nullable', 'boolean'],
+                $prefix.'.signed_at' => ['nullable', 'date'],
+                $prefix.'.signed_by_user_id' => ['nullable', 'integer'],
+            ];
+        }
+
+        return $rules;
+    }
+
+    /**
      * @param  array<string, array<int, mixed>>  $rules
      * @return array<string, array<int, mixed>>
      */
@@ -1690,6 +2237,22 @@ class ApplicationController extends Controller
                 }
 
                 if ($attribute === 'filming_locations.*.support_requirements.*.notes' && $rule instanceof SupportRequirementNotesRequired) {
+                    continue;
+                }
+
+                if ($attribute === 'location_support_requirements.*.shared_date' && $rule instanceof \Closure) {
+                    continue;
+                }
+
+                if ($attribute === 'location_support_requirements.*.assignments' && $rule instanceof \Closure) {
+                    continue;
+                }
+
+                if ($attribute === 'location_support_requirements.*.assignments.*.date' && $rule instanceof \Closure) {
+                    continue;
+                }
+
+                if ($attribute === 'location_support_requirements.*.notes' && $rule instanceof SupportRequirementNotesRequired) {
                     continue;
                 }
 
@@ -1748,8 +2311,6 @@ class ApplicationController extends Controller
             'international_liaison_mobile' => null,
             'international_account_exists' => false,
             'international_account_user_id' => null,
-            'international_account_password' => null,
-            'international_account_password_confirmation' => null,
             'supporting_notes' => null,
         ];
 
@@ -1873,10 +2434,27 @@ class ApplicationController extends Controller
             'international_liaison_mobile' => data_get($metadata, 'international.international_liaison_mobile'),
             'international_account_exists' => filled(data_get($metadata, 'international.account.user_id')) || filled(data_get($metadata, 'international.account.email')),
             'international_account_user_id' => data_get($metadata, 'international.account.user_id'),
+            'production_terms_version' => data_get($annex, 'production_terms.version', self::PRODUCTION_TERMS_VERSION),
+            'production_terms_accepted' => data_get($annex, 'production_terms.accepted') ? '1' : '0',
+            'production_terms_local_applicant_name' => data_get($annex, 'production_terms.local_applicant_name'),
+            'production_terms_local_signature' => data_get($annex, 'production_terms.local_signature'),
+            'production_terms_foreign_applicant_name' => data_get($annex, 'production_terms.foreign_applicant_name'),
+            'production_terms_foreign_signature' => data_get($annex, 'production_terms.foreign_signature'),
+            'production_terms_accepted_at' => data_get($annex, 'production_terms.accepted_at'),
+            'production_terms_accepted_by_user_id' => data_get($annex, 'production_terms.accepted_by_user_id'),
+            'ministry_interior_personal_details' => MinistryInteriorPersonalDetailsData::rows(
+                data_get($annex, 'ministry_interior_personal_details', []),
+            ),
             'work_content_summary_synopsis' => data_get($annex, 'work_content_summary.synopsis'),
             'work_content_summary_confirmed' => data_get($annex, 'work_content_summary.confirmed') ? '1' : '0',
+            'work_content_summary_attachment_path' => data_get($annex, 'work_content_summary.attachment_path'),
+            'work_content_summary_attachment_name' => data_get($annex, 'work_content_summary.attachment_name'),
+            'work_content_summary_attachment_mime_type' => data_get($annex, 'work_content_summary.attachment_mime_type'),
+            'work_content_summary_attachment_size' => data_get($annex, 'work_content_summary.attachment_size'),
+            'work_content_summary_attachment_uploaded_at' => data_get($annex, 'work_content_summary.attachment_uploaded_at'),
             'cast_crew' => (array) data_get($annex, 'cast_crew', []),
             'filming_locations' => (array) data_get($annex, 'filming_locations', []),
+            'location_support_requirements' => (array) data_get($annex, 'location_support_requirements', []),
             'special_location_requirements' => (array) data_get($annex, 'special_location_requirements', []),
             'safety_guidelines_acknowledged' => data_get($annex, 'safety_guidelines.acknowledged') ? '1' : '0',
             'safety_guidelines_notes' => data_get($annex, 'safety_guidelines.notes'),
@@ -1986,29 +2564,70 @@ class ApplicationController extends Controller
     private function annexMetadata(array $validated, array $existingAnnex = []): array
     {
         $filmingLocations = $this->filmingLocationRows((array) ($validated['filming_locations'] ?? []));
+        $locationSupportRequirements = array_key_exists('location_support_requirements', $validated)
+            ? LocationSupportRequirements::normalize(
+                $this->hydrateLocationSupportRequirementReferences((array) $validated['location_support_requirements']),
+                $filmingLocations,
+            )
+            : LocationSupportRequirements::fromLegacy(
+                $filmingLocations,
+                (array) ($validated['public_security_support'] ?? []),
+                (array) ($validated['military_support'] ?? []),
+            );
+        $filmingLocations = LocationSupportRequirements::applyToLocations(
+            $filmingLocations,
+            $locationSupportRequirements,
+        );
         $specialLocationRequirements = $this->specialLocationRequirementRows(
             (array) ($validated['special_location_requirements'] ?? []),
             $filmingLocations,
         );
         $locationSupportRows = $this->locationSupportRows(
             $filmingLocations,
-            (array) ($validated['public_security_support'] ?? []),
-            (array) ($validated['military_support'] ?? []),
+            [],
+            [],
         );
+        $ministryInteriorPersonalDetails = array_key_exists('ministry_interior_personal_details', $validated)
+            ? MinistryInteriorPersonalDetailsData::normalizeForStorage($validated['ministry_interior_personal_details'])
+            : MinistryInteriorPersonalDetailsData::rows(
+                data_get($existingAnnex, 'ministry_interior_personal_details', []),
+            );
 
         return [
+            'production_terms' => [
+                'version' => ($validated['production_terms_version'] ?? null) ?: self::PRODUCTION_TERMS_VERSION,
+                'accepted' => (bool) ($validated['production_terms_accepted'] ?? false),
+                'local_applicant_name' => ($validated['production_terms_local_applicant_name'] ?? null) ?: null,
+                'local_signature' => ($validated['production_terms_local_signature'] ?? null) ?: null,
+                'foreign_applicant_name' => ($validated['production_terms_foreign_applicant_name'] ?? null) ?: null,
+                'foreign_signature' => ($validated['production_terms_foreign_signature'] ?? null) ?: null,
+                'accepted_at' => ($validated['production_terms_accepted_at'] ?? null) ?: null,
+                'accepted_by_user_id' => ($validated['production_terms_accepted_by_user_id'] ?? null) ?: null,
+            ],
+            'ministry_interior_personal_details' => $ministryInteriorPersonalDetails,
             'work_content_summary' => [
                 'synopsis' => ($validated['work_content_summary_synopsis'] ?? null) ?: null,
                 'confirmed' => (bool) ($validated['work_content_summary_confirmed'] ?? false),
+                ...$this->workContentSummaryAttachmentMetadata(
+                    $validated,
+                    (array) data_get($existingAnnex, 'work_content_summary', []),
+                ),
             ],
-            'cast_crew' => $this->castCrewRows((array) ($validated['cast_crew'] ?? [])),
+            'cast_crew' => $this->castCrewRows(
+                (array) ($validated['cast_crew'] ?? []),
+                (array) data_get($existingAnnex, 'cast_crew', []),
+            ),
             'filming_locations' => $filmingLocations,
+            'location_support_requirements' => $locationSupportRequirements,
             'special_location_requirements' => $specialLocationRequirements,
             'safety_guidelines' => [
                 'acknowledged' => (bool) ($validated['safety_guidelines_acknowledged'] ?? false),
                 'notes' => ($validated['safety_guidelines_notes'] ?? null) ?: null,
             ],
-            'equipment_travelers' => $this->filledRows((array) ($validated['equipment_travelers'] ?? []), ['traveler_name', 'arrival_date', 'arrival_flight_number', 'departure_date', 'departure_flight_number']),
+            'equipment_travelers' => $this->equipmentTravelerRows(
+                (array) ($validated['equipment_travelers'] ?? []),
+                (array) data_get($existingAnnex, 'equipment_travelers', []),
+            ),
             'traveler_equipment_acknowledged' => (bool) ($validated['traveler_equipment_acknowledged'] ?? false),
             'imported_equipment' => $this->importedEquipmentRows(
                 (array) ($validated['imported_equipment'] ?? []),
@@ -2027,6 +2646,17 @@ class ApplicationController extends Controller
             'governmental_scenes' => $this->filledRows((array) ($validated['governmental_scenes'] ?? []), ['site_name', 'authority', 'scene_description', 'filming_date']),
             'governmental_scenes_confirmed' => (bool) ($validated['governmental_scenes_confirmed'] ?? false),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $values
+     * @return array<string, mixed>
+     */
+    private function normalizeOptionalAnnexForm(array $values): array
+    {
+        return collect($values)
+            ->map(fn ($value) => is_string($value) && blank($value) ? null : $value)
+            ->all();
     }
 
     /**
@@ -2050,6 +2680,58 @@ class ApplicationController extends Controller
             ->filter(fn (array $row): bool => collect($row)
                 ->filter(fn ($value): bool => filled($value))
                 ->isNotEmpty())
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int|string, array<string, mixed>>  $rows
+     * @param  array<int|string, array<string, mixed>>  $existingRows
+     * @return array<int, array<string, mixed>>
+     */
+    private function equipmentTravelerRows(array $rows, array $existingRows = []): array
+    {
+        $existingValues = array_values($existingRows);
+        $position = 0;
+
+        return collect($rows)
+            ->map(function (array $row, int|string $key) use ($existingRows, $existingValues, &$position): array {
+                $existingRow = (array) ($existingRows[$key] ?? $existingValues[$position] ?? []);
+                $file = $row['passport_image'] ?? null;
+
+                if ($file instanceof UploadedFile) {
+                    $path = $file->store('application-annex/equipment-traveler-passports', 'local');
+                    $passportMetadata = [
+                        'passport_image_path' => $path,
+                        'passport_image_name' => $file->getClientOriginalName(),
+                        'passport_image_mime_type' => $file->getClientMimeType(),
+                        'passport_image_size' => $file->getSize(),
+                        'passport_image_uploaded_at' => now()->toDateTimeString(),
+                    ];
+                } else {
+                    $passportMetadata = [
+                        'passport_image_path' => $this->nullableTrimmedString($row['passport_image_path'] ?? data_get($existingRow, 'passport_image_path')),
+                        'passport_image_name' => $this->nullableTrimmedString($row['passport_image_name'] ?? data_get($existingRow, 'passport_image_name')),
+                        'passport_image_mime_type' => $this->nullableTrimmedString($row['passport_image_mime_type'] ?? data_get($existingRow, 'passport_image_mime_type')),
+                        'passport_image_size' => $row['passport_image_size'] ?? data_get($existingRow, 'passport_image_size'),
+                        'passport_image_uploaded_at' => $this->nullableTrimmedString($row['passport_image_uploaded_at'] ?? data_get($existingRow, 'passport_image_uploaded_at')),
+                    ];
+                }
+
+                $normalized = [
+                    'traveler_name' => $this->nullableTrimmedString($row['traveler_name'] ?? null),
+                    'arrival_date' => $row['arrival_date'] ?? null,
+                    'arrival_flight_number' => $this->nullableTrimmedString($row['arrival_flight_number'] ?? null),
+                    'departure_date' => $row['departure_date'] ?? null,
+                    'departure_flight_number' => $this->nullableTrimmedString($row['departure_flight_number'] ?? null),
+                    ...$passportMetadata,
+                ];
+
+                $position++;
+
+                return $normalized;
+            })
+            ->filter(fn (array $row): bool => collect($row)->contains(fn ($value): bool => filled($value)))
             ->values()
             ->all();
     }
@@ -2095,21 +2777,25 @@ class ApplicationController extends Controller
             $transportGroup = $this->nullableTrimmedString($row['transport_group'] ?? data_get($existingRow, 'transport_group')) ?: 'shipping';
             $hasNewShipmentFields = collect(['shipping_company_name', 'invoice_number', 'bill_of_lading_number', 'arrival_date', 'departure_date', 'customs_center', 'attachment'])
                 ->contains(fn (string $field): bool => filled($row[$field] ?? null));
-            $hasLegacyEquipmentFields = collect(['item', 'serial_number', 'flight_reference', 'traveler_name', 'quantity', 'unit_value', 'total_value', 'classification', 'shipping_method', 'origin_country', 'entry_point'])
+            $hasLegacyEquipmentFields = collect(['item', 'serial_number', 'flight_reference', 'traveler_name', 'quantity', 'unit_value', 'total_value', 'classification', 'origin_country', 'entry_point'])
                 ->contains(fn (string $field): bool => filled($row[$field] ?? null));
 
             if ($transportGroup === 'traveler' || ($hasLegacyEquipmentFields && ! $hasNewShipmentFields)) {
+                $quantity = is_numeric($row['quantity'] ?? null) ? (int) $row['quantity'] : null;
+                $unitValue = is_numeric($row['unit_value'] ?? null) ? round((float) $row['unit_value'], 2) : null;
+
                 $normalized = [
                     'transport_group' => $transportGroup === 'traveler' ? 'traveler' : 'shipping',
                     'item' => $this->nullableTrimmedString($row['item'] ?? null),
                     'serial_number' => $this->nullableTrimmedString($row['serial_number'] ?? null),
                     'flight_reference' => $this->nullableTrimmedString($row['flight_reference'] ?? null),
                     'traveler_name' => $this->nullableTrimmedString($row['traveler_name'] ?? null),
-                    'quantity' => $row['quantity'] ?? null,
-                    'unit_value' => $row['unit_value'] ?? null,
-                    'total_value' => $row['total_value'] ?? null,
+                    'quantity' => $quantity,
+                    'unit_value' => $unitValue,
+                    'total_value' => $quantity !== null && $unitValue !== null
+                        ? round($quantity * $unitValue, 2)
+                        : null,
                     'classification' => $this->nullableTrimmedString($row['classification'] ?? null),
-                    'shipping_method' => $this->nullableTrimmedString($row['shipping_method'] ?? null),
                     'origin_country' => $this->nullableTrimmedString($row['origin_country'] ?? null),
                     'entry_point' => $this->nullableTrimmedString($row['entry_point'] ?? null),
                 ];
@@ -2167,6 +2853,36 @@ class ApplicationController extends Controller
         ];
     }
 
+    /**
+     * @param  array<string, mixed>  $validated
+     * @param  array<string, mixed>  $existingSummary
+     * @return array<string, mixed>
+     */
+    private function workContentSummaryAttachmentMetadata(array $validated, array $existingSummary = []): array
+    {
+        $file = $validated['work_content_summary_attachment'] ?? null;
+
+        if ($file instanceof UploadedFile) {
+            $path = $file->store('application-annex/work-content-summaries', 'local');
+
+            return [
+                'attachment_path' => $path,
+                'attachment_name' => $file->getClientOriginalName(),
+                'attachment_mime_type' => $file->getClientMimeType(),
+                'attachment_size' => $file->getSize(),
+                'attachment_uploaded_at' => now()->toDateTimeString(),
+            ];
+        }
+
+        return [
+            'attachment_path' => $this->nullableTrimmedString($validated['work_content_summary_attachment_path'] ?? data_get($existingSummary, 'attachment_path')),
+            'attachment_name' => $this->nullableTrimmedString($validated['work_content_summary_attachment_name'] ?? data_get($existingSummary, 'attachment_name')),
+            'attachment_mime_type' => $this->nullableTrimmedString($validated['work_content_summary_attachment_mime_type'] ?? data_get($existingSummary, 'attachment_mime_type')),
+            'attachment_size' => $validated['work_content_summary_attachment_size'] ?? data_get($existingSummary, 'attachment_size'),
+            'attachment_uploaded_at' => $this->nullableTrimmedString($validated['work_content_summary_attachment_uploaded_at'] ?? data_get($existingSummary, 'attachment_uploaded_at')),
+        ];
+    }
+
     private function nullableTrimmedString(mixed $value): ?string
     {
         if ($value === null) {
@@ -2184,7 +2900,7 @@ class ApplicationController extends Controller
      */
     private function filmingLocationRows(array $rows): array
     {
-        return collect($this->filledRows($rows, ['governorate', 'location_name', 'address', 'nature', 'location_type', 'special_requirements', 'support_requirements', 'start_date', 'end_date']))
+        $locations = collect($this->filledRows($rows, ['location_key', 'governorate', 'location_name', 'address', 'nature', 'location_type', 'special_requirements', 'support_requirements', 'start_date', 'end_date']))
             ->map(function (array $row): array {
                 $row['special_requirements'] = collect((array) ($row['special_requirements'] ?? []))
                     ->map(fn ($value): string => trim((string) $value))
@@ -2194,12 +2910,14 @@ class ApplicationController extends Controller
                     ->all();
                 $row['support_requirements'] = $this->filledRows(
                     (array) ($row['support_requirements'] ?? []),
-                    ['authority', 'requirement', 'date', 'time_from', 'time_to', 'notes'],
+                    ['requirement_key', 'authority', 'authority_name_en', 'authority_name_ar', 'requirement', 'requirement_name_en', 'requirement_name_ar', 'date', 'time_from', 'time_to', 'notes'],
                 );
 
                 return $row;
             })
             ->all();
+
+        return LocationSupportRequirements::prepareLocations($locations);
     }
 
     /**
@@ -2218,9 +2936,9 @@ class ApplicationController extends Controller
             $locationLabel = filled($locationLabel) ? $locationLabel : 'Location '.($index + 1);
 
             foreach ((array) ($location['support_requirements'] ?? []) as $supportRequirement) {
-                $authority = (string) ($supportRequirement['authority'] ?? '');
+                $authority = LocationSupportRequirements::legacyAuthorityCode($supportRequirement['authority'] ?? null);
 
-                if (! in_array($authority, ['public_security', 'military'], true)) {
+                if ($authority === null) {
                     continue;
                 }
 
@@ -2287,13 +3005,18 @@ class ApplicationController extends Controller
     }
 
     /**
-     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<int|string, array<string, mixed>>  $rows
+     * @param  array<int|string, array<string, mixed>>  $existingRows
      * @return array<int, array<string, mixed>>
      */
-    private function castCrewRows(array $rows): array
+    private function castCrewRows(array $rows, array $existingRows = []): array
     {
-        $rows = collect($rows)
-            ->map(function (array $row): array {
+        $existingValues = array_values($existingRows);
+        $position = 0;
+
+        return collect($rows)
+            ->map(function (array $row, int|string $key) use ($existingRows, $existingValues, &$position): array {
+                $existingRow = (array) ($existingRows[$key] ?? $existingValues[$position] ?? []);
                 $nameParts = collect(['first_name', 'second_name', 'third_name', 'family_name'])
                     ->map(fn (string $key): string => trim((string) ($row[$key] ?? '')))
                     ->filter()
@@ -2304,11 +3027,52 @@ class ApplicationController extends Controller
                     $row['name'] = implode(' ', $nameParts);
                 }
 
-                return $row;
-            })
-            ->all();
+                $nationality = $this->nullableTrimmedString($row['nationality'] ?? null);
+                $isJordanian = in_array(mb_strtolower((string) $nationality), ['jordanian', 'أردني', 'اردني'], true);
+                $passportMetadata = [];
 
-        return $this->filledRows($rows, ['name', 'first_name', 'second_name', 'third_name', 'family_name', 'role', 'nationality', 'gender', 'birth_date', 'identity_number']);
+                if (! $isJordanian && filled($nationality)) {
+                    $file = $row['passport_image'] ?? null;
+
+                    if ($file instanceof UploadedFile) {
+                        $path = $file->store('application-annex/cast-crew-passports', 'local');
+                        $passportMetadata = [
+                            'passport_image_path' => $path,
+                            'passport_image_name' => $file->getClientOriginalName(),
+                            'passport_image_mime_type' => $file->getClientMimeType(),
+                            'passport_image_size' => $file->getSize(),
+                            'passport_image_uploaded_at' => now()->toDateTimeString(),
+                        ];
+                    } else {
+                        $passportMetadata = [
+                            'passport_image_path' => $this->nullableTrimmedString($row['passport_image_path'] ?? data_get($existingRow, 'passport_image_path')),
+                            'passport_image_name' => $this->nullableTrimmedString($row['passport_image_name'] ?? data_get($existingRow, 'passport_image_name')),
+                            'passport_image_mime_type' => $this->nullableTrimmedString($row['passport_image_mime_type'] ?? data_get($existingRow, 'passport_image_mime_type')),
+                            'passport_image_size' => $row['passport_image_size'] ?? data_get($existingRow, 'passport_image_size'),
+                            'passport_image_uploaded_at' => $this->nullableTrimmedString($row['passport_image_uploaded_at'] ?? data_get($existingRow, 'passport_image_uploaded_at')),
+                        ];
+                    }
+                }
+
+                $position++;
+
+                return [
+                    'name' => $this->nullableTrimmedString($row['name'] ?? null),
+                    'first_name' => $this->nullableTrimmedString($row['first_name'] ?? null),
+                    'second_name' => $this->nullableTrimmedString($row['second_name'] ?? null),
+                    'third_name' => $this->nullableTrimmedString($row['third_name'] ?? null),
+                    'family_name' => $this->nullableTrimmedString($row['family_name'] ?? null),
+                    'role' => $this->nullableTrimmedString($row['role'] ?? null),
+                    'nationality' => $nationality,
+                    'gender' => $this->nullableTrimmedString($row['gender'] ?? null),
+                    'birth_date' => $row['birth_date'] ?? null,
+                    'identity_number' => $this->nullableTrimmedString($row['identity_number'] ?? null),
+                    ...$passportMetadata,
+                ];
+            })
+            ->filter(fn (array $row): bool => collect($row)->contains(fn ($value): bool => filled($value)))
+            ->values()
+            ->all();
     }
 
     /**
@@ -2387,19 +3151,19 @@ class ApplicationController extends Controller
         ]);
     }
 
-    private function syncInternationalProducerAccount(FilmApplication $application, array $validated, Entity $entity): void
+    private function syncInternationalProducerAccount(FilmApplication $application, array $validated, Entity $entity): ?User
     {
         $email = Str::of((string) (($validated['international_liaison_email'] ?? null) ?: ($validated['international_producer_email'] ?? null)))
             ->trim()
             ->lower()
             ->value();
-        $password = $validated['international_account_password'] ?? null;
 
-        if (! filled($email) || ! filled($password)) {
-            return;
+        if (! filled($email)) {
+            return null;
         }
 
         $user = User::withTrashed()->where('email', $email)->first() ?? new User(['email' => $email]);
+        $isNewUser = ! $user->exists;
 
         if ($user->exists && $user->trashed()) {
             $user->restore();
@@ -2417,8 +3181,16 @@ class ApplicationController extends Controller
             'email' => $email,
             'status' => 'active',
             'registration_type' => 'international_producer',
-            'password' => Hash::make($password),
         ];
+
+        if ($isNewUser) {
+            $attributes += [
+                'password' => Str::password(64),
+                'must_change_password' => true,
+                'invitation_sent_at' => null,
+                'password_changed_at' => null,
+            ];
+        }
 
         if (filled($phone) && ! User::withTrashed()
             ->where('phone', $phone)
@@ -2454,9 +3226,36 @@ class ApplicationController extends Controller
             'user_id' => $user->getKey(),
             'email' => $email,
             'read_only' => true,
+            'activation_required' => $user->requiresPasswordSetup(),
         ]);
 
         $application->forceFill(['metadata' => $metadata])->save();
+
+        return $user->requiresPasswordSetup() && ! $user->invitation_sent_at
+            ? $user
+            : null;
+    }
+
+    private function sendForeignProducerInvitation(User $user, FilmApplication $application): void
+    {
+        try {
+            $token = Password::broker()->createToken($user);
+
+            $user->notify(new ForeignProducerInvitationNotification($application, $token));
+            $user->forceFill(['invitation_sent_at' => now()])->save();
+
+            $metadata = $application->metadata ?? [];
+            data_set($metadata, 'international.account.invitation_sent_at', $user->invitation_sent_at?->toIso8601String());
+            $application->forceFill(['metadata' => $metadata])->save();
+        } catch (\Throwable $exception) {
+            Log::error('Foreign producer account invitation could not be sent.', [
+                'application_id' => $application->getKey(),
+                'application_code' => $application->code,
+                'user_id' => $user->getKey(),
+                'email' => $user->email,
+                'message' => $exception->getMessage(),
+            ]);
+        }
     }
 
     private function uniqueInternationalUsername(string $email, ?int $ignoreUserId = null): string

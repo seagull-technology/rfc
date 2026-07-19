@@ -2,12 +2,12 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
@@ -140,6 +140,13 @@ class Application extends Model
         return $this->hasMany(ApplicationAuthorityApproval::class)->orderBy('id');
     }
 
+    public function authorityChangeRequests(): HasMany
+    {
+        return $this->hasMany(ApplicationAuthorityChangeRequest::class)
+            ->latest('requested_at')
+            ->latest('id');
+    }
+
     public function documents(): HasMany
     {
         return $this->hasMany(ApplicationDocument::class)->latest();
@@ -225,6 +232,35 @@ class Application extends Model
         return $this->canBeEditedByApplicant();
     }
 
+    public function foreignProducerUserId(): ?int
+    {
+        $userId = (int) data_get($this->metadata, 'international.account.user_id');
+
+        return $userId > 0 ? $userId : null;
+    }
+
+    public function requiresForeignProducerApproval(): bool
+    {
+        return $this->foreignProducerUserId() !== null;
+    }
+
+    public function foreignProducerDeclarationIsSigned(): bool
+    {
+        $linkedUserId = $this->foreignProducerUserId();
+        $declaration = (array) data_get($this->metadata, 'international.account.declaration', []);
+
+        return $linkedUserId !== null
+            && (bool) data_get($declaration, 'accepted')
+            && filled(data_get($declaration, 'signed_at'))
+            && (int) data_get($declaration, 'signed_by_user_id') === $linkedUserId;
+    }
+
+    public function foreignProducerApprovalIsSatisfied(): bool
+    {
+        return ! $this->requiresForeignProducerApproval()
+            || $this->foreignProducerDeclarationIsSigned();
+    }
+
     public function canReceiveApplicantDocuments(): bool
     {
         return ! in_array($this->status, ['approved', 'rejected'], true);
@@ -261,11 +297,11 @@ class Application extends Model
     {
         if (! $this->relationLoaded('authorityApprovals')) {
             return ! $this->authorityApprovals()
-                ->whereIn('status', ['pending', 'in_review'])
+                ->whereIn('status', ['pending', 'in_review', 'changes_requested'])
                 ->exists();
         }
 
-        return ! $this->authorityApprovals->contains(fn (ApplicationAuthorityApproval $approval): bool => in_array($approval->status, ['pending', 'in_review'], true));
+        return ! $this->authorityApprovals->contains(fn (ApplicationAuthorityApproval $approval): bool => in_array($approval->status, ['pending', 'in_review', 'changes_requested'], true));
     }
 
     public function hasRejectedAuthorityApproval(): bool

@@ -113,6 +113,7 @@ Route::group([
         Route::get('/applications/create', [ApplicationController::class, 'create'])->name('applications.create');
         Route::post('/applications', [ApplicationController::class, 'store'])->name('applications.store');
         Route::get('/applications/{application}', [ApplicationController::class, 'show'])->name('applications.show');
+        Route::get('/applications/{application}/forms/print', [ApplicationController::class, 'printForms'])->name('applications.forms.print');
         Route::get('/applications/{application}/edit', [ApplicationController::class, 'edit'])->name('applications.edit');
         Route::post('/applications/{application}/update', [ApplicationController::class, 'update'])->name('applications.update');
         Route::post('/applications/{application}/annex', [ApplicationController::class, 'updateAnnex'])->name('applications.annex.update');
@@ -122,6 +123,7 @@ Route::group([
         Route::get('/applications/{application}/documents/{document}/download', [ApplicationController::class, 'downloadDocument'])->name('applications.documents.download');
         Route::post('/applications/{application}/correspondence', [ApplicationController::class, 'storeCorrespondence'])->name('applications.correspondence.store');
         Route::get('/applications/{application}/correspondence/{correspondence}/download', [ApplicationController::class, 'downloadCorrespondenceAttachment'])->name('applications.correspondence.download');
+        Route::get('/applications/{application}/change-requests/{changeRequest}/attachment', [ApplicationController::class, 'downloadChangeRequestAttachment'])->name('applications.change-requests.attachment.download');
         Route::get('/applications/{application}/final-letter/download', [ApplicationController::class, 'downloadFinalLetter'])->name('applications.final-letter.download');
         Route::get('/applications/{application}/final-letter/print', [ApplicationController::class, 'printFinalLetter'])->name('applications.final-letter.print');
 
@@ -148,12 +150,18 @@ Route::group([
                 Route::get('/applications/{application}', [ApplicationInboxController::class, 'show'])
                     ->middleware('permission:applications.view.entity')
                     ->name('applications.show');
+                Route::get('/applications/{application}/forms/print', [ApplicationInboxController::class, 'printForms'])
+                    ->middleware('permission:applications.view.entity')
+                    ->name('applications.forms.print');
                 Route::post('/applications/{application}/approval', [ApplicationInboxController::class, 'updateApproval'])
                     ->middleware('permission:applications.review')
                     ->name('applications.approval.update');
                 Route::get('/applications/{application}/approvals/{approval}/attachment/download', [ApplicationInboxController::class, 'downloadApprovalAttachment'])
                     ->middleware('permission:applications.view.entity')
                     ->name('applications.approvals.attachment.download');
+                Route::get('/applications/{application}/change-requests/{changeRequest}/attachment', [ApplicationInboxController::class, 'downloadChangeRequestAttachment'])
+                    ->middleware('permission:applications.view.entity')
+                    ->name('applications.change-requests.attachment.download');
                 Route::post('/applications/{application}/correspondence', [ApplicationInboxController::class, 'storeCorrespondence'])
                     ->middleware('permission:applications.review')
                     ->name('applications.correspondence.store');
@@ -193,12 +201,12 @@ Route::group([
                 Route::get('/applications/{application}', [ApplicationManagementController::class, 'show'])
                     ->middleware('permission:applications.view.all')
                     ->name('applications.show');
+                Route::get('/applications/{application}/forms/print', [ApplicationManagementController::class, 'printForms'])
+                    ->middleware('permission:applications.view.all')
+                    ->name('applications.forms.print');
                 Route::post('/applications/{application}/review', [ApplicationManagementController::class, 'review'])
                     ->middleware('permission:applications.review')
                     ->name('applications.review');
-                Route::post('/applications/{application}/issue-facilitation-letter', [ApplicationManagementController::class, 'issueFacilitationLetter'])
-                    ->middleware('permission:applications.review')
-                    ->name('applications.issue-facilitation-letter');
                 Route::post('/applications/{application}/annex-submissions/{annexSubmission}/review', [ApplicationManagementController::class, 'reviewAnnexSubmission'])
                     ->middleware('permission:applications.review')
                     ->name('applications.annex-submissions.review');
@@ -223,6 +231,9 @@ Route::group([
                 Route::get('/applications/{application}/approvals/{approval}/attachment/download', [ApplicationManagementController::class, 'downloadApprovalAttachment'])
                     ->middleware('permission:applications.view.all')
                     ->name('applications.approvals.attachment.download');
+                Route::get('/applications/{application}/change-requests/{changeRequest}/attachment', [ApplicationManagementController::class, 'downloadChangeRequestAttachment'])
+                    ->middleware('permission:applications.view.all')
+                    ->name('applications.change-requests.attachment.download');
                 Route::post('/applications/{application}/correspondence', [ApplicationManagementController::class, 'storeCorrespondence'])
                     ->middleware('permission:applications.review')
                     ->name('applications.correspondence.store');

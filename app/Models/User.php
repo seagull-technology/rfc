@@ -36,6 +36,9 @@ class User extends Authenticatable
         'status',
         'registration_type',
         'password',
+        'must_change_password',
+        'invitation_sent_at',
+        'password_changed_at',
     ];
 
     /**
@@ -60,6 +63,9 @@ class User extends Authenticatable
             'phone_verified_at' => 'datetime',
             'last_login_at' => 'datetime',
             'password' => 'hashed',
+            'must_change_password' => 'boolean',
+            'invitation_sent_at' => 'datetime',
+            'password_changed_at' => 'datetime',
         ];
     }
 
@@ -243,6 +249,10 @@ class User extends Authenticatable
 
     public function canSignIn(): bool
     {
+        if ($this->requiresPasswordSetup()) {
+            return false;
+        }
+
         if ($this->requiresAdminApprovalBeforeLogin()) {
             return ($this->status ?: 'active') === 'active';
         }
@@ -253,5 +263,10 @@ class User extends Authenticatable
             'needs_completion',
             'rejected',
         ], true);
+    }
+
+    public function requiresPasswordSetup(): bool
+    {
+        return (bool) $this->must_change_password;
     }
 }

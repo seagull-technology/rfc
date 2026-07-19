@@ -17,6 +17,7 @@ use App\Models\ReleaseMethod;
 use App\Models\ScoutingRequest;
 use App\Models\User;
 use App\Models\WorkCategory;
+use App\Notifications\Channels\SmsNotificationChannel;
 use App\Notifications\InboxMessageNotification;
 use App\Notifications\RegistrationApprovedNotification;
 use App\Notifications\RegistrationCompletionRequestedNotification;
@@ -314,24 +315,28 @@ class AdminPanelTest extends TestCase
                 'code' => 'test work type',
                 'name_en' => 'Test Work Type',
                 'name_ar' => 'نوع عمل اختبار',
+                'work_summary_min_words' => 275,
                 'sort_order' => 130,
                 'is_active' => '1',
             ])
             ->assertRedirect(route('admin.work-release-lookups.index'));
 
         $workCategory = WorkCategory::query()->where('code', 'test_work_type')->firstOrFail();
+        $this->assertSame(275, $workCategory->workSummaryMinWords());
 
         $this
             ->actingAs($admin)
             ->post(route('admin.work-release-lookups.work-categories.update', $workCategory), [
                 'name_en' => 'Updated Test Work Type',
                 'name_ar' => 'نوع عمل اختبار محدث',
+                'work_summary_min_words' => 325,
                 'sort_order' => 135,
                 'is_active' => '0',
             ])
             ->assertRedirect(route('admin.work-release-lookups.index'));
 
         $this->assertSame('Updated Test Work Type', $workCategory->refresh()->name_en);
+        $this->assertSame(325, $workCategory->workSummaryMinWords());
         $this->assertFalse($workCategory->is_active);
 
         $this
@@ -413,6 +418,70 @@ class AdminPanelTest extends TestCase
             ->assertRedirect(route('admin.form-lookups.index', ['type' => FormLookupOption::TYPE_EQUIPMENT_CATEGORY]));
 
         $this->assertTrue($option->refresh()->is_active);
+    }
+
+    public function test_super_admin_can_assign_location_support_requirement_to_authorities(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $publicSecurity = Entity::query()->where('code', 'public-security-directorate')->firstOrFail();
+        $environment = Entity::query()->where('code', 'royal-society-for-the-conservation-of-nature')->firstOrFail();
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.form-lookups.store'), [
+                'type' => FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT,
+                'code' => 'protected habitat coordination',
+                'name_en' => 'Protected habitat coordination',
+                'name_ar' => 'تنسيق مواقع الموائل المحمية',
+                'notes_prompt_en' => 'Describe the protected habitat support in full detail.',
+                'notes_prompt_ar' => 'يرجى وصف دعم موقع الموائل المحمية بكامل التفاصيل.',
+                'entity_ids' => [$publicSecurity->getKey(), $environment->getKey()],
+                'sort_order' => 210,
+                'is_active' => '1',
+            ])
+            ->assertRedirect(route('admin.form-lookups.index', [
+                'type' => FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT,
+            ]));
+
+        $option = FormLookupOption::query()
+            ->where('type', FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT)
+            ->where('code', 'protected_habitat_coordination')
+            ->firstOrFail();
+
+        $this->assertEqualsCanonicalizing(
+            [$publicSecurity->getKey(), $environment->getKey()],
+            $option->entities()->pluck('entities.id')->all(),
+        );
+        $this->assertSame(
+            'Describe the protected habitat support in full detail.',
+            data_get($option->metadata, 'notes_prompt_en'),
+        );
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.form-lookups.update', $option), [
+                'type' => FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT,
+                'code' => 'protected_habitat_coordination',
+                'name_en' => 'Protected habitat coordination',
+                'name_ar' => 'تنسيق مواقع الموائل المحمية',
+                'notes_prompt_en' => 'Updated support details are required.',
+                'notes_prompt_ar' => 'تفاصيل الدعم المحدثة مطلوبة.',
+                'entity_ids' => [$environment->getKey()],
+                'sort_order' => 210,
+                'is_active' => '1',
+            ])
+            ->assertRedirect(route('admin.form-lookups.index', [
+                'type' => FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT,
+            ]));
+
+        $this->assertSame(
+            [$environment->getKey()],
+            $option->refresh()->entities()->pluck('entities.id')->all(),
+        );
+        $this->assertSame('Updated support details are required.', $option->notesPrompt('en'));
     }
 
     public function test_admin_dashboard_handles_pending_registration_review_queue_with_notifications_dropdown(): void
@@ -2418,7 +2487,7 @@ class AdminPanelTest extends TestCase
             function (RegistrationCompletionRequestedNotification $notification, array $channels) use ($owner, $entity): bool {
                 $this->assertContains('database', $channels);
                 $this->assertContains('mail', $channels);
-                $this->assertContains(\App\Notifications\Channels\SmsNotificationChannel::class, $channels);
+                $this->assertContains(SmsNotificationChannel::class, $channels);
 
                 $payload = $notification->toArray($owner);
 
@@ -2477,7 +2546,7 @@ class AdminPanelTest extends TestCase
             function (RegistrationCompletionRequestedNotification $notification, array $channels) use ($owner, $entity): bool {
                 $this->assertContains('database', $channels);
                 $this->assertContains('mail', $channels);
-                $this->assertContains(\App\Notifications\Channels\SmsNotificationChannel::class, $channels);
+                $this->assertContains(SmsNotificationChannel::class, $channels);
 
                 $payload = $notification->toArray($owner);
 
@@ -2536,7 +2605,7 @@ class AdminPanelTest extends TestCase
             function (RegistrationApprovedNotification $notification, array $channels) use ($owner): bool {
                 $this->assertContains('database', $channels);
                 $this->assertContains('mail', $channels);
-                $this->assertContains(\App\Notifications\Channels\SmsNotificationChannel::class, $channels);
+                $this->assertContains(SmsNotificationChannel::class, $channels);
 
                 $payload = $notification->toArray($owner);
 
@@ -2675,6 +2744,8 @@ class AdminPanelTest extends TestCase
             ->assertSeeText('application/pdf')
             ->assertSeeText('Please update the trade license copy.')
             ->assertSeeText('superadmin@rfc.local');
+
+        $this->assertSame(2, substr_count($response->getContent(), 'data-admin-user-password-toggle aria-label='));
     }
 
     public function test_super_admin_can_update_and_soft_delete_user(): void

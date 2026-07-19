@@ -116,6 +116,36 @@
             min-width: 5.5rem;
             text-align: center;
         }
+
+        .admin-user-show-layout .admin-user-password-control {
+            position: relative;
+        }
+
+        .admin-user-show-layout .admin-user-password-control .form-control {
+            padding-inline-end: 3rem;
+        }
+
+        .admin-user-show-layout .admin-user-password-toggle {
+            align-items: center;
+            background: transparent;
+            border: 0;
+            color: var(--bs-secondary-color, #6c757d);
+            display: inline-flex;
+            font-size: 1.1rem;
+            inset-block: 0;
+            inset-inline-end: .25rem;
+            justify-content: center;
+            margin: auto 0;
+            padding: 0;
+            position: absolute;
+            width: 2.5rem;
+        }
+
+        .admin-user-show-layout .admin-user-password-toggle:hover,
+        .admin-user-show-layout .admin-user-password-toggle:focus {
+            color: var(--bs-danger, #721d18);
+            outline: none;
+        }
     </style>
 @endpush
 
@@ -513,18 +543,28 @@
                         @csrf
                         <div class="col-md-6">
                             <label for="password" class="form-label">{{ __('app.auth.password') }}</label>
-                            <input id="password" name="password" type="password" class="form-control @error('password') is-invalid @enderror" autocomplete="new-password" required>
+                            <div class="admin-user-password-control">
+                                <input id="password" name="password" type="password" class="form-control @error('password') is-invalid @enderror" autocomplete="new-password" required>
+                                <button type="button" class="admin-user-password-toggle" data-admin-user-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
+                                    <i class="ph ph-eye-slash"></i>
+                                </button>
+                            </div>
                             @error('password')
-                                <div class="invalid-feedback">{{ $message }}</div>
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
                             @else
                                 <div class="form-text">{{ __('app.admin.users.password_help') }}</div>
                             @enderror
                         </div>
                         <div class="col-md-6">
                             <label for="password_confirmation" class="form-label">{{ __('app.auth.confirm_password') }}</label>
-                            <input id="password_confirmation" name="password_confirmation" type="password" class="form-control @error('password_confirmation') is-invalid @enderror" autocomplete="new-password" required>
+                            <div class="admin-user-password-control">
+                                <input id="password_confirmation" name="password_confirmation" type="password" class="form-control @error('password_confirmation') is-invalid @enderror" autocomplete="new-password" required>
+                                <button type="button" class="admin-user-password-toggle" data-admin-user-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
+                                    <i class="ph ph-eye-slash"></i>
+                                </button>
+                            </div>
                             @error('password_confirmation')
-                                <div class="invalid-feedback">{{ $message }}</div>
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
                             @enderror
                         </div>
                         <div class="col-12">
@@ -694,6 +734,26 @@
 
     <script>
         (() => {
+            document.querySelectorAll('[data-admin-user-password-toggle]').forEach(function (toggle) {
+                const passwordInput = toggle.closest('.admin-user-password-control')?.querySelector('input');
+                const icon = toggle.querySelector('i');
+
+                if (!passwordInput || !icon) {
+                    return;
+                }
+
+                toggle.addEventListener('click', function () {
+                    const isPassword = passwordInput.getAttribute('type') === 'password';
+                    const label = isPassword ? @js(__('app.auth.hide_password')) : @js(__('app.auth.show_password'));
+
+                    passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
+                    icon.classList.toggle('ph-eye', isPassword);
+                    icon.classList.toggle('ph-eye-slash', !isPassword);
+                    toggle.setAttribute('aria-label', label);
+                    toggle.setAttribute('title', label);
+                });
+            });
+
             if (typeof ApexCharts === 'undefined') {
                 return;
             }

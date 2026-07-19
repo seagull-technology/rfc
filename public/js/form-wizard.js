@@ -22,6 +22,28 @@
             let currentFieldset = 0;
             const nextButtons = Array.from(form.querySelectorAll(".request-wizard-next"));
             const previousButtons = Array.from(form.querySelectorAll(".request-wizard-previous"));
+            const pageValidationMessage = form.dataset.pageValidationMessage || "Please complete the required fields on this page.";
+
+            const validationScopeForControl = function (control) {
+                return control.closest(".tab-pane") || control.closest("fieldset") || form;
+            };
+
+            const validationSummaryForScope = function (scope) {
+                let summary = scope.querySelector(":scope > [data-page-validation-summary]");
+
+                if (summary) {
+                    return summary;
+                }
+
+                summary = document.createElement("div");
+                summary.className = "alert alert-danger text-start d-none";
+                summary.setAttribute("role", "alert");
+                summary.setAttribute("data-page-validation-summary", "");
+                summary.textContent = pageValidationMessage;
+                scope.prepend(summary);
+
+                return summary;
+            };
 
             const innerTabIsAvailable = function (index) {
                 const button = innerTabButtons[index];
@@ -119,11 +141,7 @@
                     }
                 }
 
-                control.scrollIntoView({ behavior: "smooth", block: "center" });
-
-                if (typeof control.reportValidity === "function") {
-                    control.reportValidity();
-                }
+                control.scrollIntoView({ behavior: "auto", block: "center" });
 
                 if (typeof control.focus === "function") {
                     control.focus({ preventScroll: true });
@@ -138,13 +156,29 @@
             };
 
             const validateControls = function (controls) {
-                const invalidControl = controls.find(controlIsInvalid);
+                const availableControls = controls.filter(function (control) {
+                    return ! control.disabled && control.type !== "hidden";
+                });
+                const invalidControls = availableControls.filter(controlIsInvalid);
 
-                if (invalidControl) {
+                availableControls.forEach(function (control) {
+                    const invalid = invalidControls.includes(control);
+
+                    control.classList.toggle("is-invalid", invalid);
+                    control.setAttribute("aria-invalid", invalid ? "true" : "false");
+                });
+
+                if (invalidControls.length > 0) {
+                    const invalidControl = invalidControls[0];
+                    validationSummaryForScope(validationScopeForControl(invalidControl)).classList.remove("d-none");
                     showInvalidControl(invalidControl);
 
                     return false;
                 }
+
+                Array.from(new Set(availableControls.map(validationScopeForControl))).forEach(function (scope) {
+                    scope.querySelector(":scope > [data-page-validation-summary]")?.classList.add("d-none");
+                });
 
                 return true;
             };
@@ -200,8 +234,25 @@
                 });
             };
 
+            const closeAnnexDrawers = function () {
+                form.querySelectorAll(".application-annex-offcanvas.show, .application-annex-offcanvas.showing").forEach(function (drawer) {
+                    if (window.bootstrap?.Offcanvas) {
+                        window.bootstrap.Offcanvas.getOrCreateInstance(drawer).hide();
+
+                        return;
+                    }
+
+                    drawer.classList.remove("show", "showing");
+                    drawer.setAttribute("aria-hidden", "true");
+                });
+            };
+
             const showFieldset = function (index, innerTabIndex) {
                 currentFieldset = Math.max(0, Math.min(index, fieldsets.length - 1));
+
+                if (currentFieldset === 1) {
+                    closeAnnexDrawers();
+                }
 
                 fieldsets.forEach(function (fieldset, fieldsetIndex) {
                     fieldset.style.display = fieldsetIndex === currentFieldset ? "block" : "none";
@@ -320,7 +371,55 @@
                 });
             });
 
-            showFieldset(currentFieldset, activeInnerTabIndex());
+            ["input", "change"].forEach(function (eventName) {
+                form.addEventListener(eventName, function (event) {
+                    const control = event.target;
+
+                    if (! control.matches("input, select, textarea")) {
+                        return;
+                    }
+
+                    if (typeof control.checkValidity === "function" && control.checkValidity()) {
+                        control.classList.remove("is-invalid");
+                        control.setAttribute("aria-invalid", "false");
+                    }
+
+                    const scope = validationScopeForControl(control);
+                    const scopeHasInvalidControl = Array.from(scope.querySelectorAll("input, select, textarea"))
+                        .some(controlIsInvalid);
+
+                    if (! scopeHasInvalidControl) {
+                        scope.querySelector(":scope > [data-page-validation-summary]")?.classList.add("d-none");
+                    }
+                });
+            });
+
+            const requestedFieldset = Number.parseInt(form.dataset.validationFocusFieldset || "0", 10);
+            const requestedTabId = form.dataset.validationFocusTab || "";
+            const requestedTabIndex = requestedTabId
+                ? innerTabButtons.findIndex(function (button) {
+                    return button.getAttribute("data-bs-target") === "#" + requestedTabId;
+                })
+                : activeInnerTabIndex();
+
+            showFieldset(
+                Number.isNaN(requestedFieldset) ? 0 : requestedFieldset,
+                requestedTabIndex >= 0 ? requestedTabIndex : activeInnerTabIndex()
+            );
+
+            const requestedDrawerId = form.dataset.validationFocusDrawer || "";
+
+            if (requestedDrawerId) {
+                window.requestAnimationFrame(function () {
+                    const requirementRow = form.querySelector('[data-requirement-target="' + CSS.escape(requestedDrawerId) + '"]');
+
+                    if (requirementRow) {
+                        requirementRow.classList.add("table-danger");
+                        requirementRow.scrollIntoView({ behavior: "auto", block: "center" });
+                    }
+                });
+            }
+
             setupApprovalRoutePreview(form);
         });
     });

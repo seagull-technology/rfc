@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\View\View;
 
 class ResetPasswordController extends Controller
@@ -18,6 +19,7 @@ class ResetPasswordController extends Controller
         return view('auth.reset-password', [
             'token' => $token,
             'email' => (string) $request->query('email', ''),
+            'isInvitation' => $request->boolean('invitation'),
         ]);
     }
 
@@ -26,7 +28,7 @@ class ResetPasswordController extends Controller
         $data = $request->validate([
             'token' => ['required', 'string'],
             'email' => ['required', 'email'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'password' => ['required', 'confirmed', PasswordRule::min(8)->mixedCase()->numbers()->symbols()],
         ]);
 
         $status = Password::reset(
@@ -35,6 +37,9 @@ class ResetPasswordController extends Controller
                 $user->forceFill([
                     'password' => Hash::make($data['password']),
                     'remember_token' => Str::random(60),
+                    'must_change_password' => false,
+                    'password_changed_at' => now(),
+                    'email_verified_at' => $user->email_verified_at ?? now(),
                 ])->save();
 
                 event(new PasswordReset($user));

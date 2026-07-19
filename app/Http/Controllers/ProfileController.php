@@ -13,10 +13,10 @@ use App\Support\EntityLogo;
 use App\Support\PhoneNumber;
 use App\Support\ProfileChangeRequests;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -382,6 +382,7 @@ class ProfileController extends Controller
         $entity = $user->primaryEntity();
 
         abort_unless($user && $entity && $this->isInternationalProducerUser($user), 403);
+        abort_if($user->requiresPasswordSetup(), 403);
 
         $record = FilmApplication::query()
             ->where('entity_id', $entity->getKey())

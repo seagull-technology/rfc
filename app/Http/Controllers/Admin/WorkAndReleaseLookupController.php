@@ -46,7 +46,7 @@ class WorkAndReleaseLookupController extends Controller
 
     public function storeWorkCategory(Request $request): RedirectResponse
     {
-        $validated = $request->validate($this->lookupRules());
+        $validated = $request->validate($this->lookupRules(includeWorkSummaryWords: true));
         $code = $this->normalizedCode(($validated['code'] ?? null) ?: $validated['name_en']);
 
         if ($code === '' || WorkCategory::query()->where('code', $code)->exists()) {
@@ -59,6 +59,7 @@ class WorkAndReleaseLookupController extends Controller
             'code' => $code,
             'name_en' => $validated['name_en'],
             'name_ar' => $validated['name_ar'],
+            'work_summary_min_words' => (int) $validated['work_summary_min_words'],
             'sort_order' => (int) ($validated['sort_order'] ?? 500),
             'is_active' => $request->boolean('is_active', true),
         ]);
@@ -70,11 +71,16 @@ class WorkAndReleaseLookupController extends Controller
 
     public function updateWorkCategory(Request $request, WorkCategory $workCategory): RedirectResponse
     {
-        $validated = $request->validate($this->lookupRules(requireCode: false, requireSortOrder: true));
+        $validated = $request->validate($this->lookupRules(
+            requireCode: false,
+            requireSortOrder: true,
+            includeWorkSummaryWords: true,
+        ));
 
         $workCategory->forceFill([
             'name_en' => $validated['name_en'],
             'name_ar' => $validated['name_ar'],
+            'work_summary_min_words' => (int) $validated['work_summary_min_words'],
             'sort_order' => (int) $validated['sort_order'],
             'is_active' => $request->boolean('is_active'),
         ])->save();
@@ -185,15 +191,21 @@ class WorkAndReleaseLookupController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function lookupRules(bool $requireCode = false, bool $requireSortOrder = false): array
+    private function lookupRules(bool $requireCode = false, bool $requireSortOrder = false, bool $includeWorkSummaryWords = false): array
     {
-        return [
+        $rules = [
             'code' => [$requireCode ? 'required' : 'nullable', 'string', 'max:80'],
             'name_en' => ['required', 'string', 'max:255'],
             'name_ar' => ['required', 'string', 'max:255'],
             'sort_order' => [$requireSortOrder ? 'required' : 'nullable', 'integer', 'min:0', 'max:999999'],
             'is_active' => ['nullable', 'boolean'],
         ];
+
+        if ($includeWorkSummaryWords) {
+            $rules['work_summary_min_words'] = ['required', 'integer', 'min:1', 'max:5000'];
+        }
+
+        return $rules;
     }
 
     private function normalizedCode(string $value): string

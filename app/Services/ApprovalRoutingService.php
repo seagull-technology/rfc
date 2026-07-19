@@ -7,6 +7,8 @@ use App\Models\ApprovalRoutingRule;
 use App\Models\Entity;
 use App\Models\FormLookupOption;
 use App\Support\ApplicationWorkflowRegistry;
+use App\Support\LocationSupportRequirements;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 
 class ApprovalRoutingService
@@ -78,14 +80,10 @@ class ApprovalRoutingService
                 ->values();
         }
 
-        if ($requiredApprovals->isEmpty()) {
-            return collect();
-        }
-
         $rules = $matchingActiveRules
             ->groupBy('approval_code');
 
-        return $requiredApprovals
+        $configuredRoutes = $requiredApprovals
             ->flatMap(function (string $approvalCode) use ($application, $rules, $draftRule): Collection {
                 $matchingRules = collect($rules->get($approvalCode, []))
                     ->filter(fn (ApprovalRoutingRule $rule): bool => $this->matchesRule($rule, $application))
@@ -124,6 +122,19 @@ class ApprovalRoutingService
 
                 return $this->fallbackRoutesForApproval($approvalCode);
             })
+            ->unique(fn (array $route): string => $route['approval_code'].'|'.($route['target_entity_id'] ?? 'none'))
+            ->values();
+
+        $targetedEntityIds = $configuredRoutes
+            ->pluck('target_entity_id')
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->unique();
+        $locationSupportRoutes = $this->locationSupportEntityRoutes($application)
+            ->reject(fn (array $route): bool => $targetedEntityIds->contains((int) $route['target_entity_id']));
+
+        return $configuredRoutes
+            ->concat($locationSupportRoutes)
             ->unique(fn (array $route): string => $route['approval_code'].'|'.($route['target_entity_id'] ?? 'none'))
             ->values();
     }
@@ -389,7 +400,7 @@ class ApprovalRoutingService
      */
     private function conditionsHaveValues(array $conditions): bool
     {
-        return collect(\Illuminate\Support\Arr::dot($conditions))
+        return collect(Arr::dot($conditions))
             ->contains(fn ($value): bool => filled($value));
     }
 
@@ -447,5 +458,42 @@ class ApprovalRoutingService
             'source' => 'fallback',
             'target_entity_name' => $entity->displayName(),
         ]);
+    }
+
+    /**
+     * Route selected filming-location support requirements directly to their configured authorities.
+     *
+     * @return Collection<int, array{approval_code:string,target_entity_id:int,approval_routing_rule_id:null,rule_name:null,priority:null,source:string,target_entity_name:string}>
+     */
+    private function locationSupportEntityRoutes(Application $application): Collection
+    {
+        $authorityCodes = collect((array) data_get($application->metadata ?? [], 'annex.location_support_requirements', []))
+            ->filter(fn ($row): bool => is_array($row) && filled(data_get($row, 'requirement')))
+            ->pluck('authority')
+            ->map(fn ($code): ?string => LocationSupportRequirements::normalizeAuthorityCode($code))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($authorityCodes->isEmpty()) {
+            return collect();
+        }
+
+        return Entity::query()
+            ->whereIn('code', $authorityCodes->all())
+            ->where('status', 'active')
+            ->whereHas('group', fn ($query) => $query->where('code', 'authorities'))
+            ->orderBy('id')
+            ->get(['id', 'code', 'name_en', 'name_ar'])
+            ->map(fn (Entity $entity): array => [
+                'approval_code' => 'location_support__'.$entity->code,
+                'target_entity_id' => $entity->getKey(),
+                'approval_routing_rule_id' => null,
+                'rule_name' => null,
+                'priority' => null,
+                'source' => 'location_support',
+                'target_entity_name' => $entity->displayName(),
+            ])
+            ->values();
     }
 }

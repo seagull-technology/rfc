@@ -39,6 +39,22 @@ class NotificationRecipients
     /**
      * @return Collection<int, User>
      */
+    public static function applicationSubmitter(Application $application): Collection
+    {
+        $submitter = $application->relationLoaded('submittedBy')
+            ? $application->submittedBy
+            : $application->submittedBy()->first();
+
+        if (! $submitter || $submitter->status !== 'active') {
+            return collect();
+        }
+
+        return collect([$submitter]);
+    }
+
+    /**
+     * @return Collection<int, User>
+     */
     public static function scoutingApplicants(ScoutingRequest $scoutingRequest): Collection
     {
         return self::entityUsers($scoutingRequest->entity)

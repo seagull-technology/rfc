@@ -25,7 +25,7 @@ class ApplicantRequestOverview
 
         $totalApprovals = $approvals->count();
         $resolvedApprovals = $approvals->whereIn('status', ['approved', 'rejected'])->count();
-        $pendingApprovals = $approvals->whereIn('status', ['pending', 'in_review'])->count();
+        $pendingApprovals = $approvals->whereIn('status', ['pending', 'in_review', 'changes_requested'])->count();
 
         $authorityRoutingStarted = $application->authorityRoutingStarted();
 
@@ -87,8 +87,7 @@ class ApplicantRequestOverview
 
         if (! $application->authorityRoutingStarted()) {
             return match (true) {
-                filled(data_get($application->metadata ?? [], 'rfc_decision.facilitation_issued_at')) => __('app.request_state.final_decision_waiting_official_books'),
-                data_get($application->metadata ?? [], 'rfc_decision.status') === 'accepted' => __('app.request_state.final_decision_waiting_facilitation'),
+                data_get($application->metadata ?? [], 'rfc_decision.status') === 'accepted' => __('app.request_state.final_decision_waiting_official_books'),
                 default => __('app.request_state.final_decision_waiting_rfc_review'),
             };
         }
@@ -161,6 +160,7 @@ class ApplicantRequestOverview
 
         $message = $messages
             ->whereIn('sender_type', ['admin', 'authority'])
+            ->filter(fn (ApplicationCorrespondence $message): bool => $message->isVisibleToApplicant())
             ->sortByDesc('created_at')
             ->first();
 

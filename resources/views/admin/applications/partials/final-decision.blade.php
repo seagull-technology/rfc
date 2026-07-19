@@ -1,8 +1,8 @@
 @php
-    $resolvedApprovals = $authorityApprovals->whereNotIn('status', ['pending', 'in_review'])->count();
-    $pendingApprovals = $authorityApprovals->whereIn('status', ['pending', 'in_review'])->count();
+    $resolvedApprovals = $authorityApprovals->whereNotIn('status', ['pending', 'in_review', 'changes_requested'])->count();
+    $pendingApprovals = $authorityApprovals->whereIn('status', ['pending', 'in_review', 'changes_requested'])->count();
     $rejectedApprovals = $authorityApprovals->where('status', 'rejected')->count();
-    $unresolvedApprovals = $authorityApprovals->whereIn('status', ['pending', 'in_review'])->values();
+    $unresolvedApprovals = $authorityApprovals->whereIn('status', ['pending', 'in_review', 'changes_requested'])->values();
 @endphp
 
 <div class="card">

@@ -15,7 +15,7 @@ class AuthorityApprovalSignal
      */
     public static function forApproval(ApplicationAuthorityApproval $approval): array
     {
-        if (in_array($approval->status, ['approved', 'rejected'], true)) {
+        if (in_array($approval->status, ['changes_requested', 'approved', 'rejected'], true)) {
             return self::inactive();
         }
 

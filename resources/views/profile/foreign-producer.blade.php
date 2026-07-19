@@ -143,8 +143,7 @@
                                 <tbody>
                                     @forelse ($entityApplications as $application)
                                         @php
-                                            $declaration = data_get($application->metadata, 'international.account.declaration', []);
-                                            $declarationSigned = (bool) data_get($declaration, 'accepted') && filled(data_get($declaration, 'signed_at'));
+                                            $declarationSigned = $application->foreignProducerDeclarationIsSigned();
                                         @endphp
                                         <tr>
                                             <td>{{ $loop->iteration }}</td>
@@ -256,7 +255,7 @@
     @foreach ($entityApplications as $application)
         @php
             $declaration = data_get($application->metadata, 'international.account.declaration', []);
-            $declarationSigned = (bool) data_get($declaration, 'accepted') && filled(data_get($declaration, 'signed_at'));
+            $declarationSigned = $application->foreignProducerDeclarationIsSigned();
             $declarationSignedAt = filled(data_get($declaration, 'signed_at'))
                 ? \Illuminate\Support\Carbon::parse((string) data_get($declaration, 'signed_at'))->format('Y-m-d H:i')
                 : null;

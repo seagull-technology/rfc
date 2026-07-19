@@ -2,8 +2,10 @@
 
 namespace Database\Seeders;
 
+use App\Models\Entity;
 use App\Models\FormLookupOption;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Schema;
 
 class FormLookupOptionSeeder extends Seeder
 {
@@ -25,6 +27,62 @@ class FormLookupOptionSeeder extends Seeder
                     ],
                 );
             }
+        }
+
+        $this->seedLocationSupportRequirementAssignments();
+    }
+
+    private function seedLocationSupportRequirementAssignments(): void
+    {
+        if (! Schema::hasTable('entity_form_lookup_option')) {
+            return;
+        }
+
+        $assignments = [
+            'public-security-directorate' => [
+                'road_closures',
+                'police_presence',
+                'regular_aerial_filming',
+                'drone_filming',
+                'special_effects',
+                'construction_work',
+                'animals',
+                'weapons',
+                'other',
+            ],
+            'military-media-directorate' => [
+                'armed_forces',
+                'regular_aerial_filming',
+                'drone_filming',
+                'special_effects',
+                'weapons',
+                'other',
+            ],
+        ];
+
+        $entities = Entity::query()
+            ->whereIn('code', array_keys($assignments))
+            ->get()
+            ->keyBy('code');
+        $requirements = FormLookupOption::query()
+            ->ofType(FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT)
+            ->get()
+            ->keyBy('code');
+
+        foreach ($assignments as $entityCode => $requirementCodes) {
+            $entity = $entities->get($entityCode);
+
+            if (! $entity) {
+                continue;
+            }
+
+            $entity->locationSupportRequirements()->syncWithoutDetaching(
+                collect($requirementCodes)
+                    ->map(fn (string $code): ?int => $requirements->get($code)?->getKey())
+                    ->filter()
+                    ->values()
+                    ->all(),
+            );
         }
     }
 

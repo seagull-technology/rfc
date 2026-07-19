@@ -5,12 +5,15 @@ namespace App\Http\Controllers\Authority;
 use App\Http\Controllers\Controller;
 use App\Models\Application as FilmApplication;
 use App\Models\ApplicationAuthorityApproval;
+use App\Models\ApplicationAuthorityChangeRequest;
 use App\Models\ApplicationCorrespondence;
 use App\Models\ApplicationDocument;
 use App\Models\Entity;
+use App\Models\User;
 use App\Notifications\InboxMessageNotification;
 use App\Services\AuthorityEscalationService;
 use App\Support\ApplicationWorkflowRegistry;
+use App\Support\ApplicationCorrectionSections;
 use App\Support\AuthorityApprovalSignal;
 use App\Support\CsvExport;
 use App\Support\NotificationRecipients;
@@ -18,6 +21,8 @@ use App\Support\WorkflowMessageMetadata;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -27,8 +32,7 @@ class ApplicationInboxController extends Controller
 {
     public function __construct(
         private readonly AuthorityEscalationService $authorityEscalationService,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): View
     {
@@ -79,6 +83,7 @@ class ApplicationInboxController extends Controller
                 'shared_inbox' => $approvals->whereNull('assigned_user_id')->count(),
                 'pending' => $approvals->where('status', 'pending')->count(),
                 'in_review' => $approvals->where('status', 'in_review')->count(),
+                'changes_requested' => $approvals->where('status', 'changes_requested')->count(),
                 'resolved' => $approvals->whereIn('status', ['approved', 'rejected'])->count(),
                 'updates' => $approvalSignals->where('key', 'request_update')->count(),
                 'official_books' => $approvalSignals->where('key', 'official_book_issued')->count(),
@@ -130,12 +135,14 @@ class ApplicationInboxController extends Controller
             'documents.reviewedBy',
             'correspondences.createdBy',
             'authorityApprovals.reviewedBy',
+            'authorityApprovals.changeRequests.requestedBy',
             'authorityApprovals.routingRule',
         ]);
         $currentApproval = $this->currentApprovalForEntity($record, $entity, $approvalCodes);
 
         abort_unless($currentApproval, 404);
         $currentApproval->loadMissing('routingRule');
+        $currentApproval->loadMissing(['changeRequests.requestedBy']);
 
         $approvalSignal = AuthorityApprovalSignal::forApproval($currentApproval);
 
@@ -163,6 +170,25 @@ class ApplicationInboxController extends Controller
             'correspondences' => $record->correspondences,
             'authorityApprovals' => $record->authorityApprovals,
             'authorityAnnexSections' => $this->authorityAnnexSections($record, $currentApproval),
+            'correctionSectionOptions' => ApplicationCorrectionSections::options(),
+            'authorityChangeRequests' => $currentApproval->changeRequests,
+        ]);
+    }
+
+    public function printForms(Request $request, string $application): View
+    {
+        [$user, $entity, $approvalCodes] = $this->authorityContext($request);
+        $record = $this->findAuthorityApplication($application, $user->getKey(), $entity, $approvalCodes);
+        $approval = $this->currentApprovalForEntity($record, $entity, $approvalCodes);
+
+        abort_unless($approval, 404);
+        $approval->loadMissing('routingRule');
+
+        return view('applications.forms-print', [
+            'application' => $record,
+            'onlySections' => $this->authorityAnnexSections($record, $approval),
+            'requestedForm' => $request->query('form'),
+            'backUrl' => route('authority.applications.show', $record).'#authority-documents',
         ]);
     }
 
@@ -175,12 +201,36 @@ class ApplicationInboxController extends Controller
         abort_unless($approval, 404);
 
         $validated = $request->validate([
-            'status' => ['required', Rule::in(['pending', 'in_review', 'approved', 'rejected'])],
-            'note' => ['nullable', 'string', 'max:2000'],
+            'status' => ['required', Rule::in(['pending', 'in_review', 'changes_requested', 'approved', 'rejected'])],
+            'note' => [
+                Rule::requiredIf(fn (): bool => in_array($request->string('status')->toString(), ['changes_requested', 'rejected'], true)),
+                'nullable',
+                'string',
+                'max:2000',
+            ],
+            'change_requests' => [
+                Rule::requiredIf(fn (): bool => $request->string('status')->toString() === 'changes_requested'),
+                'nullable',
+                'array',
+                'min:1',
+                'max:20',
+            ],
+            'change_requests.*.section_key' => [
+                'required_with:change_requests',
+                Rule::in(ApplicationCorrectionSections::keys()->all()),
+            ],
+            'change_requests.*.details' => ['required_with:change_requests', 'string', 'max:3000'],
+            'change_requests.*.attachment' => ['nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png'],
         ]);
 
-        if (in_array($validated['status'], ['approved', 'rejected'], true)) {
+        if (in_array($validated['status'], ['changes_requested', 'approved', 'rejected'], true)) {
             abort_unless($user->can('applications.approve'), 403);
+        }
+
+        if ($approval->status === 'changes_requested') {
+            return redirect()
+                ->route('authority.applications.show', $record)
+                ->withErrors(['status' => __('app.authority_change_requests.waiting_applicant_locked')]);
         }
 
         $request->validate([
@@ -196,9 +246,9 @@ class ApplicationInboxController extends Controller
 
         $approvalData = [
             'status' => $validated['status'],
-            'note' => $validated['note'] ?: null,
+            'note' => ($validated['note'] ?? null) ?: null,
             'reviewed_by_user_id' => $user->getKey(),
-            'decided_at' => in_array($validated['status'], ['approved', 'rejected'], true) ? now() : null,
+            'decided_at' => in_array($validated['status'], ['changes_requested', 'approved', 'rejected'], true) ? now() : null,
         ];
 
         if ($request->hasFile('response_attachment')) {
@@ -216,14 +266,68 @@ class ApplicationInboxController extends Controller
             ];
         }
 
-        $approval->forceFill($approvalData)->save();
+        $changeRequestCount = 0;
 
-        $statuses = $record->authorityApprovals()->pluck('status');
-        $record->forceFill([
-            'current_stage' => $statuses->contains('pending') || $statuses->contains('in_review')
-                ? 'authority_review'
-                : 'final_decision',
-        ])->save();
+        DB::transaction(function () use ($approval, $approvalData, $record, $validated, $request, $user, &$changeRequestCount): void {
+            $approval->forceFill($approvalData)->save();
+
+            if ($validated['status'] === 'changes_requested') {
+                $approval->changeRequests()
+                    ->whereIn('status', [ApplicationAuthorityChangeRequest::STATUS_REQUESTED, ApplicationAuthorityChangeRequest::STATUS_RESUBMITTED])
+                    ->update([
+                        'status' => ApplicationAuthorityChangeRequest::STATUS_RESOLVED,
+                        'resolved_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                foreach ((array) ($validated['change_requests'] ?? []) as $index => $item) {
+                    $file = $request->file("change_requests.{$index}.attachment");
+
+                    $approval->changeRequests()->create([
+                        'application_id' => $record->getKey(),
+                        'section_key' => $item['section_key'],
+                        'section_label' => ApplicationCorrectionSections::label($item['section_key']),
+                        'details' => $item['details'],
+                        'attachment_path' => $file?->store('authority-change-requests/'.$record->getKey(), 'local'),
+                        'attachment_name' => $file?->getClientOriginalName(),
+                        'attachment_mime_type' => $file?->getClientMimeType(),
+                        'attachment_size' => $file?->getSize(),
+                        'status' => ApplicationAuthorityChangeRequest::STATUS_REQUESTED,
+                        'requested_by_user_id' => $user->getKey(),
+                        'requested_at' => now(),
+                    ]);
+
+                    $changeRequestCount++;
+                }
+
+                $record->forceFill([
+                    'status' => 'needs_clarification',
+                    'current_stage' => 'clarification',
+                    'review_note' => $validated['note'],
+                ])->save();
+
+                return;
+            }
+
+            if (in_array($validated['status'], ['approved', 'rejected'], true)) {
+                $approval->changeRequests()
+                    ->whereIn('status', [ApplicationAuthorityChangeRequest::STATUS_REQUESTED, ApplicationAuthorityChangeRequest::STATUS_RESUBMITTED])
+                    ->update([
+                        'status' => ApplicationAuthorityChangeRequest::STATUS_RESOLVED,
+                        'resolved_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+            }
+
+            $statuses = $record->authorityApprovals()->pluck('status');
+            $record->forceFill([
+                'current_stage' => $statuses->contains(fn (string $status): bool => in_array($status, ['pending', 'in_review', 'changes_requested'], true))
+                    ? 'authority_review'
+                    : 'final_decision',
+            ])->save();
+        });
+
+        $approval->refresh();
 
         $record->statusHistory()->create([
             'user_id' => $user->getKey(),
@@ -241,19 +345,30 @@ class ApplicationInboxController extends Controller
                 'approval_status_label' => $approval->localizedStatus(),
                 'assigned_user_id' => $approval->assigned_user_id,
                 'assigned_user_name' => $approval->assignedTo?->displayName(),
-                'reason' => $validated['note'] ?: null,
+                'reason' => ($validated['note'] ?? null) ?: null,
+                'change_request_count' => $changeRequestCount,
             ],
             'happened_at' => now(),
         ]);
 
+        $notificationType = $validated['status'] === 'changes_requested'
+            ? 'authority_changes_requested'
+            : 'authority_approval_updated';
+        $notificationBody = $validated['status'] === 'changes_requested'
+            ? __('app.notifications.authority_changes_requested_body', [
+                'authority' => $approval->localizedAuthority(),
+                'count' => $changeRequestCount,
+            ])
+            : __('app.notifications.authority_approval_updated_body', [
+                'authority' => $approval->localizedAuthority(),
+                'status' => $approval->localizedStatus(),
+            ]);
+
         NotificationRecipients::except(NotificationRecipients::adminUsers(), $user->getKey())
             ->each(fn ($recipient) => $recipient->notify(new InboxMessageNotification(
-                typeKey: 'authority_approval_updated',
+                typeKey: $notificationType,
                 title: $record->project_name,
-                body: __('app.notifications.authority_approval_updated_body', [
-                    'authority' => $approval->localizedAuthority(),
-                    'status' => $approval->localizedStatus(),
-                ]),
+                body: $notificationBody,
                 routeName: 'admin.applications.show',
                 routeParameters: ['application' => $record->getKey()],
                 meta: WorkflowMessageMetadata::application($record),
@@ -261,12 +376,9 @@ class ApplicationInboxController extends Controller
 
         NotificationRecipients::except(NotificationRecipients::applicationApplicants($record), $user->getKey())
             ->each(fn ($recipient) => $recipient->notify(new InboxMessageNotification(
-                typeKey: 'authority_approval_updated',
+                typeKey: $notificationType,
                 title: $record->project_name,
-                body: __('app.notifications.authority_approval_updated_body', [
-                    'authority' => $approval->localizedAuthority(),
-                    'status' => $approval->localizedStatus(),
-                ]),
+                body: $notificationBody,
                 routeName: 'applications.show',
                 routeParameters: ['application' => $record->getKey()],
                 meta: WorkflowMessageMetadata::application($record),
@@ -300,12 +412,40 @@ class ApplicationInboxController extends Controller
         );
     }
 
+    public function downloadChangeRequestAttachment(Request $request, string $application, ApplicationAuthorityChangeRequest $changeRequest): StreamedResponse|RedirectResponse
+    {
+        [$user, $entity, $approvalCodes] = $this->authorityContext($request);
+        $record = $this->findAuthorityApplication($application, $user->getKey(), $entity, $approvalCodes);
+
+        $authorizedRequest = ApplicationAuthorityChangeRequest::query()
+            ->whereKey($changeRequest->getKey())
+            ->where('application_id', $record->getKey())
+            ->whereHas('approval', fn (Builder $query): Builder => $this->restrictApprovalsToAuthority($query, $user->getKey(), $entity, $approvalCodes))
+            ->firstOrFail();
+
+        if (! $authorizedRequest->attachment_path || ! Storage::disk('local')->exists($authorizedRequest->attachment_path)) {
+            return redirect()
+                ->route('authority.applications.show', $record)
+                ->withErrors(['change_request_attachment' => __('app.authority_change_requests.attachment_missing')]);
+        }
+
+        return Storage::disk('local')->download(
+            $authorizedRequest->attachment_path,
+            $authorizedRequest->attachment_name ?: basename($authorizedRequest->attachment_path),
+        );
+    }
+
     public function storeCorrespondence(Request $request, string $application): RedirectResponse
     {
         [$user, $entity, $approvalCodes] = $this->authorityContext($request);
         $record = $this->findAuthorityApplication($application, $user->getKey(), $entity, $approvalCodes);
 
         $validated = $request->validate([
+            'recipient_type' => ['required', Rule::in([
+                ApplicationCorrespondence::RECIPIENT_ALL,
+                ApplicationCorrespondence::RECIPIENT_RFC,
+                ApplicationCorrespondence::RECIPIENT_APPLICANT,
+            ])],
             'subject' => ['nullable', 'string', 'max:255'],
             'message' => ['required', 'string', 'max:5000'],
             'attachment' => ['nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png'],
@@ -325,6 +465,7 @@ class ApplicationInboxController extends Controller
             'created_by_user_id' => $user->getKey(),
             'sender_type' => 'authority',
             'sender_name' => $entity->displayName(),
+            'recipient_type' => $validated['recipient_type'],
             'subject' => $validated['subject'] ?: null,
             'message' => $validated['message'],
             'attachment_path' => $attachmentPath,
@@ -339,25 +480,35 @@ class ApplicationInboxController extends Controller
             'happened_at' => now(),
         ]);
 
-        NotificationRecipients::except(NotificationRecipients::adminUsers(), $user->getKey())
-            ->each(fn ($recipient) => $recipient->notify(new InboxMessageNotification(
-                typeKey: 'application_correspondence',
-                title: $message->subject ?: __('app.contact_center.request_fallback_title', ['code' => $record->code]),
-                body: str($message->message)->limit(140)->toString(),
-                routeName: 'admin.applications.show',
-                routeParameters: ['application' => $record->getKey()],
-                meta: WorkflowMessageMetadata::application($record),
-            )));
+        if (in_array($validated['recipient_type'], [
+            ApplicationCorrespondence::RECIPIENT_ALL,
+            ApplicationCorrespondence::RECIPIENT_RFC,
+        ], true)) {
+            NotificationRecipients::except(NotificationRecipients::adminUsers(), $user->getKey())
+                ->each(fn ($recipient) => $recipient->notify(new InboxMessageNotification(
+                    typeKey: 'application_correspondence',
+                    title: $message->subject ?: __('app.contact_center.request_fallback_title', ['code' => $record->code]),
+                    body: str($message->message)->limit(140)->toString(),
+                    routeName: 'admin.applications.show',
+                    routeParameters: ['application' => $record->getKey()],
+                    meta: WorkflowMessageMetadata::application($record),
+                )));
+        }
 
-        NotificationRecipients::except(NotificationRecipients::applicationApplicants($record), $user->getKey())
-            ->each(fn ($recipient) => $recipient->notify(new InboxMessageNotification(
-                typeKey: 'application_correspondence',
-                title: $message->subject ?: __('app.contact_center.request_fallback_title', ['code' => $record->code]),
-                body: str($message->message)->limit(140)->toString(),
-                routeName: 'applications.show',
-                routeParameters: ['application' => $record->getKey()],
-                meta: WorkflowMessageMetadata::application($record),
-            )));
+        if (in_array($validated['recipient_type'], [
+            ApplicationCorrespondence::RECIPIENT_ALL,
+            ApplicationCorrespondence::RECIPIENT_APPLICANT,
+        ], true)) {
+            NotificationRecipients::except(NotificationRecipients::applicationSubmitter($record), $user->getKey())
+                ->each(fn ($recipient) => $recipient->notify(new InboxMessageNotification(
+                    typeKey: 'application_correspondence',
+                    title: $message->subject ?: __('app.contact_center.request_fallback_title', ['code' => $record->code]),
+                    body: str($message->message)->limit(140)->toString(),
+                    routeName: 'applications.show',
+                    routeParameters: ['application' => $record->getKey()],
+                    meta: WorkflowMessageMetadata::application($record),
+                )));
+        }
 
         return redirect()
             ->route('authority.applications.show', $record)
@@ -399,7 +550,7 @@ class ApplicationInboxController extends Controller
     }
 
     /**
-     * @return array{0: \App\Models\User, 1: Entity, 2: array<int, string>}
+     * @return array{0: User, 1: Entity, 2: array<int, string>}
      */
     private function authorityContext(Request $request): array
     {
@@ -410,6 +561,7 @@ class ApplicationInboxController extends Controller
         abort_unless($user->can('applications.view.entity'), 403);
 
         $approvalCodes = ApplicationWorkflowRegistry::approvalCodesForEntity($entity);
+
         return [$user, $entity, $approvalCodes];
     }
 
@@ -515,7 +667,7 @@ class ApplicationInboxController extends Controller
 
     private function annexValuesHaveData(mixed $values): bool
     {
-        return collect(\Illuminate\Support\Arr::dot((array) $values))
+        return collect(Arr::dot((array) $values))
             ->contains(fn ($value): bool => filled($value));
     }
 
@@ -526,7 +678,7 @@ class ApplicationInboxController extends Controller
     {
         $validated = $request->validate([
             'q' => ['nullable', 'string', 'max:255'],
-            'status' => ['nullable', Rule::in(['all', 'pending', 'in_review', 'approved', 'rejected'])],
+            'status' => ['nullable', Rule::in(['all', 'pending', 'in_review', 'changes_requested', 'approved', 'rejected'])],
             'ownership' => ['nullable', Rule::in(['all', 'mine', 'shared'])],
         ]);
 
@@ -625,7 +777,8 @@ class ApplicationInboxController extends Controller
             ->sortBy(fn (ApplicationAuthorityApproval $approval): int => match ($approval->status) {
                 'pending' => 0,
                 'in_review' => 1,
-                default => 2,
+                'changes_requested' => 2,
+                default => 3,
             })
             ->first();
     }

@@ -59,7 +59,7 @@
     };
 @endphp
 
-<form method="POST" action="{{ $formAction }}" enctype="multipart/form-data" class="form-card text-start" data-scouting-wizard-form>
+<form method="POST" action="{{ $formAction }}" enctype="multipart/form-data" class="form-card text-start" data-scouting-wizard-form data-page-validation-message="{{ __('app.applications.page_validation_summary') }}">
     @csrf
     <div class="row">
         <div class="section-form">
@@ -68,13 +68,13 @@
                     <div class="col-lg-6">
                         <div class="form-group">
                             <label class="form-label">{{ __('app.applications.project_name') }}</label><span class="text-danger">*</span>
-                            <input class="form-control bg-white" type="text" name="project_name" value="{{ old('project_name', $requestRecord->project_name) }}">
+                            <input class="form-control bg-white" type="text" name="project_name" value="{{ old('project_name', $requestRecord->project_name) }}" required>
                         </div>
                     </div>
                     <div class="col-lg-6">
                         <div class="form-group">
                             <label class="form-label">{{ __('app.applications.project_nationality') }}</label><span class="text-danger">*</span>
-                            <select name="project_nationality" class="form-control select2-basic-single">
+                            <select name="project_nationality" class="form-control select2-basic-single" required>
                                 @foreach ($projectNationalityOptions as $option)
                                     <option value="{{ $option->code }}" @selected(old('project_nationality', $requestRecord->project_nationality) === $option->code)>{{ $option->displayName() }}</option>
                                 @endforeach
@@ -128,14 +128,14 @@
                                                 <div class="col-lg-{{ in_array($field, ['producer_name', 'production_company_name', 'liaison_name'], true) ? '12' : '6' }}">
                                                     <div class="form-group">
                                                         <label class="form-label">{{ $label }}</label><span class="text-danger">*</span>
-                                                        <input type="{{ str_contains($field, 'email') ? 'email' : (str_contains($field, 'url') ? 'url' : 'text') }}" class="form-control" name="{{ $field }}" value="{{ old($field, data_get($producer, $field)) }}">
+                                                        <input type="{{ str_contains($field, 'email') ? 'email' : (str_contains($field, 'url') ? 'url' : 'text') }}" class="form-control" name="{{ $field }}" value="{{ old($field, data_get($producer, $field)) }}" @required(! in_array($field, ['producer_profile_url', 'website_url'], true))>
                                                     </div>
                                                 </div>
                                             @endforeach
                                             <div class="col-lg-12">
                                                 <div class="form-group">
                                                     <label class="form-label">{{ __('app.scouting.producer_nationality') }}</label><span class="text-danger">*</span>
-                                                    <select name="producer_nationality" class="form-control select2-basic-single">
+                                                    <select name="producer_nationality" class="form-control select2-basic-single" required>
                                                         @foreach ($personNationalityOptions as $option)
                                                             <option value="{{ $option->code }}" @selected(old('producer_nationality', data_get($producer, 'producer_nationality', 'jordanian')) === $option->code)>{{ $option->displayName() }}</option>
                                                         @endforeach
@@ -148,7 +148,7 @@
                                     <div class="tab-pane fade" id="production_type_tab" role="tabpanel">
                                         <div class="form-group">
                                             <label class="form-label">{{ __('app.scouting.production_type') }}</label><span class="text-danger">*</span>
-                                            <select name="production_types[]" class="form-select select2-basic-multiple" multiple>
+                                            <select name="production_types[]" class="form-select select2-basic-multiple" multiple required>
                                                 @foreach ($workCategoryOptions as $option)
                                                     <option value="{{ $option->code }}" @selected(in_array($option->code, old('production_types', data_get($production, 'types', [])), true))>{{ $option->displayName() }}</option>
                                                 @endforeach
@@ -165,13 +165,13 @@
                                             <div class="col-lg-12">
                                                 <div class="form-group">
                                                     <label class="form-label">{{ __('app.scouting.scout_start_date') }}</label><span class="text-danger">*</span>
-                                                    <input type="date" class="form-control" name="scout_start_date" value="{{ old('scout_start_date', optional($requestRecord->scout_start_date)->format('Y-m-d')) }}">
+                                                    <input type="date" class="form-control" name="scout_start_date" value="{{ old('scout_start_date', optional($requestRecord->scout_start_date)->format('Y-m-d')) }}" required>
                                                 </div>
                                             </div>
                                             <div class="col-lg-12">
                                                 <div class="form-group">
                                                     <label class="form-label">{{ __('app.scouting.scout_end_date') }}</label><span class="text-danger">*</span>
-                                                    <input type="date" class="form-control" name="scout_end_date" value="{{ old('scout_end_date', optional($requestRecord->scout_end_date)->format('Y-m-d')) }}">
+                                                    <input type="date" class="form-control" name="scout_end_date" value="{{ old('scout_end_date', optional($requestRecord->scout_end_date)->format('Y-m-d')) }}" required>
                                                 </div>
                                             </div>
                                         </div>
@@ -197,7 +197,7 @@
                                     <div class="tab-pane fade" id="summary_tab" role="tabpanel">
                                         <div class="form-group">
                                             <label class="form-label">{{ __('app.scouting.project_summary') }}</label><span class="text-danger">*</span>
-                                            <textarea class="form-control" name="project_summary" rows="8">{{ old('project_summary', $requestRecord->project_summary) }}</textarea>
+                                            <textarea class="form-control" name="project_summary" rows="8" required>{{ old('project_summary', $requestRecord->project_summary) }}</textarea>
                                         </div>
                                     </div>
 
@@ -243,25 +243,25 @@
                                                         <tr>
                                                             <td class="row-number">{{ $index + 1 }}</td>
                                                             <td>
-                                                                <select class="form-select" name="locations[{{ $index }}][governorate]" data-scout-governorate-select>
+                                                                <select class="form-select" name="locations[{{ $index }}][governorate]" data-scout-governorate-select required>
                                                                     @foreach ($governorateOptions as $option)
                                                                         <option value="{{ $option->code }}" @selected($selectedGovernorate === $option->code)>{{ $option->displayName() }}</option>
                                                                     @endforeach
                                                                 </select>
                                                             </td>
                                                             <td>
-                                                                <select class="form-select" name="locations[{{ $index }}][location_type]" data-scout-location-type-select data-selected-type="{{ $selectedLocationType }}">
+                                                                <select class="form-select" name="locations[{{ $index }}][location_type]" data-scout-location-type-select data-selected-type="{{ $selectedLocationType }}" required>
                                                                     @foreach ($locationTypeOptionsForGovernorate($selectedGovernorate) as $option)
                                                                         <option value="{{ $option->code }}" @selected($selectedLocationType === $option->code)>{{ $option->displayName() }}</option>
                                                                     @endforeach
                                                                 </select>
                                                                 <div class="form-text text-warning fw-semibold d-none" data-scout-location-type-approval-note></div>
                                                             </td>
-                                                            <td><input type="text" class="form-control" name="locations[{{ $index }}][location_name]" value="{{ $location['location_name'] ?? '' }}"></td>
+                                                            <td><input type="text" class="form-control" name="locations[{{ $index }}][location_name]" value="{{ $location['location_name'] ?? '' }}" required></td>
                                                             <td><input type="text" class="form-control" name="locations[{{ $index }}][google_map_url]" value="{{ $location['google_map_url'] ?? '' }}"></td>
                                                             <td><input type="text" class="form-control" name="locations[{{ $index }}][location_description]" value="{{ $location['location_description'] ?? '' }}"></td>
-                                                            <td><input type="date" class="form-control" name="locations[{{ $index }}][start_date]" value="{{ $location['start_date'] ?? '' }}" min="{{ $minimumLocationStartDate }}" data-scout-location-start-date></td>
-                                                            <td><input type="date" class="form-control" name="locations[{{ $index }}][end_date]" value="{{ $location['end_date'] ?? '' }}"></td>
+                                                            <td><input type="date" class="form-control" name="locations[{{ $index }}][start_date]" value="{{ $location['start_date'] ?? '' }}" min="{{ $minimumLocationStartDate }}" data-scout-location-start-date required></td>
+                                                            <td><input type="date" class="form-control" name="locations[{{ $index }}][end_date]" value="{{ $location['end_date'] ?? '' }}" required></td>
                                                             <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeDynamicRow(this, '#scoutLocationTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
                                                         </tr>
                                                     @endforeach
@@ -290,16 +290,16 @@
                                                     @foreach ($crewRows as $index => $member)
                                                         <tr>
                                                             <td class="row-number">{{ $index + 1 }}</td>
-                                                            <td><input type="text" class="form-control" name="crew[{{ $index }}][name]" value="{{ $member['name'] ?? '' }}"></td>
-                                                            <td><input type="text" class="form-control" name="crew[{{ $index }}][job_title]" value="{{ $member['job_title'] ?? '' }}"></td>
+                                                            <td><input type="text" class="form-control" name="crew[{{ $index }}][name]" value="{{ $member['name'] ?? '' }}" required></td>
+                                                            <td><input type="text" class="form-control" name="crew[{{ $index }}][job_title]" value="{{ $member['job_title'] ?? '' }}" required></td>
                                                             <td>
-                                                                <select class="form-select" name="crew[{{ $index }}][nationality]">
+                                                                <select class="form-select" name="crew[{{ $index }}][nationality]" required>
                                                                     @foreach ($personNationalityOptions as $option)
                                                                         <option value="{{ $option->code }}" @selected(($member['nationality'] ?? 'jordanian') === $option->code)>{{ $option->displayName() }}</option>
                                                                     @endforeach
                                                                 </select>
                                                             </td>
-                                                            <td><input type="text" class="form-control" name="crew[{{ $index }}][national_id_passport]" value="{{ $member['national_id_passport'] ?? '' }}"></td>
+                                                            <td><input type="text" class="form-control" name="crew[{{ $index }}][national_id_passport]" value="{{ $member['national_id_passport'] ?? '' }}" required></td>
                                                             <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeDynamicRow(this, '#scoutCrewTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
                                                         </tr>
                                                     @endforeach
@@ -513,21 +513,21 @@
             row.innerHTML = `
                 <td class="row-number"></td>
                 <td>
-                    <select class="form-select" name="locations[${index}][governorate]" data-scout-governorate-select>
+                    <select class="form-select" name="locations[${index}][governorate]" data-scout-governorate-select required>
                         ${scoutOptionsHtml(scoutGovernorateOptions, scoutGovernorateOptions[0]?.value || '')}
                     </select>
                 </td>
                 <td>
-                    <select class="form-select" name="locations[${index}][location_type]" data-scout-location-type-select>
+                    <select class="form-select" name="locations[${index}][location_type]" data-scout-location-type-select required>
                         ${scoutLocationTypeOptionsHtml(scoutGovernorateOptions[0]?.value || '', scoutLocationTypeOptions[0]?.value || '')}
                     </select>
                     <div class="form-text text-warning fw-semibold d-none" data-scout-location-type-approval-note></div>
                 </td>
-                <td><input type="text" class="form-control" name="locations[${index}][location_name]"></td>
+                <td><input type="text" class="form-control" name="locations[${index}][location_name]" required></td>
                 <td><input type="text" class="form-control" name="locations[${index}][google_map_url]"></td>
                 <td><input type="text" class="form-control" name="locations[${index}][location_description]"></td>
-                <td><input type="date" class="form-control" name="locations[${index}][start_date]" min="${scoutLocationStartMin}" data-scout-location-start-date></td>
-                <td><input type="date" class="form-control" name="locations[${index}][end_date]"></td>
+                <td><input type="date" class="form-control" name="locations[${index}][start_date]" min="${scoutLocationStartMin}" data-scout-location-start-date required></td>
+                <td><input type="date" class="form-control" name="locations[${index}][end_date]" required></td>
                 <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeDynamicRow(this, '#scoutLocationTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
             `;
 
@@ -543,14 +543,14 @@
 
             row.innerHTML = `
                 <td class="row-number"></td>
-                <td><input type="text" class="form-control" name="crew[${index}][name]"></td>
-                <td><input type="text" class="form-control" name="crew[${index}][job_title]"></td>
+                <td><input type="text" class="form-control" name="crew[${index}][name]" required></td>
+                <td><input type="text" class="form-control" name="crew[${index}][job_title]" required></td>
                 <td>
-                    <select class="form-select" name="crew[${index}][nationality]">
+                    <select class="form-select" name="crew[${index}][nationality]" required>
                         ${scoutOptionsHtml(scoutPersonNationalityOptions, 'jordanian')}
                     </select>
                 </td>
-                <td><input type="text" class="form-control" name="crew[${index}][national_id_passport]"></td>
+                <td><input type="text" class="form-control" name="crew[${index}][national_id_passport]" required></td>
                 <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeDynamicRow(this, '#scoutCrewTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
             `;
 
@@ -571,6 +571,24 @@
         });
         const scoutPreviousButton = scoutWizardForm ? scoutWizardForm.querySelector('[data-scouting-wizard-previous]') : null;
         const scoutNextButton = scoutWizardForm ? scoutWizardForm.querySelector('[data-scouting-wizard-next]') : null;
+        const scoutPageValidationMessage = scoutWizardForm?.dataset.pageValidationMessage || '';
+
+        function scoutValidationSummary(scope) {
+            let summary = scope.querySelector(':scope > [data-page-validation-summary]');
+
+            if (summary) {
+                return summary;
+            }
+
+            summary = document.createElement('div');
+            summary.className = 'alert alert-danger text-start d-none';
+            summary.setAttribute('role', 'alert');
+            summary.setAttribute('data-page-validation-summary', '');
+            summary.textContent = scoutPageValidationMessage;
+            scope.prepend(summary);
+
+            return summary;
+        }
 
         function scoutActiveTabIndex() {
             const activeIndex = scoutWizardTabs.findIndex(function (button) {
@@ -640,13 +658,22 @@
             const activeControls = activePane
                 ? Array.from(activePane.querySelectorAll('input, select, textarea'))
                 : [];
-            const invalidControl = generalControls.concat(activeControls).find(scoutControlIsInvalid);
+            const controls = generalControls.concat(activeControls);
+            const invalidControls = controls.filter(scoutControlIsInvalid);
 
-            if (invalidControl) {
+            controls.forEach(function (control) {
+                control.classList.toggle('is-invalid', invalidControls.includes(control));
+            });
+
+            if (invalidControls.length > 0) {
+                const invalidControl = invalidControls[0];
+                scoutValidationSummary(activePane || scoutWizardForm).classList.remove('d-none');
                 showScoutInvalidControl(invalidControl);
 
                 return false;
             }
+
+            (activePane || scoutWizardForm).querySelector(':scope > [data-page-validation-summary]')?.classList.add('d-none');
 
             return true;
         }
@@ -712,6 +739,26 @@
         });
 
         updateScoutWizardButtons();
+
+        ['input', 'change'].forEach(function (eventName) {
+            scoutWizardForm?.addEventListener(eventName, function (event) {
+                const control = event.target;
+
+                if (!control.matches('input, select, textarea')) {
+                    return;
+                }
+
+                if (typeof control.checkValidity === 'function' && control.checkValidity()) {
+                    control.classList.remove('is-invalid');
+                }
+
+                const pane = control.closest('.tab-pane');
+
+                if (pane && !Array.from(pane.querySelectorAll('input, select, textarea')).some(scoutControlIsInvalid)) {
+                    pane.querySelector(':scope > [data-page-validation-summary]')?.classList.add('d-none');
+                }
+            });
+        });
 
         document.addEventListener('change', function (event) {
             if (event.target.matches('[data-scout-governorate-select]')) {

@@ -1,5 +1,7 @@
 @php
     $annex = data_get($application->metadata ?? [], 'annex', []);
+    $productionTerms = data_get($annex, 'production_terms', []);
+    $ministryInteriorPersonalDetails = data_get($annex, 'ministry_interior_personal_details', []);
     $workContentSummary = data_get($annex, 'work_content_summary', []);
     $safetyGuidelines = data_get($annex, 'safety_guidelines', []);
     $airportFilming = data_get($annex, 'airport_filming', []);
@@ -87,12 +89,45 @@
         ->values();
     $publicSecuritySupportRows = $nonEmptyRows(data_get($annex, 'public_security_support', []));
     $militarySupportRows = $nonEmptyRows(data_get($annex, 'military_support', []));
-    $supportAuthorityLabel = static fn ($value): string => match ((string) $value) {
-        'public_security' => __('app.applications.support_authorities.public_security'),
-        'military' => __('app.applications.support_authorities.military'),
-        default => $fallback($value),
+    $storedLocalizedSupportLabel = static function (array $row, string $prefix): ?string {
+        $language = app()->getLocale() === 'ar' ? 'ar' : 'en';
+        $fallbackLanguage = $language === 'ar' ? 'en' : 'ar';
+
+        return collect([
+            data_get($row, $prefix.'_name_'.$language),
+            data_get($row, $prefix.'_name_'.$fallbackLanguage),
+        ])->first(fn ($value): bool => filled($value));
     };
-    $supportRequirementLabel = static function ($value) use ($fallback, $formLookupLabel): string {
+    $supportAuthorityLabel = static function ($supportRequirement) use ($fallback, $storedLocalizedSupportLabel): string {
+        $row = is_array($supportRequirement) ? $supportRequirement : [];
+        $storedLabel = $storedLocalizedSupportLabel($row, 'authority');
+
+        if (filled($storedLabel)) {
+            return (string) $storedLabel;
+        }
+
+        $value = is_array($supportRequirement)
+            ? data_get($supportRequirement, 'authority')
+            : $supportRequirement;
+
+        return match ((string) $value) {
+            'public_security' => __('app.applications.support_authorities.public_security'),
+            'military' => __('app.applications.support_authorities.military'),
+            default => $fallback($value),
+        };
+    };
+    $supportRequirementLabel = static function ($supportRequirement) use ($fallback, $formLookupLabel, $storedLocalizedSupportLabel): string {
+        $row = is_array($supportRequirement) ? $supportRequirement : [];
+        $storedLabel = $storedLocalizedSupportLabel($row, 'requirement');
+
+        if (filled($storedLabel)) {
+            return (string) $storedLabel;
+        }
+
+        $value = is_array($supportRequirement)
+            ? data_get($supportRequirement, 'requirement')
+            : $supportRequirement;
+
         if (! filled($value)) {
             return __('app.dashboard.not_available');
         }
@@ -102,7 +137,7 @@
 
         return $label === $generatedFallback ? (string) $value : $label;
     };
-    $locationSupportRequirementSummaryForRow = static function (array $row) use ($publicSecuritySupportRows, $militarySupportRows, $supportRequirementLabel, $supportAuthorityLabel): string {
+    $locationSupportRequirementsForRow = static function (array $row) use ($publicSecuritySupportRows, $militarySupportRows, $supportRequirementLabel, $supportAuthorityLabel) {
         $supportRequirements = collect((array) data_get($row, 'support_requirements', []))
             ->filter(fn ($requirement): bool => collect((array) $requirement)->filter(fn ($value): bool => filled($value))->isNotEmpty())
             ->values();
@@ -134,21 +169,21 @@
         }
 
         if ($supportRequirements->isEmpty()) {
-            return __('app.dashboard.not_available');
+            return collect();
         }
 
         return $supportRequirements
-            ->map(function ($supportRequirement) use ($supportRequirementLabel, $supportAuthorityLabel): string {
-                return collect([
-                    $supportAuthorityLabel(data_get($supportRequirement, 'authority')),
-                    $supportRequirementLabel(data_get($supportRequirement, 'requirement')),
-                    data_get($supportRequirement, 'date'),
-                    trim((string) data_get($supportRequirement, 'time_from').' - '.(string) data_get($supportRequirement, 'time_to')),
-                    data_get($supportRequirement, 'notes'),
-                ])->filter(fn ($value): bool => filled($value) && $value !== __('app.dashboard.not_available'))->join(' | ');
+            ->map(function ($supportRequirement) use ($supportRequirementLabel, $supportAuthorityLabel): array {
+                return [
+                    'authority' => $supportAuthorityLabel($supportRequirement),
+                    'requirement' => $supportRequirementLabel($supportRequirement),
+                    'date' => data_get($supportRequirement, 'date'),
+                    'time_from' => data_get($supportRequirement, 'time_from'),
+                    'time_to' => data_get($supportRequirement, 'time_to'),
+                    'notes' => data_get($supportRequirement, 'notes'),
+                ];
             })
-            ->filter(fn (string $summary): bool => filled($summary))
-            ->join(' ؛ ') ?: __('app.dashboard.not_available');
+            ->values();
     };
     $airportPeopleRows = $nonEmptyRows(data_get($annex, 'airport_people', []));
     $governmentalSceneRows = $nonEmptyRows(data_get($annex, 'governmental_scenes', []));
@@ -159,6 +194,8 @@
         ->values();
     $hideEmptySections = (bool) ($hideEmptySections ?? false);
     $sectionHasData = [
+        'production_terms' => (bool) data_get($productionTerms, 'accepted'),
+        'ministry_interior_personal_details' => $rowHasData($ministryInteriorPersonalDetails),
         'work_content_summary' => $rowHasData($workContentSummary),
         'cast_crew' => $castCrewRows->isNotEmpty(),
         'filming_locations' => $filmingLocationRows->isNotEmpty(),
@@ -176,17 +213,25 @@
     $formHasVisibleData = static fn (array $form): bool => collect($form['sections'])
         ->contains(fn (string $section): bool => (bool) ($sectionHasData[$section] ?? false));
     $attachedForms = collect([
-        ['target' => 'WorkContentSummaryView', 'label' => __('app.applications.annex_sections.work_content_summary'), 'sections' => ['work_content_summary']],
-        ['target' => 'CastCrewListView', 'label' => __('app.applications.annex_sections.cast_crew'), 'sections' => ['cast_crew']],
-        ['target' => 'LocationListView', 'label' => __('app.applications.annex_sections.filming_locations'), 'sections' => ['filming_locations', 'special_location_requirements', 'public_security_support', 'military_support']],
-        ['target' => 'RFCGuidelinesView', 'label' => __('app.applications.annex_sections.safety_guidelines'), 'sections' => ['safety_guidelines']],
-        ['target' => 'EquipmentListView', 'label' => __('app.applications.annex_sections.imported_equipment'), 'sections' => ['equipment_travelers', 'imported_equipment']],
-        ['target' => 'FilmingAirportsView', 'label' => __('app.applications.annex_sections.airport_filming'), 'sections' => ['airport_filming', 'airport_people']],
-        ['target' => 'FilmingGovernmentalView', 'label' => __('app.applications.annex_sections.governmental_scenes'), 'sections' => ['governmental_scenes']],
+        ['key' => 'work_content_summary', 'target' => 'WorkContentSummaryView', 'label' => __('app.applications.annex_sections.work_content_summary'), 'sections' => ['work_content_summary']],
+        ['key' => 'cast_crew', 'target' => 'CastCrewListView', 'label' => __('app.applications.annex_sections.cast_crew'), 'sections' => ['cast_crew']],
+        ['key' => 'filming_locations', 'target' => 'LocationListView', 'label' => __('app.applications.annex_sections.filming_locations'), 'sections' => ['filming_locations', 'special_location_requirements', 'public_security_support', 'military_support']],
+        ['key' => 'safety_guidelines', 'target' => 'RFCGuidelinesView', 'label' => __('app.applications.annex_sections.safety_guidelines'), 'sections' => ['safety_guidelines']],
+        ['key' => 'production_terms', 'target' => 'ProductionTermsView', 'label' => __('app.applications.annex_sections.production_terms'), 'sections' => ['production_terms']],
+        ['key' => 'ministry_interior_personal_details', 'target' => 'MinistryInteriorPersonalDetailsView', 'label' => __('app.applications.annex_sections.ministry_interior_personal_details'), 'sections' => ['ministry_interior_personal_details']],
+        ['key' => 'imported_equipment', 'target' => 'EquipmentListView', 'label' => __('app.applications.annex_sections.imported_equipment'), 'sections' => ['equipment_travelers', 'imported_equipment']],
+        ['key' => 'airport_filming', 'target' => 'FilmingAirportsView', 'label' => __('app.applications.annex_sections.airport_filming'), 'sections' => ['airport_filming', 'airport_people']],
+        ['key' => 'governmental_scenes', 'target' => 'FilmingGovernmentalView', 'label' => __('app.applications.annex_sections.governmental_scenes'), 'sections' => ['governmental_scenes']],
     ])
         ->filter(fn (array $form): bool => $formMatchesSections($form) && (! $hideEmptySections || $formHasVisibleData($form)))
         ->values();
     $attachedFormTargets = $attachedForms->pluck('target');
+    $hasPrintableForms = $attachedForms->contains(fn (array $form): bool => $formHasVisibleData($form));
+    $printFormsUrl = match (true) {
+        request()->routeIs('admin.applications.*') => route('admin.applications.forms.print', $application),
+        request()->routeIs('authority.applications.*') => route('authority.applications.forms.print', $application),
+        default => route('applications.forms.print', $application),
+    };
 @endphp
 
 @once
@@ -265,16 +310,178 @@
                 min-height: 46px;
             }
 
+            .attached-location-list {
+                display: grid;
+                gap: 1.25rem;
+                margin-inline: auto;
+                max-width: 1500px;
+            }
+
+            .attached-location-card {
+                background: #fff;
+                border: 1px solid #dfe3e8;
+                border-radius: 6px;
+                overflow: hidden;
+            }
+
+            .attached-location-card__header {
+                align-items: flex-start;
+                background: #f5f6f8;
+                border-bottom: 1px solid #dfe3e8;
+                display: flex;
+                gap: 1rem;
+                justify-content: space-between;
+                padding: 1.1rem 1.25rem;
+            }
+
+            .attached-location-card__number {
+                align-items: center;
+                background: var(--bs-danger);
+                border-radius: 4px;
+                color: #fff;
+                display: inline-flex;
+                flex: 0 0 38px;
+                font-weight: 700;
+                height: 38px;
+                justify-content: center;
+            }
+
+            .attached-location-card__title {
+                font-size: 1.15rem;
+                line-height: 1.5;
+                margin: 0;
+                overflow-wrap: anywhere;
+            }
+
+            .attached-location-card__body {
+                padding: 1.25rem;
+            }
+
+            .attached-location-details {
+                display: grid;
+                gap: 1rem;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                margin: 0;
+            }
+
+            .attached-location-detail {
+                min-width: 0;
+            }
+
+            .attached-location-detail--wide {
+                grid-column: span 2;
+            }
+
+            .attached-location-detail dt,
+            .attached-support-detail dt {
+                color: #6c757d;
+                font-size: 0.82rem;
+                font-weight: 600;
+                margin-bottom: 0.3rem;
+            }
+
+            .attached-location-detail dd,
+            .attached-support-detail dd {
+                color: #1f2328;
+                line-height: 1.6;
+                margin: 0;
+                overflow-wrap: anywhere;
+            }
+
+            .attached-location-support {
+                border-top: 1px solid #e5e7eb;
+                margin-top: 1.25rem;
+                padding-top: 1.25rem;
+            }
+
+            .attached-location-support__heading {
+                align-items: center;
+                display: flex;
+                gap: 0.65rem;
+                justify-content: space-between;
+                margin-bottom: 0.9rem;
+            }
+
+            .attached-support-list {
+                display: grid;
+                gap: 0.75rem;
+            }
+
+            .attached-support-item {
+                background: #f8f9fa;
+                border-inline-start: 4px solid var(--bs-danger);
+                padding: 1rem;
+            }
+
+            .attached-support-item__header {
+                align-items: flex-start;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.65rem 1rem;
+                justify-content: space-between;
+                margin-bottom: 0.85rem;
+            }
+
+            .attached-support-item__authority,
+            .attached-support-item__requirement {
+                line-height: 1.5;
+                overflow-wrap: anywhere;
+            }
+
+            .attached-support-details {
+                display: grid;
+                gap: 0.85rem 1rem;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                margin: 0;
+            }
+
+            .attached-support-detail--notes {
+                grid-column: span 4;
+            }
+
+            @media (max-width: 991.98px) {
+                .attached-location-details,
+                .attached-support-details {
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                }
+
+                .attached-support-detail--notes {
+                    grid-column: span 2;
+                }
+            }
+
+            @media (max-width: 575.98px) {
+                .attached-location-card__header {
+                    align-items: stretch;
+                    flex-direction: column;
+                }
+
+                .attached-location-details,
+                .attached-support-details {
+                    grid-template-columns: minmax(0, 1fr);
+                }
+
+                .attached-location-detail--wide,
+                .attached-support-detail--notes {
+                    grid-column: auto;
+                }
+            }
+
         </style>
     @endpush
 @endonce
 
 <div class="card">
     <div class="card-header">
-        <div class="header-title">
+        <div class="header-title d-flex align-items-center justify-content-between gap-3 flex-wrap w-100">
             <h2 class="episode-playlist-title wp-heading-inline">
                 <span class="position-relative">{{ __('app.documents.attached_forms_heading') }}:</span>
             </h2>
+            @if ($hasPrintableForms)
+                <a class="btn btn-outline-danger" href="{{ $printFormsUrl }}" target="_blank" rel="noopener" data-print-all-forms>
+                    <i class="ph ph-printer fs-6 me-2"></i>{{ __('app.documents.print_all_forms_action') }}
+                </a>
+            @endif
         </div>
     </div>
     <div class="card-body">
@@ -290,9 +497,16 @@
                                 </div>
                             </td>
                             <td class="text-end">
-                                <button class="btn btn-danger" type="button" data-bs-toggle="offcanvas" data-bs-target="#{{ $formRow['target'] }}" aria-controls="{{ $formRow['target'] }}">
-                                    <i class="ph ph-eye fs-6 me-2"></i>{{ __('app.documents.view_form_action') }}
-                                </button>
+                                <div class="d-flex align-items-center justify-content-end gap-2 flex-wrap">
+                                    @if ($formHasVisibleData($formRow))
+                                        <a class="btn btn-outline-danger" href="{{ $printFormsUrl }}?form={{ $formRow['key'] }}" target="_blank" rel="noopener" data-print-form="{{ $formRow['key'] }}">
+                                            <i class="ph ph-printer fs-6 me-2"></i>{{ __('app.documents.print_form_action') }}
+                                        </a>
+                                    @endif
+                                    <button class="btn btn-danger" type="button" data-bs-toggle="offcanvas" data-bs-target="#{{ $formRow['target'] }}" aria-controls="{{ $formRow['target'] }}">
+                                        <i class="ph ph-eye fs-6 me-2"></i>{{ __('app.documents.view_form_action') }}
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     @empty
@@ -306,6 +520,37 @@
     </div>
 </div>
 
+@if ($attachedFormTargets->contains('ProductionTermsView'))
+<div class="offcanvas offcanvas-end attached-form-view-drawer" tabindex="-1" id="ProductionTermsView" aria-labelledby="ProductionTermsViewLabel">
+    <div class="offcanvas-header">
+        <h2 id="ProductionTermsViewLabel" class="mb-0">{{ __('app.applications.annex_sections.production_terms') }}</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
+    </div>
+    <div class="offcanvas-body">
+        @include('applications.partials.production-terms-form', [
+            'productionTerms' => $productionTerms,
+            'productionTermsReadOnly' => true,
+        ])
+    </div>
+</div>
+@endif
+
+@if ($attachedFormTargets->contains('MinistryInteriorPersonalDetailsView'))
+<div class="offcanvas offcanvas-end attached-form-view-drawer" tabindex="-1" id="MinistryInteriorPersonalDetailsView" aria-labelledby="MinistryInteriorPersonalDetailsViewLabel">
+    <div class="offcanvas-header">
+        <h2 id="MinistryInteriorPersonalDetailsViewLabel" class="mb-0">{{ __('app.applications.annex_sections.ministry_interior_personal_details') }}</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
+    </div>
+    <div class="offcanvas-body">
+        @include('applications.partials.ministry-interior-personal-details-form', [
+            'ministryInteriorPersonalDetails' => $ministryInteriorPersonalDetails,
+            'ministryInteriorPersonalDetailsReadOnly' => true,
+            'ministryInteriorPersonalDetailsIdPrefix' => 'ministry_interior_personal_details_view',
+        ])
+    </div>
+</div>
+@endif
+
 @if ($attachedFormTargets->contains('WorkContentSummaryView'))
 <div class="offcanvas offcanvas-end attached-form-view-drawer" tabindex="-1" id="WorkContentSummaryView" aria-labelledby="WorkContentSummaryViewLabel">
     <div class="offcanvas-header">
@@ -317,6 +562,10 @@
         <div class="mb-3">
             <label class="form-label">{{ __('app.applications.annex_fields.synopsis') }}</label>
             <div class="attached-form-value">{{ $fallback(data_get($workContentSummary, 'synopsis')) }}</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">{{ __('app.applications.annex_fields.work_summary_english_attachment') }}</label>
+            <div class="attached-form-value">{{ $fallback(data_get($workContentSummary, 'attachment_name')) }}</div>
         </div>
         <span class="badge bg-{{ data_get($workContentSummary, 'confirmed') ? 'success' : 'secondary' }}">
             {{ data_get($workContentSummary, 'confirmed') ? __('app.applications.annex_confirmed') : __('app.applications.annex_not_confirmed') }}
@@ -344,6 +593,7 @@
 	                        <th>{{ __('app.applications.annex_fields.gender') }}</th>
 	                        <th>{{ __('app.applications.annex_fields.birth_date') }}</th>
 	                        <th>{{ __('app.applications.annex_fields.identity_number') }}</th>
+	                        <th>{{ __('app.applications.annex_fields.passport_image') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -356,9 +606,10 @@
 	                            <td>{{ $genderLabel(data_get($row, 'gender')) }}</td>
 	                            <td>{{ $fallback(data_get($row, 'birth_date')) }}</td>
 	                            <td>{{ $fallback(data_get($row, 'identity_number')) }}</td>
+	                            <td>{{ $fallback(data_get($row, 'passport_image_name')) }}</td>
                         </tr>
                     @empty
-	                        <tr><td colspan="7">{{ __('app.documents.not_filled') }}</td></tr>
+	                        <tr><td colspan="8">{{ __('app.documents.not_filled') }}</td></tr>
                     @endforelse
                 </tbody>
             </table>
@@ -374,43 +625,100 @@
         <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
     </div>
     <div class="offcanvas-body">
-        <div class="table-responsive">
-            <table class="table table-striped mb-0 attached-form-readonly-table">
-                <thead>
-                    <tr>
-                        <th style="width: 64px">#</th>
-                        <th>{{ __('app.scouting.governorate') }}</th>
-                        <th>{{ __('app.applications.annex_fields.location_exact_name') }}</th>
-                        <th>{{ __('app.applications.annex_fields.location_address') }}</th>
-                        <th>{{ __('app.applications.annex_fields.location_nature') }}</th>
-                        <th>{{ __('app.applications.annex_fields.location_type') }}</th>
-                        <th>{{ __('app.applications.special_requirement') }}</th>
-                        <th>{{ __('app.applications.location_support_requirements_title') }}</th>
-                        <th>{{ __('app.scouting.start_date') }}</th>
-                        <th>{{ __('app.scouting.end_date') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse ($filmingLocationRows as $row)
-                        <tr>
-                            <td>{{ $loop->iteration }}</td>
-                            <td>{{ \App\Models\Governorate::labelFor(data_get($row, 'governorate')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'location_name')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'address')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'nature')) }}</td>
-                            <td>{{ \App\Models\FilmingLocationType::labelFor(data_get($row, 'location_type')) }}</td>
-                            <td>{{ $specialLocationRequirementLabelsForRow((array) $row) }}</td>
-                            <td>{{ $locationSupportRequirementSummaryForRow((array) $row) }}</td>
-                            <td>{{ $fallback(data_get($row, 'start_date')) }}</td>
-                            <td>{{ $fallback(data_get($row, 'end_date')) }}</td>
-                        </tr>
-                    @empty
-                        <tr><td colspan="10">{{ __('app.documents.not_filled') }}</td></tr>
-                    @endforelse
-                </tbody>
-            </table>
+        <div class="attached-location-list">
+            @forelse ($filmingLocationRows as $row)
+                @php
+                    $locationAddress = data_get($row, 'address');
+                    $locationSupportRequirements = $locationSupportRequirementsForRow((array) $row);
+                @endphp
+                <article class="attached-location-card">
+                    <header class="attached-location-card__header">
+                        <div class="d-flex align-items-start gap-3 min-w-0">
+                            <span class="attached-location-card__number">{{ $loop->iteration }}</span>
+                            <div class="min-w-0">
+                                <h3 class="attached-location-card__title">{{ $fallback(data_get($row, 'location_name')) }}</h3>
+                                <div class="d-flex flex-wrap gap-2 mt-2">
+                                    <span class="badge bg-primary-subtle text-primary-emphasis">{{ \App\Models\Governorate::labelFor(data_get($row, 'governorate')) }}</span>
+                                    <span class="badge bg-secondary-subtle text-secondary-emphasis">{{ \App\Models\FilmingLocationType::labelFor(data_get($row, 'location_type')) }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <div class="attached-location-card__body">
+                        <dl class="attached-location-details">
+                            <div class="attached-location-detail attached-location-detail--wide">
+                                <dt>{{ __('app.applications.annex_fields.location_address') }}</dt>
+                                <dd>
+                                    @if (filled($locationAddress) && filter_var($locationAddress, FILTER_VALIDATE_URL))
+                                        <a href="{{ $locationAddress }}" target="_blank" rel="noreferrer">{{ $locationAddress }}</a>
+                                    @else
+                                        {{ $fallback($locationAddress) }}
+                                    @endif
+                                </dd>
+                            </div>
+                            <div class="attached-location-detail attached-location-detail--wide">
+                                <dt>{{ __('app.applications.annex_fields.location_nature') }}</dt>
+                                <dd>{{ $fallback(data_get($row, 'nature')) }}</dd>
+                            </div>
+                            <div class="attached-location-detail">
+                                <dt>{{ __('app.scouting.start_date') }}</dt>
+                                <dd>{{ $fallback(data_get($row, 'start_date')) }}</dd>
+                            </div>
+                            <div class="attached-location-detail">
+                                <dt>{{ __('app.scouting.end_date') }}</dt>
+                                <dd>{{ $fallback(data_get($row, 'end_date')) }}</dd>
+                            </div>
+                            <div class="attached-location-detail attached-location-detail--wide">
+                                <dt>{{ __('app.applications.special_requirement') }}</dt>
+                                <dd>{{ $specialLocationRequirementLabelsForRow((array) $row) }}</dd>
+                            </div>
+                        </dl>
+
+                        <section class="attached-location-support">
+                            <div class="attached-location-support__heading">
+                                <h4 class="h6 mb-0">{{ __('app.applications.location_support_requirements_title') }}</h4>
+                                <span class="badge bg-danger">{{ $locationSupportRequirements->count() }}</span>
+                            </div>
+
+                            <div class="attached-support-list">
+                                @forelse ($locationSupportRequirements as $supportRequirement)
+                                    <div class="attached-support-item">
+                                        <div class="attached-support-item__header">
+                                            <div class="attached-support-item__authority fw-semibold">{{ data_get($supportRequirement, 'authority') }}</div>
+                                            <div class="attached-support-item__requirement text-danger fw-semibold">{{ data_get($supportRequirement, 'requirement') }}</div>
+                                        </div>
+                                        <dl class="attached-support-details">
+                                            <div class="attached-support-detail">
+                                                <dt>{{ __('app.applications.annex_fields.date') }}</dt>
+                                                <dd>{{ $fallback(data_get($supportRequirement, 'date')) }}</dd>
+                                            </div>
+                                            <div class="attached-support-detail">
+                                                <dt>{{ __('app.applications.annex_fields.time_from') }}</dt>
+                                                <dd>{{ $fallback(data_get($supportRequirement, 'time_from')) }}</dd>
+                                            </div>
+                                            <div class="attached-support-detail">
+                                                <dt>{{ __('app.applications.annex_fields.time_to') }}</dt>
+                                                <dd>{{ $fallback(data_get($supportRequirement, 'time_to')) }}</dd>
+                                            </div>
+                                            <div class="attached-support-detail attached-support-detail--notes">
+                                                <dt>{{ __('app.applications.annex_fields.notes') }}</dt>
+                                                <dd>{{ $fallback(data_get($supportRequirement, 'notes')) }}</dd>
+                                            </div>
+                                        </dl>
+                                    </div>
+                                @empty
+                                    <div class="text-muted border p-3">{{ __('app.documents.not_filled') }}</div>
+                                @endforelse
+                            </div>
+                        </section>
+                    </div>
+                </article>
+            @empty
+                <div class="text-center text-muted border p-4">{{ __('app.documents.not_filled') }}</div>
+            @endforelse
         </div>
-        <p class="text-muted mt-3 mb-0">{{ __('app.applications.location_damage_instruction') }}</p>
+        <p class="text-muted mx-auto mt-3 mb-0" style="max-width: 1500px">{{ __('app.applications.location_damage_instruction') }}</p>
     </div>
 </div>
 @endif
@@ -496,6 +804,7 @@
                         <th>{{ __('app.applications.annex_fields.flight_number') }}</th>
                         <th>{{ __('app.applications.annex_fields.departure_date') }}</th>
                         <th>{{ __('app.applications.annex_fields.departure_flight_number') }}</th>
+                        <th>{{ __('app.applications.annex_fields.passport_image') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -507,9 +816,10 @@
                             <td>{{ $fallback(data_get($row, 'arrival_flight_number')) }}</td>
                             <td>{{ $fallback(data_get($row, 'departure_date')) }}</td>
                             <td>{{ $fallback(data_get($row, 'departure_flight_number')) }}</td>
+                            <td>{{ $fallback(data_get($row, 'passport_image_name')) }}</td>
                         </tr>
                     @empty
-                        <tr><td colspan="6">{{ __('app.documents.not_filled') }}</td></tr>
+                        <tr><td colspan="7">{{ __('app.documents.not_filled') }}</td></tr>
                     @endforelse
                 </tbody>
             </table>
@@ -527,7 +837,6 @@
                         <th>{{ __('app.applications.annex_fields.unit_value_usd') }}</th>
                         <th>{{ __('app.applications.annex_fields.total_value') }}</th>
                         <th>{{ __('app.applications.annex_fields.classification') }}</th>
-                        <th>{{ __('app.applications.annex_fields.shipping_method') }}</th>
                         <th>{{ __('app.applications.annex_fields.entry_point') }}</th>
                     </tr>
                 </thead>
@@ -542,11 +851,10 @@
                             <td>{{ $fallback(data_get($row, 'unit_value')) }}</td>
                             <td>{{ $fallback(data_get($row, 'total_value')) }}</td>
                             <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_CATEGORY, data_get($row, 'classification')) }}</td>
-                            <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_SHIPPING_METHOD, data_get($row, 'shipping_method')) }}</td>
                             <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT, data_get($row, 'entry_point')) }}</td>
                         </tr>
                     @empty
-                        <tr><td colspan="10">{{ __('app.documents.not_filled') }}</td></tr>
+                        <tr><td colspan="9">{{ __('app.documents.not_filled') }}</td></tr>
                     @endforelse
                 </tbody>
             </table>

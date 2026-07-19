@@ -1,0 +1,31 @@
+RFC e-Permit staging release 20260713-v7
+=========================================
+
+This package supersedes v6 for company-registration integration testing.
+
+Highlights:
+
+- Verifies production companies using their numeric establishment national
+  number (up to 10 digits) through the GSB staging gateway.
+- Looks up Companies Control Department (CCD) records first and automatically
+  falls back to the Ministry of Industry and Trade (MIT) establishment service.
+- Uses the documented CCD GET endpoint and MIT POST endpoint with the existing
+  MODEE client credentials stored on the government server.
+- Auto-fills and locks the company name, registration date, capital,
+  organization type, and governorate when supplied by the registry.
+- Stores which registry supplied the verified record for audit purposes.
+- Aligns the company verification controls with the approved student
+  verification design and adds real-time numeric validation.
+- Retains all student MOHE integration, workflow, UAT, routing, reporting,
+  employee-management, and registration changes included in v6.
+- Uses the corrected Windows deployment script that removes environment-specific
+  bootstrap caches before the first Artisan command.
+
+Deployment notes:
+
+- Read PRE-DEPLOY-CHECKLIST.txt before running the script.
+- The deployment preserves the server .env and storage directories.
+- Existing Super Admin and RFC account passwords are not reset.
+- The script runs migrations and AccessControlSeeder, rebuilds caches, restarts
+  the queue workers, and performs a login-page smoke test.
+- Keep the generated C:\inetpub\rfc-backup-* directory until UAT is complete.

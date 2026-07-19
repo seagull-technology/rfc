@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 class ApplicationAuthorityApproval extends Model
@@ -73,6 +74,13 @@ class ApplicationAuthorityApproval extends Model
     public function routingRule(): BelongsTo
     {
         return $this->belongsTo(ApprovalRoutingRule::class, 'approval_routing_rule_id');
+    }
+
+    public function changeRequests(): HasMany
+    {
+        return $this->hasMany(ApplicationAuthorityChangeRequest::class)
+            ->latest('requested_at')
+            ->latest('id');
     }
 
     public function localizedStatus(): string

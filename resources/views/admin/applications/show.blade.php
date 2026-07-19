@@ -16,7 +16,9 @@
     $international = data_get($metadata, 'international', []);
     $rfcDecision = (array) data_get($metadata, 'rfc_decision', []);
     $rfcDecisionStatus = data_get($rfcDecision, 'status');
-    $rfcFacilitationIssued = filled(data_get($rfcDecision, 'facilitation_issued_at'));
+    $rfcOfficialBooksPreparedValue = data_get($rfcDecision, 'official_books_prepared_at')
+        ?: data_get($rfcDecision, 'facilitation_issued_at');
+    $rfcOfficialBooksPrepared = filled($rfcOfficialBooksPreparedValue);
     $formattedBudget = $application->estimated_budget ? number_format((float) $application->estimated_budget, 2) : __('app.dashboard.not_available');
     $requiredApprovals = collect(data_get($requirements, 'required_approvals', []))
         ->map(fn ($approval) => __('app.applications.required_approval_options.'.$approval))
@@ -62,8 +64,8 @@
             ->first();
     };
     $rfcDecisionNote = data_get($rfcDecision, 'note') ?: $application->review_note;
-    $rfcFacilitationIssuedAt = $asDate(data_get($rfcDecision, 'facilitation_issued_at'));
-    $rfcDate = $rfcFacilitationIssuedAt
+    $rfcOfficialBooksPreparedAt = $asDate($rfcOfficialBooksPreparedValue);
+    $rfcDate = $rfcOfficialBooksPreparedAt
         ?? $asDate(data_get($rfcDecision, 'decided_at'))
         ?? $asDate($application->reviewed_at)
         ?? $asDate($application->submitted_at)
@@ -71,18 +73,18 @@
     $rfcTimelineStatus = match (true) {
         $rfcDecisionStatus === 'rejected', $application->status === 'rejected' => 'rejected',
         $rfcDecisionStatus === 'returned', $application->status === 'needs_clarification' => 'needs_clarification',
-        $rfcDecisionStatus === 'accepted' || $rfcFacilitationIssuedAt !== null => 'approved',
+        $rfcDecisionStatus === 'accepted' || $rfcOfficialBooksPreparedAt !== null => 'approved',
         in_array($application->status, ['submitted', 'under_review'], true) => 'under_review',
         default => $application->status,
     };
     $rfcTimelineStatusLabel = match (true) {
-        $rfcDecisionStatus === 'accepted' || $rfcFacilitationIssuedAt !== null => __('app.rfc_decision.statuses.accepted'),
+        $rfcDecisionStatus === 'accepted' || $rfcOfficialBooksPreparedAt !== null => __('app.rfc_decision.statuses.accepted'),
         $rfcDecisionStatus === 'returned' => __('app.rfc_decision.statuses.returned'),
         $rfcDecisionStatus === 'rejected' => __('app.rfc_decision.statuses.rejected'),
         default => $application->localizedStatus(),
     };
     $rfcTimelineNote = match (true) {
-        $rfcFacilitationIssuedAt !== null => __('app.rfc_decision.history.facilitation_issued'),
+        $rfcOfficialBooksPreparedAt !== null => __('app.rfc_decision.history.official_books_prepared'),
         $rfcDecisionStatus === 'accepted' => __('app.rfc_decision.history.accepted'),
         $rfcDecisionStatus === 'returned' || $rfcDecisionStatus === 'rejected' => $rfcDecisionNote,
         default => $application->localizedStage(),
@@ -138,12 +140,11 @@
         ->sortBy(fn (array $event) => $event['date']?->timestamp ?? PHP_INT_MAX)
         ->values();
     $latestCorrespondence = $correspondences->first();
-    $pendingApprovalsCount = $authorityApprovals->whereIn('status', ['pending', 'in_review'])->count();
-    $officialBooksPrepared = $rfcFacilitationIssued || $officialLetters->isNotEmpty();
+    $pendingApprovalsCount = $authorityApprovals->whereIn('status', ['pending', 'in_review', 'changes_requested'])->count();
+    $officialBooksPrepared = $rfcOfficialBooksPrepared || $officialLetters->isNotEmpty();
     $nextCheckpoint = match (true) {
         $application->status === 'needs_clarification' => __('app.admin_request_state.await_applicant_checkpoint'),
-        $application->current_stage === 'rfc_facilitation' && ! $officialBooksPrepared => __('app.admin_request_state.facilitation_checkpoint'),
-        $application->current_stage === 'rfc_facilitation' && $officialBooksPrepared && ! $application->authorityRoutingStarted() => __('app.admin_request_state.official_books_checkpoint'),
+        $application->current_stage === 'rfc_facilitation' && ! $application->authorityRoutingStarted() => __('app.admin_request_state.official_books_checkpoint'),
         $pendingApprovalsCount > 0 => __('app.admin_request_state.pending_approvals_checkpoint', ['count' => $pendingApprovalsCount]),
         $application->canBeFinallyDecided() => __('app.admin_request_state.final_decision_checkpoint'),
         default => __('app.admin_request_state.monitor_checkpoint'),
@@ -154,8 +155,7 @@
         $application->status === 'rejected' => __('app.admin_request_state.closed_title'),
         $application->canBeFinallyDecided() => __('app.admin_request_state.final_decision_ready_title'),
         $pendingApprovalsCount > 0 => __('app.admin_request_state.waiting_authorities_title'),
-        $application->current_stage === 'rfc_facilitation' && $officialBooksPrepared && ! $application->authorityRoutingStarted() => __('app.admin_request_state.official_books_title'),
-        $application->current_stage === 'rfc_facilitation' && ! $officialBooksPrepared => __('app.admin_request_state.facilitation_title'),
+        $application->current_stage === 'rfc_facilitation' && ! $application->authorityRoutingStarted() => __('app.admin_request_state.official_books_title'),
         default => __('app.admin_request_state.review_in_progress_title'),
     };
     $stateBody = match (true) {
@@ -164,14 +164,14 @@
         $application->status === 'rejected' => __('app.admin_request_state.application_closed_body'),
         $application->canBeFinallyDecided() => __('app.admin_request_state.application_final_decision_body'),
         $pendingApprovalsCount > 0 => __('app.admin_request_state.application_waiting_authorities_body'),
-        $application->current_stage === 'rfc_facilitation' && $officialBooksPrepared && ! $application->authorityRoutingStarted() => __('app.admin_request_state.application_official_books_body'),
-        $application->current_stage === 'rfc_facilitation' && ! $officialBooksPrepared => __('app.admin_request_state.application_facilitation_body'),
+        $application->current_stage === 'rfc_facilitation' && ! $application->authorityRoutingStarted() => __('app.admin_request_state.application_official_books_body'),
         default => __('app.admin_request_state.application_review_in_progress_body'),
     };
     $rfcDecisionMaker = $rfcDecisionUsers->get((int) data_get($rfcDecision, 'decided_by_user_id'));
-    $rfcDecisionIssuedBy = $rfcDecisionUsers->get((int) data_get($rfcDecision, 'facilitation_issued_by_user_id'));
+    $rfcOfficialBooksPreparedBy = $rfcDecisionUsers->get((int) (data_get($rfcDecision, 'official_books_prepared_by_user_id')
+        ?: data_get($rfcDecision, 'facilitation_issued_by_user_id')));
     $rfcDecisionDate = filled(data_get($rfcDecision, 'decided_at')) ? \Illuminate\Support\Carbon::parse(data_get($rfcDecision, 'decided_at'))->format('Y-m-d H:i') : null;
-    $rfcFacilitationIssuedDate = filled(data_get($rfcDecision, 'facilitation_issued_at')) ? \Illuminate\Support\Carbon::parse(data_get($rfcDecision, 'facilitation_issued_at'))->format('Y-m-d H:i') : null;
+    $rfcOfficialBooksPreparedDate = $rfcOfficialBooksPreparedAt?->format('Y-m-d H:i');
     $applicantAnnexSubmission = (array) data_get($metadata, 'applicant_annex_submission', []);
     $annexSubmissions = collect($annexSubmissions ?? $application->annexSubmissions ?? []);
     $pendingAnnexSubmissions = $annexSubmissions
@@ -207,10 +207,6 @@
     $canReviewApplication = auth()->user()?->can('applications.review') ?? false;
     $canApproveApplication = auth()->user()?->can('applications.approve') ?? false;
     $canManageAuthorityApprovals = $canReviewApplication || $canApproveApplication;
-    $canIssueFacilitationBook = $canReviewApplication
-        && $rfcDecisionStatus === 'accepted'
-        && ! $rfcFacilitationIssued
-        && ! $application->authorityRoutingStarted();
     $authorityApprovalStatuses = $canApproveApplication
         ? ['pending', 'in_review', 'approved', 'rejected']
         : ['pending', 'in_review'];
@@ -467,6 +463,10 @@
         .admin-application-show-layout .approval-status-line.is-in_review,
         .admin-application-show-layout .approval-status-line.is-pending {
             color: #b7791f;
+        }
+
+        .admin-application-show-layout .approval-status-line.is-changes_requested {
+            color: #9a6700;
         }
 
         .admin-application-show-layout .approval-status-line.is-rejected {
@@ -772,6 +772,7 @@
 @endsection
 
 @section('content')
+    @include('applications.partials.authority-change-requests', ['changeRequestViewer' => 'admin'])
     <div class="row">
         <div class="col-sm-12">
             <div class="streamit-wraper-table">
@@ -980,7 +981,10 @@
                             </div>
 
                             <div id="profile-activity" class="tab-pane fade">
-                                @include('applications.partials.documents-applicant', ['documents' => $documents])
+                                @include('applications.partials.documents-applicant', [
+                                    'documents' => $documents,
+                                    'hideEmptySections' => true,
+                                ])
                             </div>
 
                             <div id="profile-Annex" class="tab-pane fade">
@@ -1090,7 +1094,7 @@
                                     </div>
                                 @endif
 
-                                @if (! $canReviewApplication && ($rfcDecisionStatus || $rfcFacilitationIssued))
+                                @if (! $canReviewApplication && ($rfcDecisionStatus || $rfcOfficialBooksPrepared))
                                     <div class="card">
                                         <div class="card-body">
                                             <div class="row g-3">
@@ -1105,13 +1109,13 @@
                                                         </div>
                                                     </div>
                                                 @endif
-                                                @if ($rfcFacilitationIssued)
+                                                @if ($rfcOfficialBooksPrepared)
                                                     <div class="col-md-6">
                                                         <div class="admin-state-meta">
-                                                            <span class="admin-state-meta-label">{{ __('app.rfc_decision.facilitation_issued_by') }}</span>
-                                                            <div class="fw-semibold">{{ $rfcDecisionIssuedBy?->displayName() ?? __('app.dashboard.not_available') }}</div>
-                                                            @if ($rfcFacilitationIssuedDate)
-                                                                <div class="text-muted small mt-1">{{ $rfcFacilitationIssuedDate }}</div>
+                                                            <span class="admin-state-meta-label">{{ __('app.rfc_decision.official_books_prepared_by') }}</span>
+                                                            <div class="fw-semibold">{{ $rfcOfficialBooksPreparedBy?->displayName() ?? __('app.dashboard.not_available') }}</div>
+                                                            @if ($rfcOfficialBooksPreparedDate)
+                                                                <div class="text-muted small mt-1">{{ $rfcOfficialBooksPreparedDate }}</div>
                                                             @endif
                                                         </div>
                                                     </div>
@@ -1133,7 +1137,7 @@
                                             </div>
                                         </div>
                                         <div class="card-body">
-                                            @if ($rfcDecisionStatus || $rfcFacilitationIssued)
+                                            @if ($rfcDecisionStatus || $rfcOfficialBooksPrepared)
                                                 <div class="row g-3 mb-4">
                                                     @if ($rfcDecisionStatus)
                                                         <div class="col-md-6">
@@ -1146,13 +1150,13 @@
                                                             </div>
                                                         </div>
                                                     @endif
-                                                    @if ($rfcFacilitationIssued)
+                                                    @if ($rfcOfficialBooksPrepared)
                                                         <div class="col-md-6">
                                                             <div class="admin-state-meta">
-                                                                <span class="admin-state-meta-label">{{ __('app.rfc_decision.facilitation_issued_by') }}</span>
-                                                                <div class="fw-semibold">{{ $rfcDecisionIssuedBy?->displayName() ?? __('app.dashboard.not_available') }}</div>
-                                                                @if ($rfcFacilitationIssuedDate)
-                                                                    <div class="text-muted small mt-1">{{ $rfcFacilitationIssuedDate }}</div>
+                                                                <span class="admin-state-meta-label">{{ __('app.rfc_decision.official_books_prepared_by') }}</span>
+                                                                <div class="fw-semibold">{{ $rfcOfficialBooksPreparedBy?->displayName() ?? __('app.dashboard.not_available') }}</div>
+                                                                @if ($rfcOfficialBooksPreparedDate)
+                                                                    <div class="text-muted small mt-1">{{ $rfcOfficialBooksPreparedDate }}</div>
                                                                 @endif
                                                             </div>
                                                         </div>
@@ -1181,22 +1185,6 @@
                                         </div>
                                     </div>
 
-                                    @if ($canIssueFacilitationBook)
-                                        <div class="card">
-                                            <div class="card-body">
-                                                <form method="POST" action="{{ route('admin.applications.issue-facilitation-letter', $application) }}" class="d-grid gap-2">
-                                                    @csrf
-                                                    <button type="submit" class="btn btn-success btn-lg">{{ __('app.rfc_decision.issue_facilitation_action') }}</button>
-                                                </form>
-                                            </div>
-                                        </div>
-                                    @elseif ($rfcFacilitationIssued)
-                                        <div class="card">
-                                            <div class="card-body">
-                                                <div class="alert alert-success mb-0">{{ __('app.rfc_decision.facilitation_issued') }}</div>
-                                            </div>
-                                        </div>
-                                    @endif
                                 @endif
 
                                 @if ($officialBooksPrepared)
@@ -1267,16 +1255,21 @@
                                                                 'approved' => $approval->response_attachment_path ? 'approved_with_book' : 'approved',
                                                                 'rejected' => 'rejected',
                                                                 'in_review' => 'in_review',
+                                                                'changes_requested' => 'changes_requested',
                                                                 default => 'pending',
                                                             };
                                                             $approvalStatusIcon = match ($approvalStatusKey) {
                                                                 'approved', 'approved_with_book' => 'ph-fill ph-check-circle',
                                                                 'rejected' => 'ph-fill ph-x-circle',
                                                                 'in_review' => 'ph-fill ph-clock',
+                                                                'changes_requested' => 'ph-fill ph-pencil-line',
                                                                 default => 'ph-fill ph-hourglass',
                                                             };
-	                                                            $canManageThisApproval = $canManageAuthorityApprovals && ($canApproveApplication || ! in_array($approval->status, ['approved', 'rejected'], true));
-	                                                            $hasApprovalDetails = $canManageThisApproval || $approval->response_attachment_path || $approvalSignal['label'] || $approvalSignal['is_escalated'];
+	                                                            $approvalIsWaitingApplicant = $approval->status === 'changes_requested';
+	                                                            $canManageThisApproval = ! $approvalIsWaitingApplicant
+	                                                                && $canManageAuthorityApprovals
+	                                                                && ($canApproveApplication || ! in_array($approval->status, ['approved', 'rejected'], true));
+	                                                            $hasApprovalDetails = $approvalIsWaitingApplicant || $canManageThisApproval || $approval->response_attachment_path || $approvalSignal['label'] || $approvalSignal['is_escalated'];
 	                                                            $approvalManagementId = 'approval-management-'.$approval->getKey();
 	                                                        @endphp
 	                                                        <tr>
@@ -1358,7 +1351,12 @@
                                                                                 </div>
 
 	                                                                                <div class="col-lg-4">
-	                                                                                    @if ($canManageThisApproval)
+	                                                                                    @if ($approvalIsWaitingApplicant)
+	                                                                                        <div class="alert alert-warning mb-0">
+	                                                                                            <strong class="d-block mb-1">{{ __('app.authority_change_requests.waiting_applicant_short') }}</strong>
+	                                                                                            {{ __('app.authority_change_requests.admin_locked') }}
+	                                                                                        </div>
+	                                                                                    @elseif ($canManageThisApproval)
 	                                                                                        <form method="POST" action="{{ route('admin.applications.approvals.update', [$application, $approval]) }}" class="d-grid gap-2">
 	                                                                                            @csrf
 	                                                                                            <select name="status" class="form-select form-select-sm">

@@ -1,6 +1,8 @@
 @php
     $metadata = $application->metadata ?? [];
     $annex = data_get($metadata, 'annex', []);
+    $productionTerms = data_get($annex, 'production_terms', []);
+    $ministryInteriorPersonalDetails = data_get($annex, 'ministry_interior_personal_details', []);
     $workContentSummary = data_get($annex, 'work_content_summary', []);
     $safetyGuidelines = data_get($annex, 'safety_guidelines', []);
     $airportFilming = data_get($annex, 'airport_filming', []);
@@ -19,6 +21,13 @@
     $importedEquipmentRows = old('imported_equipment', data_get($annex, 'imported_equipment', [['shipping_company_name' => '', 'invoice_number' => '', 'bill_of_lading_number' => '', 'arrival_date' => '', 'departure_date' => '', 'customs_center' => '', 'attachment_path' => '', 'attachment_name' => '']]));
     $publicSecuritySupportRows = old('public_security_support', data_get($annex, 'public_security_support', [['day' => '', 'date' => '', 'time_from' => '', 'time_to' => '', 'location' => '', 'requirement' => '', 'notes' => '']]));
     $militarySupportRows = old('military_support', data_get($annex, 'military_support', [['day' => '', 'date' => '', 'time_from' => '', 'time_to' => '', 'location' => '', 'requirement' => '', 'notes' => '']]));
+    $locationSupportEditingState = \App\Support\LocationSupportRequirements::editingState(
+        (array) $annex,
+        (array) $filmingLocationRows,
+        old('location_support_requirements'),
+    );
+    $filmingLocationRows = $locationSupportEditingState['locations'];
+    $locationSupportRequirementRows = $locationSupportEditingState['requirements'];
     $airportPeopleRows = old('airport_people', data_get($annex, 'airport_people', [['full_name' => '', 'nationality' => '', 'mother_name' => '', 'identity_number' => '', 'profession' => '', 'address_phone' => '', 'entry_reason' => '', 'target_area' => '']]));
     $governmentalSceneRows = old('governmental_scenes', data_get($annex, 'governmental_scenes', [['site_name' => '', 'authority' => '', 'scene_description' => '', 'filming_date' => '']]));
     $rowHasData = static fn ($row): bool => collect((array) $row)->flatten()->contains(fn ($value) => filled($value));
@@ -55,6 +64,16 @@
             'label' => __('app.applications.annex_sections.safety_guidelines'),
             'target' => 'RFCGuidelines',
             'filled' => (bool) data_get($safetyGuidelines, 'acknowledged') || filled(data_get($safetyGuidelines, 'notes')),
+        ],
+        [
+            'label' => __('app.applications.annex_sections.production_terms'),
+            'target' => 'ProductionTerms',
+            'filled' => (bool) data_get($productionTerms, 'accepted'),
+        ],
+        [
+            'label' => __('app.applications.annex_sections.ministry_interior_personal_details'),
+            'target' => 'MinistryInteriorPersonalDetails',
+            'filled' => \App\Support\MinistryInteriorPersonalDetails::hasAnyConfirmed($ministryInteriorPersonalDetails),
         ],
         [
             'label' => __('app.applications.annex_sections.imported_equipment'),

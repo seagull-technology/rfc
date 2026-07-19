@@ -23,9 +23,6 @@
                 $applicationEquipmentCategoryOptions = collect(data_get($formLookupOptions ?? [], 'equipment_categories', []))
                     ->map(fn ($option): array => ['code' => $option->code, 'label' => $option->displayName()])
                     ->values();
-                $applicationEquipmentShippingMethodOptions = collect(data_get($formLookupOptions ?? [], 'equipment_shipping_methods', []))
-                    ->map(fn ($option): array => ['code' => $option->code, 'label' => $option->displayName()])
-                    ->values();
                 $applicationEquipmentEntryPointOptions = collect(data_get($formLookupOptions ?? [], 'equipment_entry_points', []))
                     ->map(fn ($option): array => ['code' => $option->code, 'label' => $option->displayName()])
                     ->values();
@@ -70,8 +67,30 @@
                     minWords: @js(__('app.applications.work_summary_min_words_validation', ['min' => 500])),
                     arabicOnly: @js(__('app.applications.work_summary_arabic_only_validation')),
                 };
+                const applicationCastCrewLabels = {
+                    firstName: @js(__('app.applications.annex_fields.first_name')),
+                    secondName: @js(__('app.applications.annex_fields.second_name')),
+                    thirdName: @js(__('app.applications.annex_fields.third_name')),
+                    familyName: @js(__('app.applications.annex_fields.family_name')),
+                    nationalId: @js(__('app.applications.annex_fields.national_id')),
+                    passportNumber: @js(__('app.applications.annex_fields.passport_number')),
+                    nationalIdDigits: @js(__('app.applications.cast_crew_national_id_digits')),
+                };
+
+                function refreshProductionTermsForeignApplicant() {
+                    const source = document.querySelector('[name="international_producer_name"]');
+
+                    if (! source) {
+                        return;
+                    }
+
+                    const value = source.value.trim();
+
+                    document.querySelectorAll('[data-production-terms-foreign-applicant]').forEach(function (target) {
+                        target.value = value || target.dataset.emptyValue || '';
+                    });
+                }
                 const applicationEquipmentCategoryOptions = @json($applicationEquipmentCategoryOptions);
-                const applicationEquipmentShippingMethodOptions = @json($applicationEquipmentShippingMethodOptions);
                 const applicationEquipmentEntryPointOptions = @json($applicationEquipmentEntryPointOptions);
 	            const applicationLocationTypesByGovernorate = @json((array) data_get($locationLookupOptions ?? [], 'location_types_by_governorate', []));
 	            const applicationLocationTypeLabels = @json((array) data_get($locationLookupOptions ?? [], 'location_type_labels', []));
@@ -382,26 +401,24 @@
 
             function filmingLocationCardHtml(tableId, index) {
                 const displayNumber = index + 1;
+                const locationKey = 'location_' + Date.now() + '_' + index;
 
                 return '<td>'
-                    + '<div class="application-location-card">'
+                    + '<div class="application-location-card" data-filming-location-card>'
+                    + '<input type="hidden" name="filming_locations[' + index + '][location_key]" value="' + locationKey + '" data-location-key>'
                     + '<div class="application-location-card__header">'
                     + '<h5 class="mb-0">' + applicationEscapeHtml(applicationLocationCardLabels.locationNumber.replace('__NUMBER__', '')) + '<span class="row-number">' + displayNumber + '</span></h5>'
                     + "<button type=\"button\" class=\"btn btn-sm btn-icon btn-danger-subtle rounded\" onclick=\"removeApplicationAnnexRow(this, '#" + tableId + "')\" aria-label=\"" + applicationEscapeHtml(applicationLocationCardLabels.deleteLabel) + "\"><i class=\"ph-fill ph ph-trash-simple fs-6\"></i></button>"
                     + '</div>'
                     + '<div class="application-location-card__section"><div class="row g-3">'
-                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.governorate) + '</label><select class="form-select" name="filming_locations[' + index + '][governorate]" data-location-governorate>' + applicationGovernorateOptionsHtml + '</select></div>'
-                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationType) + '</label><select class="form-select" name="filming_locations[' + index + '][location_type]" data-location-type-select>' + applicationLocationTypeOptionsHtml('', '') + '</select><div class="form-text text-warning fw-semibold d-none" data-location-type-approval-note></div></div>'
-                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationName) + '</label><input type="text" class="form-control" name="filming_locations[' + index + '][location_name]"></div>'
+                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.governorate) + '</label><select class="form-select" name="filming_locations[' + index + '][governorate]" data-location-governorate required>' + applicationGovernorateOptionsHtml + '</select></div>'
+                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationType) + '</label><select class="form-select" name="filming_locations[' + index + '][location_type]" data-location-type-select required>' + applicationLocationTypeOptionsHtml('', '') + '</select><div class="form-text text-warning fw-semibold d-none" data-location-type-approval-note></div></div>'
+                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationName) + '</label><input type="text" class="form-control" name="filming_locations[' + index + '][location_name]" data-location-name required></div>'
                     + '<div class="col-md-6"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationAddress) + '</label><input type="text" class="form-control" name="filming_locations[' + index + '][address]"></div>'
-                    + '<div class="col-md-6"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationNature) + '</label><textarea class="form-control" name="filming_locations[' + index + '][nature]" rows="2"></textarea></div>'
-                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.startDate) + '</label><input type="date" class="form-control" name="filming_locations[' + index + '][start_date]" min="' + applicationEscapeHtml(applicationFilmingLocationStartMin) + '" data-location-start-date></div>'
-                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.endDate) + '</label><input type="date" class="form-control" name="filming_locations[' + index + '][end_date]" data-location-end-date></div>'
+                    + '<div class="col-md-6"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationNature) + '</label><textarea class="form-control" name="filming_locations[' + index + '][nature]" rows="2" required></textarea></div>'
+                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.startDate) + '</label><input type="date" class="form-control" name="filming_locations[' + index + '][start_date]" min="' + applicationEscapeHtml(applicationFilmingLocationStartMin) + '" data-location-start-date required></div>'
+                    + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.endDate) + '</label><input type="date" class="form-control" name="filming_locations[' + index + '][end_date]" data-location-end-date required></div>'
                     + '</div></div>'
-                    + '<div class="application-location-card__section application-location-card__section--requirements">'
-                    + '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><h6 class="mb-0">' + applicationEscapeHtml(applicationLocationCardLabels.supportTitle) + '</h6><button type="button" class="btn btn-sm btn-success" onclick="addFilmingLocationSupportRequirement(this)"><i class="fa-solid fa-plus me-1"></i>' + applicationEscapeHtml(applicationLocationCardLabels.addRequirementLabel) + '</button></div>'
-                    + '<div class="d-grid gap-3" data-location-support-requirements>' + filmingLocationSupportRequirementHtml(index, 0) + '</div>'
-                    + '</div>'
                     + '</div>'
                     + '</td>';
             }
@@ -662,9 +679,28 @@
                         return;
                     }
 
-                    const total = Array.from(table.querySelectorAll('input[name*="[total_value]"]'))
-                        .reduce(function (sum, field) {
-                            return sum + (Number.parseFloat(field.value) || 0);
+                table.querySelectorAll('tbody tr').forEach(function (row) {
+                    const quantityField = row.querySelector('[data-equipment-quantity]');
+                    const unitValueField = row.querySelector('[data-equipment-unit-value]');
+                    const totalField = row.querySelector('[data-equipment-row-total]');
+
+                    if (!quantityField || !unitValueField || !totalField) {
+                        return;
+                    }
+
+                    const hasQuantity = quantityField.value.trim() !== '';
+                    const hasUnitValue = unitValueField.value.trim() !== '';
+                    const quantity = Number.parseFloat(quantityField.value);
+                    const unitValue = Number.parseFloat(unitValueField.value);
+
+                    totalField.value = hasQuantity && hasUnitValue && Number.isFinite(quantity) && Number.isFinite(unitValue)
+                        ? String(Math.round((quantity * unitValue + Number.EPSILON) * 100) / 100)
+                        : '';
+                });
+
+                const total = Array.from(table.querySelectorAll('[data-equipment-row-total]'))
+                    .reduce(function (sum, field) {
+                        return sum + (Number.parseFloat(field.value) || 0);
                         }, 0);
 
                     target.textContent = total.toLocaleString(undefined, {
@@ -793,10 +829,129 @@
 
                 button.closest('tr').remove();
                 renumberApplicationAnnexRows(selector);
+                refreshApplicationCastCrewPassportColumn(document.querySelector(selector));
                 refreshSpecialLocationRequirementSelects();
                 refreshEquipmentTravelerSelects();
                 refreshFilmingLocationDateConstraints(document);
                 updateEquipmentTotals();
+            }
+
+            function applicationCastCrewNameInputsHtml(index) {
+                return '<input type="hidden" name="cast_crew[' + index + '][name]" data-cast-crew-name-output>'
+                    + '<div class="row g-2 cast-crew-jordanian-name d-none" data-cast-crew-jordanian-name>'
+                    + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][first_name]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.firstName) + '" data-cast-crew-name-part disabled></div>'
+                    + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][second_name]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.secondName) + '" data-cast-crew-name-part disabled></div>'
+                    + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][third_name]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.thirdName) + '" data-cast-crew-name-part disabled></div>'
+                    + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][family_name]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.familyName) + '" data-cast-crew-name-part disabled></div>'
+                    + '</div>'
+                    + '<input type="text" class="form-control" data-cast-crew-full-name-input required>';
+            }
+
+            function applicationCastCrewIdentityInputHtml(index) {
+                return '<input type="text" class="form-control" name="cast_crew[' + index + '][identity_number]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.passportNumber) + '" data-cast-crew-identity>'
+                    + '<div class="invalid-feedback" data-cast-crew-identity-feedback>' + applicationEscapeHtml(applicationCastCrewLabels.nationalIdDigits) + '</div>';
+            }
+
+            function applicationCastCrewPassportImageInputHtml(index) {
+                return '<div class="d-none" data-cast-crew-passport-image>'
+                    + '<input type="file" class="form-control" name="cast_crew[' + index + '][passport_image]" accept="image/jpeg,image/png,.jpg,.jpeg,.png" disabled>'
+                    + '</div>';
+            }
+
+            function applicationIsCastCrewJordanian(row) {
+                const nationality = row?.querySelector('[data-cast-crew-nationality]');
+
+                return String(nationality?.value || '').toLowerCase() === 'jordanian';
+            }
+
+            function refreshApplicationCastCrewPassportColumn(table) {
+                if (!table) {
+                    return;
+                }
+
+                const hasForeignMember = Array.from(table.querySelectorAll('tbody tr')).some(function (row) {
+                    const nationality = row.querySelector('[data-cast-crew-nationality]');
+                    const value = String(nationality?.value || '').trim();
+
+                    return value !== '' && !applicationIsCastCrewJordanian(row);
+                });
+
+                table.querySelector('[data-cast-crew-passport-heading]')?.classList.toggle('d-none', !hasForeignMember);
+                table.querySelectorAll('[data-cast-crew-passport-cell]').forEach(function (cell) {
+                    cell.classList.toggle('d-none', !hasForeignMember);
+                });
+            }
+
+            function updateApplicationCastCrewMode(row) {
+                if (!row) {
+                    return;
+                }
+
+                const nationality = row.querySelector('[data-cast-crew-nationality]');
+                const jordanianName = row.querySelector('[data-cast-crew-jordanian-name]');
+                const fullName = row.querySelector('[data-cast-crew-full-name-input]');
+                const nameOutput = row.querySelector('[data-cast-crew-name-output]');
+                const identity = row.querySelector('[data-cast-crew-identity]');
+                const passportImage = row.querySelector('[data-cast-crew-passport-image]');
+                const isJordanian = applicationIsCastCrewJordanian(row);
+                const hasNationality = String(nationality?.value || '').trim() !== '';
+
+                if (jordanianName) {
+                    jordanianName.classList.toggle('d-none', !isJordanian);
+                    jordanianName.querySelectorAll('[data-cast-crew-name-part]').forEach(function (input) {
+                        input.disabled = !isJordanian;
+                        input.required = isJordanian;
+                    });
+                }
+
+                if (fullName) {
+                    fullName.classList.toggle('d-none', isJordanian);
+                    fullName.required = hasNationality && !isJordanian;
+                }
+
+                if (nameOutput) {
+                    nameOutput.value = isJordanian
+                        ? Array.from(row.querySelectorAll('[data-cast-crew-name-part]')).map(function (input) {
+                            return String(input.value || '').trim();
+                        }).filter(Boolean).join(' ')
+                        : String(fullName?.value || '').trim();
+                }
+
+                if (identity) {
+                    identity.placeholder = isJordanian ? applicationCastCrewLabels.nationalId : applicationCastCrewLabels.passportNumber;
+                    identity.inputMode = isJordanian ? 'numeric' : 'text';
+
+                    if (isJordanian) {
+                        identity.value = String(identity.value || '').replace(/\D/g, '').slice(0, 10);
+                        identity.required = true;
+                        identity.setAttribute('minlength', '10');
+                        identity.setAttribute('maxlength', '10');
+                        identity.setAttribute('pattern', '\\d{10}');
+                    } else {
+                        identity.required = hasNationality;
+                        identity.removeAttribute('minlength');
+                        identity.removeAttribute('maxlength');
+                        identity.removeAttribute('pattern');
+                        identity.setCustomValidity('');
+                        identity.classList.remove('is-invalid');
+                    }
+                }
+
+                if (passportImage) {
+                    const shouldShowPassport = hasNationality && !isJordanian;
+                    passportImage.classList.toggle('d-none', !shouldShowPassport);
+                    passportImage.querySelectorAll('input').forEach(function (input) {
+                        input.disabled = !shouldShowPassport;
+                    });
+                }
+
+                refreshApplicationCastCrewPassportColumn(row.closest('table'));
+            }
+
+            function refreshApplicationCastCrewModes(root) {
+                (root || document).querySelectorAll('[data-cast-crew-nationality]').forEach(function (field) {
+                    updateApplicationCastCrewMode(field.closest('tr'));
+                });
             }
 
             function supportScheduleRowHtml(fieldName, index, deleteCell) {
@@ -824,12 +979,13 @@
 
                 if (fieldName === 'cast_crew') {
 	                    row.innerHTML = '<td class="row-number"></td>'
-	                        + '<td><input type="text" class="form-control" name="cast_crew[' + index + '][name]"></td>'
-	                        + '<td><input type="text" class="form-control" name="cast_crew[' + index + '][role]"></td>'
-	                        + '<td><select class="form-select" name="cast_crew[' + index + '][nationality]">' + applicationNationalityOptionsHtml + '</select></td>'
-	                        + '<td><select class="form-select" name="cast_crew[' + index + '][gender]">' + applicationGenderOptionsHtml + '</select></td>'
-	                        + '<td><input type="date" class="form-control" name="cast_crew[' + index + '][birth_date]" max="' + applicationCrewBirthDateMax + '"></td>'
-	                        + '<td><input type="text" class="form-control" name="cast_crew[' + index + '][identity_number]"></td>'
+	                        + '<td><select class="form-select" name="cast_crew[' + index + '][nationality]" data-cast-crew-nationality required>' + applicationNationalityOptionsHtml + '</select></td>'
+	                        + '<td class="cast-crew-name-cell">' + applicationCastCrewNameInputsHtml(index) + '</td>'
+	                        + '<td><input type="text" class="form-control" name="cast_crew[' + index + '][role]" required></td>'
+	                        + '<td><select class="form-select" name="cast_crew[' + index + '][gender]" required>' + applicationGenderOptionsHtml + '</select></td>'
+	                        + '<td><input type="date" class="form-control" name="cast_crew[' + index + '][birth_date]" max="' + applicationCrewBirthDateMax + '" required></td>'
+	                        + '<td>' + applicationCastCrewIdentityInputHtml(index) + '</td>'
+	                        + '<td class="d-none" data-cast-crew-passport-cell>' + applicationCastCrewPassportImageInputHtml(index) + '</td>'
                         + deleteCell;
 	                } else if (fieldName === 'filming_locations') {
 	                    row.innerHTML = filmingLocationCardHtml(tableId, index);
@@ -860,6 +1016,7 @@
                         + '<td><input type="text" class="form-control" name="equipment_travelers[' + index + '][arrival_flight_number]"></td>'
                         + '<td><input type="date" class="form-control" name="equipment_travelers[' + index + '][departure_date]"></td>'
                         + '<td><input type="text" class="form-control" name="equipment_travelers[' + index + '][departure_flight_number]"></td>'
+                        + '<td><input type="file" class="form-control" name="equipment_travelers[' + index + '][passport_image]" accept="image/jpeg,image/png,.jpg,.jpeg,.png"></td>'
                         + deleteCell;
                 } else if (fieldName === 'imported_equipment_shipping' || fieldName === 'imported_equipment_traveler') {
                     const rowKey = (fieldName === 'imported_equipment_traveler' ? 'traveler_' : 'shipping_') + index;
@@ -873,11 +1030,10 @@
                         + '<td><input type="hidden" name="imported_equipment[' + rowKey + '][transport_group]" value="' + group + '"><input type="text" class="form-control" name="imported_equipment[' + rowKey + '][item]"></td>'
                         + '<td><input type="text" class="form-control" name="imported_equipment[' + rowKey + '][serial_number]"></td>'
                         + '<td>' + referenceControl + '</td>'
-                        + '<td><input type="number" min="0" class="form-control" name="imported_equipment[' + rowKey + '][quantity]"></td>'
-                        + '<td><input type="number" step="0.01" min="0" class="form-control" name="imported_equipment[' + rowKey + '][unit_value]"></td>'
-                        + '<td><input type="number" step="0.01" min="0" class="form-control" name="imported_equipment[' + rowKey + '][total_value]"></td>'
+                        + '<td><input type="number" min="0" class="form-control" name="imported_equipment[' + rowKey + '][quantity]" data-equipment-quantity></td>'
+                        + '<td><input type="number" step="0.01" min="0" class="form-control" name="imported_equipment[' + rowKey + '][unit_value]" data-equipment-unit-value></td>'
+                        + '<td><input type="number" step="0.01" min="0" class="form-control" name="imported_equipment[' + rowKey + '][total_value]" data-equipment-row-total readonly></td>'
                         + '<td><select class="form-select" name="imported_equipment[' + rowKey + '][classification]">' + applicationLookupOptionsHtml(applicationEquipmentCategoryOptions, '') + '</select></td>'
-                        + '<td><select class="form-select" name="imported_equipment[' + rowKey + '][shipping_method]">' + applicationLookupOptionsHtml(applicationEquipmentShippingMethodOptions, '') + '</select></td>'
                         + '<td><select class="form-select" name="imported_equipment[' + rowKey + '][entry_point]">' + applicationLookupOptionsHtml(applicationEquipmentEntryPointOptions, '') + '</select></td>'
                         + deleteCell;
                 } else if (fieldName === 'public_security_support' || fieldName === 'military_support') {
@@ -909,10 +1065,15 @@
                 refreshSpecialLocationRequirementSelects();
                 refreshEquipmentTravelerSelects();
                 refreshFilmingLocationDateConstraints(row);
+                refreshApplicationCastCrewModes(row);
                 updateEquipmentTotals();
             }
 
             document.addEventListener('change', function (event) {
+                if (event.target.matches('[name="international_producer_name"]')) {
+                    refreshProductionTermsForeignApplicant();
+                }
+
                 if (event.target.matches('[data-location-governorate]')) {
                     refreshApplicationLocationTypeSelect(event.target.closest('tr'));
                 }
@@ -937,9 +1098,17 @@
                 if (event.target.matches('input[name^="equipment_travelers"][name$="[traveler_name]"]')) {
                     refreshEquipmentTravelerSelects();
                 }
+
+                if (event.target.matches('[data-cast-crew-nationality]')) {
+                    updateApplicationCastCrewMode(event.target.closest('tr'));
+                }
             });
 
             document.addEventListener('input', function (event) {
+                if (event.target.matches('[name="international_producer_name"]')) {
+                    refreshProductionTermsForeignApplicant();
+                }
+
                 if (event.target.matches('input[name^="filming_locations"][name$="[location_name]"]')) {
                     refreshSpecialLocationRequirementSelects();
                 }
@@ -950,6 +1119,10 @@
 
                 if (event.target.matches('[data-location-support-notes]')) {
                     updateFilmingLocationSupportRequirementNotes(event.target.closest('[data-location-support-requirement-row]'));
+                }
+
+                if (event.target.matches('[data-cast-crew-name-part], [data-cast-crew-full-name-input], [data-cast-crew-identity]')) {
+                    updateApplicationCastCrewMode(event.target.closest('tr'));
                 }
             });
 
@@ -973,6 +1146,8 @@
             refreshEquipmentTravelerSelects();
             refreshFilmingLocationDateConstraints(document);
             refreshFilmingLocationSupportRequirementNotes(document);
+            refreshApplicationCastCrewModes(document);
+            refreshProductionTermsForeignApplicant();
 
             [
                 '#castCrewRequestTable',

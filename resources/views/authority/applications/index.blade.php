@@ -295,7 +295,7 @@
                                 <div class="col-lg-2">
                                     <label class="form-label" for="status">{{ __('app.applications.status') }}</label>
                                     <select id="status" name="status" class="form-control select2-basic-single">
-                                        @foreach (['all', 'pending', 'in_review', 'approved', 'rejected'] as $status)
+                                        @foreach (['all', 'pending', 'in_review', 'changes_requested', 'approved', 'rejected'] as $status)
                                             <option value="{{ $status }}" @selected($filters['status'] === $status)>{{ $status === 'all' ? __('app.applications.all_statuses') : __('app.approvals.statuses.'.$status) }}</option>
                                         @endforeach
                                     </select>

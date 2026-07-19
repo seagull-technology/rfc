@@ -66,6 +66,18 @@ class Entity extends Model
             ->withTimestamps();
     }
 
+    public function formLookupOptions(): BelongsToMany
+    {
+        return $this->belongsToMany(FormLookupOption::class, 'entity_form_lookup_option')
+            ->withTimestamps();
+    }
+
+    public function locationSupportRequirements(): BelongsToMany
+    {
+        return $this->formLookupOptions()
+            ->where('form_lookup_options.type', FormLookupOption::TYPE_SPECIAL_LOCATION_REQUIREMENT);
+    }
+
     /**
      * @return Collection<int, User>
      */

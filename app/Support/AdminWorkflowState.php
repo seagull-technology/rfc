@@ -18,10 +18,7 @@ class AdminWorkflowState
             $application->status === 'needs_clarification' => self::state('waiting_on_applicant'),
             in_array($application->status, ['approved', 'rejected'], true) => self::state('resolved'),
             $application->status === 'draft' => self::state('draft'),
-            $application->current_stage === 'rfc_facilitation'
-                && filled(data_get($application->metadata ?? [], 'rfc_decision.facilitation_issued_at'))
-                && ! $application->authorityRoutingStarted() => self::state('review_official_books'),
-            $application->current_stage === 'rfc_facilitation' && ! $application->authorityRoutingStarted() => self::state('needs_facilitation_letter'),
+            $application->current_stage === 'rfc_facilitation' && ! $application->authorityRoutingStarted() => self::state('review_official_books'),
             $pendingApprovals > 0 => self::state('waiting_authorities'),
             $application->canBeFinallyDecided() => self::state('ready_final_decision'),
             default => self::state('needs_admin_review'),
@@ -45,12 +42,12 @@ class AdminWorkflowState
     {
         if ($application->relationLoaded('authorityApprovals')) {
             return $application->authorityApprovals
-                ->whereIn('status', ['pending', 'in_review'])
+                ->whereIn('status', ['pending', 'in_review', 'changes_requested'])
                 ->count();
         }
 
         return $application->authorityApprovals()
-            ->whereIn('status', ['pending', 'in_review'])
+            ->whereIn('status', ['pending', 'in_review', 'changes_requested'])
             ->count();
     }
 
@@ -65,7 +62,7 @@ class AdminWorkflowState
             'class' => match ($key) {
                 'ready_final_decision', 'resolved' => 'success',
                 'waiting_on_applicant' => 'danger',
-                'waiting_authorities', 'needs_facilitation_letter', 'review_official_books' => 'warning',
+                'waiting_authorities', 'review_official_books' => 'warning',
                 'draft' => 'secondary',
                 default => 'info',
             },

@@ -95,15 +95,19 @@
                         <label for="new-work-category-code" class="form-label">{{ __('app.admin.work_release_lookups.code') }}</label>
                         <input id="new-work-category-code" name="code" type="text" class="form-control" value="{{ old('code') }}" placeholder="feature_film">
                     </div>
-                    <div class="col-lg-3">
+                    <div class="col-lg-2">
                         <label for="new-work-category-name-en" class="form-label">{{ __('app.admin.work_release_lookups.name_en') }}</label>
                         <input id="new-work-category-name-en" name="name_en" type="text" class="form-control" value="{{ old('name_en') }}" required>
                     </div>
-                    <div class="col-lg-3">
+                    <div class="col-lg-2">
                         <label for="new-work-category-name-ar" class="form-label">{{ __('app.admin.work_release_lookups.name_ar') }}</label>
                         <input id="new-work-category-name-ar" name="name_ar" type="text" class="form-control" value="{{ old('name_ar') }}" required>
                     </div>
                     <div class="col-lg-2 col-md-6">
+                        <label for="new-work-category-summary-words" class="form-label">{{ __('app.admin.work_release_lookups.work_summary_min_words') }}</label>
+                        <input id="new-work-category-summary-words" name="work_summary_min_words" type="number" min="1" max="5000" class="form-control" value="{{ old('work_summary_min_words', \App\Models\WorkCategory::DEFAULT_WORK_SUMMARY_MIN_WORDS) }}" required>
+                    </div>
+                    <div class="col-lg-1 col-md-6">
                         <label for="new-work-category-sort-order" class="form-label">{{ __('app.admin.work_release_lookups.sort_order') }}</label>
                         <input id="new-work-category-sort-order" name="sort_order" type="number" min="0" class="form-control" value="{{ old('sort_order', 500) }}">
                     </div>
@@ -114,7 +118,7 @@
                             <label for="new-work-category-active" class="form-check-label">{{ __('app.admin.work_release_lookups.active') }}</label>
                         </div>
                     </div>
-                    <div class="col-lg-1 d-grid">
+                    <div class="col-lg-2 d-grid">
                         <button type="submit" class="btn btn-primary">{{ __('app.admin.work_release_lookups.create_action') }}</button>
                     </div>
                 </form>
@@ -134,6 +138,7 @@
                                 <th>{{ __('app.admin.work_release_lookups.code') }}</th>
                                 <th>{{ __('app.admin.work_release_lookups.name_en') }}</th>
                                 <th>{{ __('app.admin.work_release_lookups.name_ar') }}</th>
+                                <th>{{ __('app.admin.work_release_lookups.work_summary_min_words') }}</th>
                                 <th>{{ __('app.admin.work_release_lookups.sort_order') }}</th>
                                 <th>{{ __('app.admin.work_release_lookups.availability') }}</th>
                                 <th>{{ __('app.admin.work_release_lookups.actions') }}</th>
@@ -145,6 +150,7 @@
                                     <td><span class="badge bg-light text-dark lookup-code">{{ $workCategory->code }}</span></td>
                                     <td><input name="name_en" form="work-category-update-{{ $workCategory->getKey() }}" type="text" class="form-control" value="{{ $workCategory->name_en }}" required></td>
                                     <td><input name="name_ar" form="work-category-update-{{ $workCategory->getKey() }}" type="text" class="form-control" value="{{ $workCategory->name_ar }}" required></td>
+                                    <td><input name="work_summary_min_words" form="work-category-update-{{ $workCategory->getKey() }}" type="number" min="1" max="5000" class="form-control" value="{{ $workCategory->workSummaryMinWords() }}" required></td>
                                     <td><input name="sort_order" form="work-category-update-{{ $workCategory->getKey() }}" type="number" min="0" class="form-control" value="{{ $workCategory->sort_order }}" required></td>
                                     <td>
                                         <input type="hidden" form="work-category-update-{{ $workCategory->getKey() }}" name="is_active" value="0">
@@ -173,7 +179,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="6" class="text-center text-muted py-5">{{ __('app.admin.work_release_lookups.work_categories_empty') }}</td>
+                                    <td colspan="7" class="text-center text-muted py-5">{{ __('app.admin.work_release_lookups.work_categories_empty') }}</td>
                                 </tr>
                             @endforelse
                         </tbody>

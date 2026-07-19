@@ -1,5 +1,7 @@
 @php
     $annex = $annexPayload ?? data_get($application->metadata ?? [], 'annex', []);
+    $productionTerms = data_get($annex, 'production_terms', []);
+    $ministryInteriorPersonalDetails = data_get($annex, 'ministry_interior_personal_details', []);
     $workContentSummary = data_get($annex, 'work_content_summary', []);
     $safetyGuidelines = data_get($annex, 'safety_guidelines', []);
     $airportFilming = data_get($annex, 'airport_filming', []);
@@ -136,6 +138,8 @@
     $rowsHaveDataForAnnex = static fn ($rows): bool => collect((array) $rows)
         ->contains(fn ($row): bool => is_array($row) && $hasFilledValuesForAnnex($row));
     $sectionHasData = [
+        'production_terms' => (bool) data_get($productionTerms, 'accepted'),
+        'ministry_interior_personal_details' => $hasFilledValuesForAnnex($ministryInteriorPersonalDetails),
         'work_content_summary' => $hasFilledValuesForAnnex($workContentSummary),
         'cast_crew' => $rowsHaveDataForAnnex($castCrewRows->all()),
         'filming_locations' => $rowsHaveDataForAnnex($filmingLocationRows->all()),
@@ -197,10 +201,32 @@
     <div class="text-muted">{{ __('app.applications.annex_form_empty_state') }}</div>
 @else
     <div class="d-grid gap-4">
+        @if ($sectionVisible('production_terms'))
+        <div>
+            <h5 class="mb-3">{{ __('app.applications.annex_sections.production_terms') }}</h5>
+            @include('applications.partials.production-terms-form', [
+                'productionTerms' => $productionTerms,
+                'productionTermsReadOnly' => true,
+            ])
+        </div>
+        @endif
+
+        @if ($sectionVisible('ministry_interior_personal_details'))
+        <div>
+            <h5 class="mb-3">{{ __('app.applications.annex_sections.ministry_interior_personal_details') }}</h5>
+            @include('applications.partials.ministry-interior-personal-details-form', [
+                'ministryInteriorPersonalDetails' => $ministryInteriorPersonalDetails,
+                'ministryInteriorPersonalDetailsReadOnly' => true,
+                'ministryInteriorPersonalDetailsIdPrefix' => 'ministry_interior_personal_details_summary',
+            ])
+        </div>
+        @endif
+
         @if ($sectionVisible('work_content_summary'))
         <div>
             <h5 class="mb-3">{{ __('app.applications.annex_sections.work_content_summary') }}</h5>
             <div class="mb-2"><span class="fw-600">{{ __('app.applications.annex_fields.synopsis') }}:</span><span class="ms-2">{{ $fallback(data_get($workContentSummary, 'synopsis')) }}</span></div>
+            <div class="mb-2"><span class="fw-600">{{ __('app.applications.annex_fields.work_summary_english_attachment') }}:</span><span class="ms-2">{{ $fallback(data_get($workContentSummary, 'attachment_name')) }}</span></div>
             <div class="mb-0"><span class="fw-600">{{ __('app.applications.annex_fields.content_confirmation') }}</span><span class="ms-2 badge bg-{{ data_get($workContentSummary, 'confirmed') ? 'success' : 'secondary' }}">{{ data_get($workContentSummary, 'confirmed') ? __('app.applications.annex_confirmed') : __('app.applications.annex_not_confirmed') }}</span></div>
         </div>
         @endif
@@ -218,6 +244,7 @@
 	                        <col style="width: 130px">
 	                        <col style="width: 150px">
 	                        <col style="width: 220px">
+	                        <col style="width: 220px">
                     </colgroup>
                     <thead>
                         <tr>
@@ -228,6 +255,7 @@
 	                            <th>{{ __('app.applications.annex_fields.gender') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.birth_date') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.identity_number') }}</th>
+	                            <th>{{ __('app.applications.annex_fields.passport_image') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -240,9 +268,10 @@
 	                                <td>{{ $genderLabel(data_get($row, 'gender')) }}</td>
 	                                <td>{{ $fallback(data_get($row, 'birth_date')) }}</td>
 	                                <td>{{ $fallback(data_get($row, 'identity_number')) }}</td>
+	                                <td>{{ $fallback(data_get($row, 'passport_image_name')) }}</td>
                             </tr>
                         @empty
-	                            <tr><td colspan="7">{{ __('app.applications.annex_form_empty_state') }}</td></tr>
+	                            <tr><td colspan="8">{{ __('app.applications.annex_form_empty_state') }}</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -369,6 +398,7 @@
                             <th>{{ __('app.applications.annex_fields.flight_number') }}</th>
                             <th>{{ __('app.applications.annex_fields.departure_date') }}</th>
                             <th>{{ __('app.applications.annex_fields.departure_flight_number') }}</th>
+                            <th>{{ __('app.applications.annex_fields.passport_image') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -380,9 +410,10 @@
                                 <td>{{ $fallback(data_get($row, 'arrival_flight_number')) }}</td>
                                 <td>{{ $fallback(data_get($row, 'departure_date')) }}</td>
                                 <td>{{ $fallback(data_get($row, 'departure_flight_number')) }}</td>
+                                <td>{{ $fallback(data_get($row, 'passport_image_name')) }}</td>
                             </tr>
                         @empty
-                            <tr><td colspan="6">{{ __('app.applications.annex_form_empty_state') }}</td></tr>
+                            <tr><td colspan="7">{{ __('app.applications.annex_form_empty_state') }}</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -400,7 +431,6 @@
                             <th>{{ __('app.applications.annex_fields.unit_value_usd') }}</th>
                             <th>{{ __('app.applications.annex_fields.total_value') }}</th>
                             <th>{{ __('app.applications.annex_fields.classification') }}</th>
-                            <th>{{ __('app.applications.annex_fields.shipping_method') }}</th>
                             <th>{{ __('app.applications.annex_fields.entry_point') }}</th>
                         </tr>
                     </thead>
@@ -415,11 +445,10 @@
                                 <td>{{ $fallback(data_get($row, 'unit_value')) }}</td>
                                 <td>{{ $fallback(data_get($row, 'total_value')) }}</td>
                                 <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_CATEGORY, data_get($row, 'classification')) }}</td>
-                                <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_SHIPPING_METHOD, data_get($row, 'shipping_method')) }}</td>
                                 <td>{{ $formLookupLabel(\App\Models\FormLookupOption::TYPE_EQUIPMENT_ENTRY_POINT, data_get($row, 'entry_point')) }}</td>
                             </tr>
                         @empty
-                            <tr><td colspan="10">{{ __('app.applications.annex_form_empty_state') }}</td></tr>
+                            <tr><td colspan="9">{{ __('app.applications.annex_form_empty_state') }}</td></tr>
                         @endforelse
                     </tbody>
                 </table>
