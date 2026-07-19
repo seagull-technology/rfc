@@ -349,7 +349,8 @@
                     <i class="ph ph-info fa-xl me-2 lh-lg"></i>
                     <span data-work-summary-instruction>{{ __('app.applications.work_summary_instruction', ['min' => $selectedWorkSummaryMinWords]) }}</span>
                 </p>
-                <textarea class="form-control" name="work_content_summary_synopsis" rows="15" required data-work-summary-input data-work-summary-min-words="{{ $selectedWorkSummaryMinWords }}" data-work-summary-counter="#work_content_summary_word_count_drawer">{{ old('work_content_summary_synopsis', data_get($workContentSummary, 'synopsis')) }}</textarea>
+                <label class="form-label" for="work_content_summary_synopsis_drawer">{{ __('app.applications.annex_fields.synopsis') }} <span class="text-danger">*</span></label>
+                <textarea class="form-control" id="work_content_summary_synopsis_drawer" name="work_content_summary_synopsis" rows="15" required data-work-summary-input data-work-summary-min-words="{{ $selectedWorkSummaryMinWords }}" data-work-summary-counter="#work_content_summary_word_count_drawer">{{ old('work_content_summary_synopsis', data_get($workContentSummary, 'synopsis')) }}</textarea>
                 <div class="d-flex justify-content-between gap-3 flex-wrap small mt-2">
                     <span class="text-muted">{{ __('app.applications.work_summary_arabic_only_hint') }}</span>
                     <span id="work_content_summary_word_count_drawer" class="text-muted" aria-live="polite"></span>
@@ -510,7 +511,7 @@
                 <span>{{ __('app.applications.location_damage_instruction') }}</span>
             </p>
             <div class="d-flex justify-content-end py-3">
-                <button type="button" class="btn btn-success" onclick="addApplicationAnnexRow('filmingLocationsRequestTable', 'filming_locations')"><i class="fa-solid fa-plus me-2"></i>{{ __('app.add') }}</button>
+                <button type="button" class="btn btn-success" onclick="addApplicationAnnexRow('filmingLocationsRequestTable', 'filming_locations')"><i class="fa-solid fa-plus me-2"></i>{{ __('app.applications.add_filming_location') }}</button>
             </div>
             <div class="table-responsive">
                 <table class="table application-location-card-table" id="filmingLocationsRequestTable">
@@ -578,7 +579,7 @@
     </div>
 </div>
 
-<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="MinistryInteriorPersonalDetails">
+<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="MinistryInteriorPersonalDetails" data-project-needs-form="ministry-personal-details">
     <div class="offcanvas-header">
         <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.ministry_interior_personal_details') }}</span></h2>
         <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
@@ -601,7 +602,7 @@
     </div>
 </div>
 
-<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="EquipmentList">
+<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="EquipmentList" data-project-needs-form="equipment">
     <div class="offcanvas-header">
         <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.imported_equipment') }}</span></h2>
         <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
@@ -617,6 +618,20 @@
         </ul>
         <div class="tab-content">
             <div class="tab-pane fade show active border px-4 py-3" id="equipment-shipping-pane" role="tabpanel">
+                <div class="border-bottom pb-4 mb-4 text-danger fontSize13 fw-600 lh-lg">
+                    <p class="mb-2">
+                        <i class="ph ph-info fa-xl me-2 lh-lg"></i>
+                        <span>{{ __('app.applications.shipping_customs_instruction_before_project') }}</span>
+                        <strong class="fw-bold" data-shipping-customs-project-name>{{ $travelerCustomsProjectName }}</strong>
+                        <span>{{ __('app.applications.shipping_customs_instruction_after_project') }}</span>
+                    </p>
+                    <ol class="mb-2 pe-4">
+                        @foreach (__('app.applications.shipping_customs_requirements') as $requirement)
+                            <li class="mb-1">{{ $requirement }}</li>
+                        @endforeach
+                    </ol>
+                    <p class="mb-0">{{ __('app.applications.shipping_customs_conclusion') }}</p>
+                </div>
                 <div class="section-form">
                     <div class="d-flex justify-content-end mb-3">
                         <button type="button" class="btn btn-success" onclick="addApplicationAnnexRow('importedEquipmentShipmentTable', 'imported_equipment')">
@@ -634,7 +649,7 @@
                                     <th>{{ __('app.applications.annex_fields.arrival_date') }}</th>
                                     <th>{{ __('app.applications.annex_fields.departure_date') }}</th>
                                     <th>{{ __('app.applications.annex_fields.customs_center') }}</th>
-                                    <th>{{ __('app.applications.annex_fields.attachment') }}</th>
+                                    <th>{{ __('app.applications.annex_fields.invoice_attachment') }}</th>
                                     <th>{{ __('app.applications.actions') }}</th>
                                 </tr>
                             </thead>
@@ -683,6 +698,11 @@
                         <button type="button" class="btn btn-success" onclick="addApplicationAnnexRow('importedEquipmentShipmentTable', 'imported_equipment')">
                             <i class="fa fa-plus me-2"></i>{{ __('app.add') }}
                         </button>
+                    </div>
+                    <div class="form-check form-group mt-4">
+                        <input type="hidden" name="shipping_equipment_acknowledged" value="0">
+                        <input type="checkbox" class="form-check-input" id="shipping_equipment_acknowledged" name="shipping_equipment_acknowledged" value="1" @checked(old('shipping_equipment_acknowledged', data_get($annex, 'shipping_equipment_acknowledged', false)))>
+                        <label class="form-label" for="shipping_equipment_acknowledged">{{ __('app.applications.shipping_equipment_acknowledgement') }} <span class="text-danger">*</span></label>
                     </div>
                 </div>
             </div>
@@ -844,7 +864,7 @@
     </div>
 </div>
 
-<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="FilmingAirports">
+<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="FilmingAirports" data-project-needs-form="airport">
     <div class="offcanvas-header">
         <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.airport_filming') }}</span></h2>
         <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
@@ -1203,7 +1223,7 @@
     @endpush
 @endonce
 
-<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="FilmingGovernmental">
+<div class="offcanvas offcanvas-end application-annex-offcanvas" tabindex="-1" id="FilmingGovernmental" data-project-needs-form="governmental-scenes">
     <div class="offcanvas-header">
         <h2 class="episode-playlist-title wp-heading-inline mb-0"><span class="position-relative">{{ __('app.applications.annex_sections.governmental_scenes') }}</span></h2>
         <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
@@ -1259,6 +1279,177 @@
         <script>
             (function () {
                 const validationMessage = @js(__('app.applications.requirement_validation_summary'));
+                const requiredMinistryFields = [
+                    'current_nationality', 'current_full_name', 'original_nationality', 'original_full_name',
+                    'gender', 'passport_number', 'passport_type', 'passport_issue_place', 'passport_issue_date',
+                    'passport_expiry_date', 'birth_place', 'birth_date', 'education_qualification', 'profession',
+                    'workplace', 'mother_full_name', 'mother_nationality', 'visit_residence_reason',
+                    'country_of_arrival', 'country_of_residence', 'confirmed'
+                ];
+
+                function controlHasValue(control) {
+                    if (!control || control.disabled || control.type === 'hidden' || control.readOnly) {
+                        return false;
+                    }
+
+                    if (control.type === 'checkbox' || control.type === 'radio') {
+                        return control.checked;
+                    }
+
+                    if (control.type === 'file') {
+                        return (control.files?.length || 0) > 0;
+                    }
+
+                    return String(control.value || '').trim() !== '';
+                }
+
+                function controlsHaveData(container) {
+                    return Array.from(container?.querySelectorAll('input, select, textarea') || []).some(controlHasValue);
+                }
+
+                function setControlRequired(control, required) {
+                    if (!control || control.disabled || control.type === 'hidden' || control.readOnly) {
+                        return;
+                    }
+
+                    control.required = Boolean(required);
+
+                    if (!required) {
+                        control.classList.remove('is-invalid');
+                        control.setCustomValidity?.('');
+                    }
+                }
+
+                function namedRowControl(row, field) {
+                    return row.querySelector('[name$="[' + field + ']"], [data-optional-required-field="' + field + '"]');
+                }
+
+                function rowHasStoredFile(row, prefix) {
+                    return ['path', 'name'].some(function (suffix) {
+                        const field = row.querySelector('[name$="[' + prefix + '_' + suffix + ']"]');
+                        return String(field?.value || '').trim() !== '';
+                    });
+                }
+
+                function syncMinistryPersonalDetails(drawer) {
+                    drawer.querySelectorAll('[data-ministry-personal-details-row]').forEach(function (row) {
+                        const started = controlsHaveData(row);
+
+                        requiredMinistryFields.forEach(function (field) {
+                            setControlRequired(namedRowControl(row, field), started);
+                        });
+                    });
+                }
+
+                function syncShippingEquipment(drawer) {
+                    const pane = drawer.querySelector('#equipment-shipping-pane');
+                    const acknowledgement = pane?.querySelector('[name="shipping_equipment_acknowledged"][type="checkbox"]');
+                    const rows = Array.from(pane?.querySelectorAll('#importedEquipmentShipmentTable tbody tr') || []);
+                    const sectionStarted = Boolean(acknowledgement?.checked) || rows.some(controlsHaveData);
+
+                    rows.forEach(function (row, index) {
+                        const rowStarted = controlsHaveData(row) || (sectionStarted && index === 0);
+
+                        ['shipping_company_name', 'invoice_number', 'arrival_date', 'customs_center'].forEach(function (field) {
+                            setControlRequired(namedRowControl(row, field), rowStarted);
+                        });
+
+                        const attachment = namedRowControl(row, 'attachment');
+                        setControlRequired(attachment, rowStarted && !rowHasStoredFile(row, 'attachment'));
+                    });
+
+                    setControlRequired(acknowledgement, sectionStarted);
+                }
+
+                function syncTravelerEquipment(drawer) {
+                    const pane = drawer.querySelector('#equipment-traveler-pane');
+                    const acknowledgement = pane?.querySelector('[name="traveler_equipment_acknowledged"][type="checkbox"]');
+                    const travelerRows = Array.from(pane?.querySelectorAll('#equipmentTravelersTable tbody tr') || []);
+                    const equipmentRows = Array.from(pane?.querySelectorAll('#importedEquipmentTravelerTable tbody tr') || []);
+                    const sectionStarted = Boolean(acknowledgement?.checked)
+                        || travelerRows.some(controlsHaveData)
+                        || equipmentRows.some(controlsHaveData);
+
+                    travelerRows.forEach(function (row, index) {
+                        const rowStarted = controlsHaveData(row) || (sectionStarted && index === 0);
+
+                        ['traveler_name', 'arrival_date', 'arrival_flight_number', 'departure_date', 'departure_flight_number'].forEach(function (field) {
+                            setControlRequired(namedRowControl(row, field), rowStarted);
+                        });
+
+                        const passportImage = namedRowControl(row, 'passport_image');
+                        setControlRequired(passportImage, rowStarted && !rowHasStoredFile(row, 'passport_image'));
+                    });
+
+                    equipmentRows.forEach(function (row, index) {
+                        const rowStarted = controlsHaveData(row) || (sectionStarted && index === 0);
+
+                        ['item', 'serial_number', 'traveler_name', 'quantity', 'unit_value', 'classification', 'entry_point'].forEach(function (field) {
+                            setControlRequired(namedRowControl(row, field), rowStarted);
+                        });
+                    });
+
+                    setControlRequired(acknowledgement, sectionStarted);
+                }
+
+                function syncAirportFilming(drawer) {
+                    const started = controlsHaveData(drawer);
+
+                    ['airport_filming_airport_name', 'airport_filming_area', 'airport_filming_date', 'airport_filming_crew_count'].forEach(function (name) {
+                        setControlRequired(drawer.querySelector('[name="' + name + '"]'), started);
+                    });
+
+                    drawer.querySelectorAll('#airportPeopleTable tbody tr').forEach(function (row) {
+                        const nationality = row.querySelector('[data-airport-person-nationality]');
+                        const jordanian = String(nationality?.value || '') === 'jordanian';
+
+                        setControlRequired(nationality, started);
+                        row.querySelectorAll('[data-airport-person-name-part]').forEach(function (control) {
+                            setControlRequired(control, started && jordanian);
+                        });
+                        setControlRequired(row.querySelector('[data-airport-person-full-name-input]'), started && !jordanian);
+
+                        ['mother_name', 'identity_number', 'profession', 'address_phone', 'entry_reason', 'target_area'].forEach(function (field) {
+                            setControlRequired(namedRowControl(row, field), started);
+                        });
+                    });
+                }
+
+                function syncGovernmentalScenes(drawer) {
+                    const started = controlsHaveData(drawer);
+
+                    drawer.querySelectorAll('#governmentalScenesRequestTable tbody tr').forEach(function (row) {
+                        ['site_name', 'authority', 'scene_description', 'filming_date'].forEach(function (field) {
+                            setControlRequired(namedRowControl(row, field), started);
+                        });
+                    });
+
+                    setControlRequired(drawer.querySelector('[name="governmental_scenes_confirmed"][type="checkbox"]'), started);
+                }
+
+                function syncProjectNeedsValidation(drawer) {
+                    if (!drawer?.hasAttribute('data-project-needs-form')) {
+                        return;
+                    }
+
+                    switch (drawer.dataset.projectNeedsForm) {
+                        case 'ministry-personal-details':
+                            syncMinistryPersonalDetails(drawer);
+                            break;
+                        case 'equipment':
+                            syncShippingEquipment(drawer);
+                            syncTravelerEquipment(drawer);
+                            break;
+                        case 'airport':
+                            syncAirportFilming(drawer);
+                            break;
+                        case 'governmental-scenes':
+                            syncGovernmentalScenes(drawer);
+                            break;
+                    }
+
+                    window.syncApplicationRequiredFieldMarkers?.();
+                }
 
                 function drawerControls(drawer) {
                     return Array.from(drawer.querySelectorAll('input, select, textarea')).filter(function (control) {
@@ -1288,6 +1479,7 @@
                 }
 
                 function validateAnnexDrawer(drawer, reportFirstInvalid) {
+                    syncProjectNeedsValidation(drawer);
                     const controls = drawerControls(drawer);
                     const invalidControls = controls.filter(function (control) {
                         const invalid = typeof control.checkValidity === 'function' && !control.checkValidity();
@@ -1340,6 +1532,8 @@
                             return;
                         }
 
+                        syncProjectNeedsValidation(drawer);
+
                         if (typeof event.target.checkValidity === 'function' && event.target.checkValidity()) {
                             event.target.classList.remove('is-invalid');
                         }
@@ -1356,9 +1550,23 @@
                         drawerValidationSummary(drawer).classList.remove('d-none');
                     }
                 }, true);
+
+                document.addEventListener('shown.bs.offcanvas', function (event) {
+                    syncProjectNeedsValidation(event.target);
+                    validateAnnexDrawer(event.target, false);
+                    window.updateApplicationRequirementStatuses?.();
+                });
+
+                document.addEventListener('DOMContentLoaded', function () {
+                    document.querySelectorAll('[data-project-needs-form]').forEach(syncProjectNeedsValidation);
+                    window.updateApplicationRequirementStatuses?.();
+                });
+
+                window.syncProjectNeedsAnnexValidation = syncProjectNeedsValidation;
             })();
         </script>
     @endpush
 @endonce
 
 @include('applications.partials.location-support-requirements-scripts')
+@include('applications.partials.required-field-markers')

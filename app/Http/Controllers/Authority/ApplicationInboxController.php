@@ -235,13 +235,11 @@ class ApplicationInboxController extends Controller
 
         $request->validate([
             'response_attachment' => [
-                Rule::requiredIf(fn (): bool => $validated['status'] === 'approved' && blank($approval->response_attachment_path)),
+                'nullable',
                 'file',
                 'max:10240',
                 'mimes:pdf,doc,docx,jpg,jpeg,png',
             ],
-        ], [
-            'response_attachment.required' => __('app.approvals.response_book_required'),
         ]);
 
         $approvalData = [
@@ -444,7 +442,6 @@ class ApplicationInboxController extends Controller
             'recipient_type' => ['required', Rule::in([
                 ApplicationCorrespondence::RECIPIENT_ALL,
                 ApplicationCorrespondence::RECIPIENT_RFC,
-                ApplicationCorrespondence::RECIPIENT_APPLICANT,
             ])],
             'subject' => ['nullable', 'string', 'max:255'],
             'message' => ['required', 'string', 'max:5000'],
@@ -495,10 +492,7 @@ class ApplicationInboxController extends Controller
                 )));
         }
 
-        if (in_array($validated['recipient_type'], [
-            ApplicationCorrespondence::RECIPIENT_ALL,
-            ApplicationCorrespondence::RECIPIENT_APPLICANT,
-        ], true)) {
+        if ($validated['recipient_type'] === ApplicationCorrespondence::RECIPIENT_ALL) {
             NotificationRecipients::except(NotificationRecipients::applicationSubmitter($record), $user->getKey())
                 ->each(fn ($recipient) => $recipient->notify(new InboxMessageNotification(
                     typeKey: 'application_correspondence',

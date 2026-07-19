@@ -216,9 +216,6 @@ Route::group([
                 Route::post('/applications/{application}/assign', [ApplicationManagementController::class, 'assign'])
                     ->middleware('permission:applications.assign')
                     ->name('applications.assign');
-                Route::post('/applications/{application}/approvals/{approval}/update', [ApplicationManagementController::class, 'updateApproval'])
-                    ->middleware('permission:applications.review|applications.approve')
-                    ->name('applications.approvals.update');
                 Route::post('/applications/{application}/approvals/{approval}/assign', [ApplicationManagementController::class, 'assignApproval'])
                     ->middleware('permission:applications.assign')
                     ->name('applications.approvals.assign');
@@ -314,6 +311,9 @@ Route::group([
                 Route::get('/notification-center/export', [NotificationCenterController::class, 'export'])
                     ->middleware('permission:notifications.view')
                     ->name('notification-center.export');
+                Route::get('/notification-center/{notificationLog}', [NotificationCenterController::class, 'open'])
+                    ->middleware('permission:notifications.view')
+                    ->name('notification-center.open');
 
                 Route::get('/integrations', [IntegrationDiagnosticsController::class, 'index'])
                     ->middleware('permission:settings.manage')

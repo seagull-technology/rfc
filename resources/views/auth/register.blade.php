@@ -1152,21 +1152,8 @@
                         return;
                     }
 
-                    if (submitButton.dataset.submitting === 'true') {
-                        console.warn('Register form submission already in progress for type:', type);
-                        return;
-                    }
-
-                    submitButton.dataset.submitting = 'true';
-                    submitButton.disabled = true;
-
-                    window.setTimeout(function () {
-                        submitButton.disabled = false;
-                        submitButton.dataset.submitting = 'false';
-                    }, 8000);
-
                     if (typeof form.requestSubmit === 'function') {
-                        form.requestSubmit();
+                        form.requestSubmit(submitButton);
                         return;
                     }
 

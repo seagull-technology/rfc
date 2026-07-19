@@ -761,6 +761,14 @@
         <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="{{ __('app.close') }}"></button>
     </div>
     <div class="offcanvas-body">
+        @if ($shippingEquipmentRows->isNotEmpty())
+            <div class="attached-form-value mb-3">
+                <span class="fw-600">{{ __('app.applications.shipping_equipment_acknowledgement') }}</span>
+                <span class="ms-2 badge bg-{{ data_get($annex, 'shipping_equipment_acknowledged') ? 'success' : 'secondary' }}">
+                    {{ data_get($annex, 'shipping_equipment_acknowledged') ? __('app.applications.annex_confirmed') : __('app.applications.annex_not_confirmed') }}
+                </span>
+            </div>
+        @endif
         <div class="table-responsive">
             <table class="table table-striped mb-0 attached-form-readonly-table">
                 <thead>
@@ -772,7 +780,7 @@
                         <th>{{ __('app.applications.annex_fields.arrival_date') }}</th>
                         <th>{{ __('app.applications.annex_fields.departure_date') }}</th>
                         <th>{{ __('app.applications.annex_fields.customs_center') }}</th>
-                        <th>{{ __('app.applications.annex_fields.attachment') }}</th>
+                        <th>{{ __('app.applications.annex_fields.invoice_attachment') }}</th>
                     </tr>
                 </thead>
                 <tbody>

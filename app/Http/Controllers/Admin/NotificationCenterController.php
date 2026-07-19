@@ -3,10 +3,16 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Application;
+use App\Models\Entity;
 use App\Models\NotificationLog;
+use App\Models\Permit;
+use App\Models\ScoutingRequest;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class NotificationCenterController extends Controller
@@ -85,6 +91,112 @@ class NotificationCenterController extends Controller
         }, $fileName, [
             'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
+    }
+
+    public function open(NotificationLog $notificationLog): RedirectResponse
+    {
+        $destination = $this->adminDestination($notificationLog);
+
+        if ($destination === null) {
+            return redirect()
+                ->route('admin.notification-center.index')
+                ->with('status', __('app.admin.notification_center.context_unavailable'));
+        }
+
+        return redirect()->to($destination);
+    }
+
+    private function adminDestination(NotificationLog $notificationLog): ?string
+    {
+        $context = $this->contextReference($notificationLog);
+
+        if ($context === null) {
+            return in_array($notificationLog->route_name, ['dashboard', 'admin.dashboard'], true)
+                ? route('admin.dashboard')
+                : null;
+        }
+
+        [$type, $id] = $context;
+
+        return match ($type) {
+            'application' => Application::query()->whereKey($id)->exists()
+                ? route('admin.applications.show', $id)
+                : null,
+            'scouting_request' => ScoutingRequest::query()->whereKey($id)->exists()
+                ? route('admin.scouting-requests.show', $id)
+                : null,
+            'entity' => Entity::query()->whereKey($id)->exists()
+                ? route('admin.entities.show', $id)
+                : null,
+            'permit' => Permit::query()->whereKey($id)->exists()
+                ? route('admin.permits.show', $id)
+                : null,
+            default => null,
+        };
+    }
+
+    /**
+     * @return array{0: string, 1: int}|null
+     */
+    private function contextReference(NotificationLog $notificationLog): ?array
+    {
+        $contextType = $this->normalizedContextType($notificationLog->context_type);
+        $contextId = $this->positiveInteger($notificationLog->context_id);
+
+        if ($contextType !== null && $contextId !== null) {
+            return [$contextType, $contextId];
+        }
+
+        $routeName = (string) $notificationLog->route_name;
+        $routeParameters = (array) $notificationLog->route_parameters;
+        $routeContexts = [
+            'scouting-requests.' => ['scouting_request', ['scoutingRequest', 'scouting_request']],
+            'applications.' => ['application', ['application']],
+            'entities.' => ['entity', ['entity']],
+            'permits.' => ['permit', ['permit']],
+        ];
+
+        foreach ($routeContexts as $routeFragment => [$type, $parameterKeys]) {
+            if (! str_contains($routeName, $routeFragment)) {
+                continue;
+            }
+
+            foreach ($parameterKeys as $parameterKey) {
+                $id = $this->positiveInteger($routeParameters[$parameterKey] ?? null);
+
+                if ($id !== null) {
+                    return [$type, $id];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizedContextType(?string $contextType): ?string
+    {
+        if (blank($contextType)) {
+            return null;
+        }
+
+        $normalized = Str::of($contextType)
+            ->afterLast('\\')
+            ->snake()
+            ->lower()
+            ->toString();
+
+        return in_array($normalized, ['application', 'scouting_request', 'entity', 'permit'], true)
+            ? $normalized
+            : null;
+    }
+
+    private function positiveInteger(mixed $value): ?int
+    {
+        if (! is_numeric($value) || (int) $value < 1) {
+            return null;
+        }
+
+        return (int) $value;
     }
 
     /**

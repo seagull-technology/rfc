@@ -1701,6 +1701,10 @@ class ApplicationController extends Controller
         $travelerEquipmentAcknowledgementRules = $requiresTravelerEquipmentAcknowledgement
             ? ['required', 'accepted']
             : ['nullable', 'boolean'];
+        $requiresShippingEquipmentAcknowledgement = $this->shippingEquipmentAcknowledgementRequired($request);
+        $shippingEquipmentAcknowledgementRules = $requiresShippingEquipmentAcknowledgement
+            ? ['required', 'accepted']
+            : ['nullable', 'boolean'];
 
         $preparationEndDate = $request->input('schedule_phases.preparation.end_date');
 
@@ -1812,7 +1816,7 @@ class ApplicationController extends Controller
             'filming_locations.*.location_key' => ['nullable', 'string', 'max:100'],
             'filming_locations.*.governorate' => ['nullable', 'string', Rule::in($governorateCodes)],
             'filming_locations.*.location_name' => ['nullable', 'string', 'max:255'],
-            'filming_locations.*.address' => ['nullable', 'string', 'max:500'],
+            'filming_locations.*.address' => ['required', 'string', 'max:500'],
             'filming_locations.*.nature' => ['nullable', 'string', 'max:255'],
             'filming_locations.*.location_type' => ['nullable', 'string', Rule::in($locationTypeCodes), $this->locationTypeBelongsToGovernorateRule($request, 'filming_locations')],
             'filming_locations.*.special_requirements' => ['nullable', 'array'],
@@ -1860,6 +1864,7 @@ class ApplicationController extends Controller
             'equipment_travelers.*.passport_image_size' => ['nullable', 'integer', 'min:0'],
             'equipment_travelers.*.passport_image_uploaded_at' => ['nullable', 'string', 'max:255'],
             'traveler_equipment_acknowledged' => $travelerEquipmentAcknowledgementRules,
+            'shipping_equipment_acknowledged' => $shippingEquipmentAcknowledgementRules,
             'imported_equipment' => ['nullable', 'array'],
             'imported_equipment.*.transport_group' => ['nullable', 'string', 'max:100'],
             'imported_equipment.*.item' => ['nullable', 'string', 'max:255'],
@@ -1923,6 +1928,7 @@ class ApplicationController extends Controller
             'governmental_scenes.*.scene_description' => ['nullable', 'string', 'max:1000'],
             'governmental_scenes.*.filming_date' => ['nullable', 'date'],
             'governmental_scenes_confirmed' => ['nullable', 'boolean'],
+            ...$this->projectNeedsConditionalValidationRules($request, $equipmentCategoryCodes, $equipmentEntryPointCodes, $airportCodes),
             'supporting_notes' => ['nullable', 'string', 'max:3000'],
         ];
 
@@ -1975,6 +1981,10 @@ class ApplicationController extends Controller
         $travelerEquipmentAcknowledgementRules = $requiresTravelerEquipmentAcknowledgement
             ? ['required', 'accepted']
             : ['nullable', 'boolean'];
+        $requiresShippingEquipmentAcknowledgement = $this->shippingEquipmentAcknowledgementRequired($request);
+        $shippingEquipmentAcknowledgementRules = $requiresShippingEquipmentAcknowledgement
+            ? ['required', 'accepted']
+            : ['nullable', 'boolean'];
 
         return $request->validate([
             'production_terms_version' => ['required', 'string', Rule::in([self::PRODUCTION_TERMS_VERSION])],
@@ -2015,7 +2025,7 @@ class ApplicationController extends Controller
             'filming_locations.*.location_key' => ['nullable', 'string', 'max:100'],
             'filming_locations.*.governorate' => ['nullable', 'string', Rule::in($governorateCodes)],
             'filming_locations.*.location_name' => ['nullable', 'string', 'max:255'],
-            'filming_locations.*.address' => ['nullable', 'string', 'max:500'],
+            'filming_locations.*.address' => ['required', 'string', 'max:500'],
             'filming_locations.*.nature' => ['nullable', 'string', 'max:255'],
             'filming_locations.*.location_type' => ['nullable', 'string', Rule::in($locationTypeCodes), $this->locationTypeBelongsToGovernorateRule($request, 'filming_locations')],
             'filming_locations.*.special_requirements' => ['nullable', 'array'],
@@ -2063,6 +2073,7 @@ class ApplicationController extends Controller
             'equipment_travelers.*.passport_image_size' => ['nullable', 'integer', 'min:0'],
             'equipment_travelers.*.passport_image_uploaded_at' => ['nullable', 'string', 'max:255'],
             'traveler_equipment_acknowledged' => $travelerEquipmentAcknowledgementRules,
+            'shipping_equipment_acknowledged' => $shippingEquipmentAcknowledgementRules,
             'imported_equipment' => ['nullable', 'array'],
             'imported_equipment.*.transport_group' => ['nullable', 'string', 'max:100'],
             'imported_equipment.*.item' => ['nullable', 'string', 'max:255'],
@@ -2126,6 +2137,7 @@ class ApplicationController extends Controller
             'governmental_scenes.*.scene_description' => ['nullable', 'string', 'max:1000'],
             'governmental_scenes.*.filming_date' => ['nullable', 'date'],
             'governmental_scenes_confirmed' => ['nullable', 'boolean'],
+            ...$this->projectNeedsConditionalValidationRules($request, $equipmentCategoryCodes, $equipmentEntryPointCodes, $airportCodes),
         ]);
     }
 
@@ -2184,6 +2196,219 @@ class ApplicationController extends Controller
         }
 
         return $rules;
+    }
+
+    /**
+     * Optional project-needs forms stay optional until the applicant starts them.
+     * Once started, their real required fields must be complete on drafts, annex
+     * updates, and final submission alike.
+     *
+     * @param  array<int, string>  $equipmentCategoryCodes
+     * @param  array<int, string>  $equipmentEntryPointCodes
+     * @param  array<int, string>  $airportCodes
+     * @return array<string, array<int, mixed>>
+     */
+    private function projectNeedsConditionalValidationRules(
+        Request $request,
+        array $equipmentCategoryCodes,
+        array $equipmentEntryPointCodes,
+        array $airportCodes,
+    ): array {
+        $rules = [];
+        $payload = $request->all();
+        $importedEquipmentRows = (array) data_get($payload, 'imported_equipment', []);
+        $equipmentTravelerRows = (array) data_get($payload, 'equipment_travelers', []);
+
+        $shippingRowIndexes = collect($importedEquipmentRows)
+            ->filter(fn ($row): bool => is_array($row) && (string) ($row['transport_group'] ?? 'shipping') !== 'traveler')
+            ->keys()
+            ->values();
+        $travelerEquipmentRowIndexes = collect($importedEquipmentRows)
+            ->filter(fn ($row): bool => is_array($row) && (string) ($row['transport_group'] ?? 'shipping') === 'traveler')
+            ->keys()
+            ->values();
+        $travelerRowIndexes = collect($equipmentTravelerRows)
+            ->filter(fn ($row): bool => is_array($row))
+            ->keys()
+            ->values();
+        $shippingRowsStarted = collect($importedEquipmentRows)->contains(fn ($row): bool => is_array($row)
+            && (string) ($row['transport_group'] ?? 'shipping') !== 'traveler'
+            && $this->conditionalFormRowHasData($row, ['transport_group']));
+        $travelerEquipmentRowsStarted = collect($importedEquipmentRows)->contains(fn ($row): bool => is_array($row)
+            && (string) ($row['transport_group'] ?? 'shipping') === 'traveler'
+            && $this->conditionalFormRowHasData($row, ['transport_group', 'total_value']));
+        $travelerRowsStarted = collect($equipmentTravelerRows)->contains(fn ($row): bool => is_array($row)
+            && $this->conditionalFormRowHasData($row));
+        $travelerSectionStarted = $travelerRowsStarted
+            || $travelerEquipmentRowsStarted
+            || $request->boolean('traveler_equipment_acknowledged');
+        $shippingSectionStarted = $shippingRowsStarted || $request->boolean('shipping_equipment_acknowledged');
+
+        foreach ($importedEquipmentRows as $index => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $transportGroup = (string) ($row['transport_group'] ?? 'shipping');
+            $prefix = 'imported_equipment.'.$index;
+
+            if ($transportGroup === 'traveler') {
+                $rowStarted = $this->conditionalFormRowHasData($row, ['transport_group', 'total_value'])
+                    || ($travelerSectionStarted && $travelerEquipmentRowIndexes->first() === $index);
+                $required = Rule::requiredIf($rowStarted);
+
+                $rules += [
+                    $prefix.'.item' => [$required, 'nullable', 'string', 'max:255'],
+                    $prefix.'.serial_number' => [$required, 'nullable', 'string', 'max:255'],
+                    $prefix.'.traveler_name' => [$required, 'nullable', 'string', 'max:255'],
+                    $prefix.'.quantity' => [$required, 'nullable', 'integer', 'min:0', 'max:100000'],
+                    $prefix.'.unit_value' => [$required, 'nullable', 'numeric', 'min:0', 'max:999999999.99'],
+                    $prefix.'.classification' => [$required, 'nullable', 'string', 'max:255', Rule::in($equipmentCategoryCodes)],
+                    $prefix.'.entry_point' => [$required, 'nullable', 'string', 'max:255', Rule::in($equipmentEntryPointCodes)],
+                ];
+
+                continue;
+            }
+
+            $rowStarted = $this->conditionalFormRowHasData($row, ['transport_group'])
+                || ($shippingSectionStarted && $shippingRowIndexes->first() === $index);
+            $required = Rule::requiredIf($rowStarted);
+            $hasStoredAttachment = filled($row['attachment_path'] ?? null)
+                || filled($row['attachment_name'] ?? null)
+                || ($row['attachment'] ?? null) instanceof \Illuminate\Http\UploadedFile;
+
+            $rules += [
+                $prefix.'.shipping_company_name' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.invoice_number' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.bill_of_lading_number' => ['nullable', 'string', 'max:255'],
+                $prefix.'.arrival_date' => [$required, 'nullable', 'date'],
+                $prefix.'.departure_date' => ['nullable', 'date'],
+                $prefix.'.customs_center' => [$required, 'nullable', 'string', 'max:255', Rule::in($equipmentEntryPointCodes)],
+                $prefix.'.attachment' => [Rule::requiredIf($rowStarted && ! $hasStoredAttachment), 'nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png'],
+            ];
+        }
+
+        foreach ($equipmentTravelerRows as $index => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $rowStarted = $this->conditionalFormRowHasData($row)
+                || ($travelerSectionStarted && $travelerRowIndexes->first() === $index);
+            $required = Rule::requiredIf($rowStarted);
+            $prefix = 'equipment_travelers.'.$index;
+            $hasStoredPassport = filled($row['passport_image_path'] ?? null)
+                || filled($row['passport_image_name'] ?? null)
+                || ($row['passport_image'] ?? null) instanceof \Illuminate\Http\UploadedFile;
+
+            $rules += [
+                $prefix.'.traveler_name' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.arrival_date' => [$required, 'nullable', 'date'],
+                $prefix.'.arrival_flight_number' => [$required, 'nullable', 'string', 'max:100'],
+                $prefix.'.departure_date' => [$required, 'nullable', 'date'],
+                $prefix.'.departure_flight_number' => [$required, 'nullable', 'string', 'max:100'],
+                $prefix.'.passport_image' => [Rule::requiredIf($rowStarted && ! $hasStoredPassport), 'nullable', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
+            ];
+        }
+
+        if ($travelerSectionStarted) {
+            $rules['equipment_travelers'] = ['required', 'array', 'min:1'];
+        }
+
+        if ($travelerSectionStarted || $shippingSectionStarted) {
+            $rules['imported_equipment'] = ['required', 'array', 'min:1'];
+        }
+
+        $rules['traveler_equipment_acknowledged'] = $travelerSectionStarted ? ['required', 'accepted'] : ['nullable', 'boolean'];
+        $rules['shipping_equipment_acknowledged'] = $shippingSectionStarted ? ['required', 'accepted'] : ['nullable', 'boolean'];
+
+        $airportPeopleRows = (array) data_get($payload, 'airport_people', []);
+        $airportStarted = collect([
+            $request->input('airport_filming_airport_name'),
+            $request->input('airport_filming_area'),
+            $request->input('airport_filming_date'),
+            $request->input('airport_filming_crew_count'),
+            $request->input('airport_filming_notes'),
+        ])->contains(fn ($value): bool => filled($value))
+            || collect($airportPeopleRows)->contains(fn ($row): bool => is_array($row) && $this->conditionalFormRowHasData($row));
+        $airportRequired = Rule::requiredIf($airportStarted);
+
+        $rules += [
+            'airport_filming_airport_name' => [$airportRequired, 'nullable', 'string', 'max:255', Rule::in($airportCodes)],
+            'airport_filming_area' => [$airportRequired, 'nullable', 'string', 'max:255'],
+            'airport_filming_date' => [$airportRequired, 'nullable', 'date'],
+            'airport_filming_crew_count' => [$airportRequired, 'nullable', 'integer', 'min:0', 'max:100000'],
+            'airport_people' => $airportStarted
+                ? ['required', 'array', 'min:1']
+                : ['nullable', 'array'],
+        ];
+
+        foreach ($airportPeopleRows as $index => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $prefix = 'airport_people.'.$index;
+            $jordanian = (string) ($row['nationality'] ?? '') === 'jordanian';
+
+            $rules += [
+                $prefix.'.nationality' => [$airportRequired, 'nullable', 'string', 'max:255'],
+                $prefix.'.full_name' => [Rule::requiredIf($airportStarted && ! $jordanian), 'nullable', 'string', 'max:255'],
+                $prefix.'.first_name' => [Rule::requiredIf($airportStarted && $jordanian), 'nullable', 'string', 'max:255'],
+                $prefix.'.second_name' => [Rule::requiredIf($airportStarted && $jordanian), 'nullable', 'string', 'max:255'],
+                $prefix.'.third_name' => [Rule::requiredIf($airportStarted && $jordanian), 'nullable', 'string', 'max:255'],
+                $prefix.'.family_name' => [Rule::requiredIf($airportStarted && $jordanian), 'nullable', 'string', 'max:255'],
+                $prefix.'.mother_name' => [$airportRequired, 'nullable', 'string', 'max:255'],
+                $prefix.'.identity_number' => [$airportRequired, 'nullable', 'string', 'max:255', $this->airportPeopleIdentityNumberRule($request)],
+                $prefix.'.profession' => [$airportRequired, 'nullable', 'string', 'max:255'],
+                $prefix.'.address_phone' => [$airportRequired, 'nullable', 'string', 'max:500'],
+                $prefix.'.entry_reason' => [$airportRequired, 'nullable', 'string', 'max:500'],
+                $prefix.'.target_area' => [$airportRequired, 'nullable', 'string', 'max:255'],
+            ];
+        }
+
+        $governmentalSceneRows = (array) data_get($payload, 'governmental_scenes', []);
+        $governmentalStarted = $request->boolean('governmental_scenes_confirmed')
+            || collect($governmentalSceneRows)->contains(fn ($row): bool => is_array($row) && $this->conditionalFormRowHasData($row));
+        $governmentalRequired = Rule::requiredIf($governmentalStarted);
+
+        $rules += [
+            'governmental_scenes' => $governmentalStarted
+                ? ['required', 'array', 'min:1']
+                : ['nullable', 'array'],
+            'governmental_scenes_confirmed' => $governmentalStarted ? ['required', 'accepted'] : ['nullable', 'boolean'],
+        ];
+
+        foreach ($governmentalSceneRows as $index => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $prefix = 'governmental_scenes.'.$index;
+            $rules += [
+                $prefix.'.site_name' => [$governmentalRequired, 'nullable', 'string', 'max:255'],
+                $prefix.'.authority' => [$governmentalRequired, 'nullable', 'string', 'max:255'],
+                $prefix.'.scene_description' => [$governmentalRequired, 'nullable', 'string', 'max:1000'],
+                $prefix.'.filming_date' => [$governmentalRequired, 'nullable', 'date'],
+            ];
+        }
+
+        return $rules;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<int, string>  $ignoredFields
+     */
+    private function conditionalFormRowHasData(array $row, array $ignoredFields = []): bool
+    {
+        foreach (Arr::except($row, $ignoredFields) as $value) {
+            if ($value instanceof \Illuminate\Http\UploadedFile || filled($value)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -2460,6 +2685,7 @@ class ApplicationController extends Controller
             'safety_guidelines_notes' => data_get($annex, 'safety_guidelines.notes'),
             'equipment_travelers' => (array) data_get($annex, 'equipment_travelers', []),
             'traveler_equipment_acknowledged' => data_get($annex, 'traveler_equipment_acknowledged') ? '1' : '0',
+            'shipping_equipment_acknowledged' => data_get($annex, 'shipping_equipment_acknowledged') ? '1' : '0',
             'imported_equipment' => (array) data_get($annex, 'imported_equipment', []),
             'public_security_support' => (array) data_get($annex, 'public_security_support', []),
             'military_support' => (array) data_get($annex, 'military_support', []),
@@ -2629,6 +2855,7 @@ class ApplicationController extends Controller
                 (array) data_get($existingAnnex, 'equipment_travelers', []),
             ),
             'traveler_equipment_acknowledged' => (bool) ($validated['traveler_equipment_acknowledged'] ?? false),
+            'shipping_equipment_acknowledged' => (bool) ($validated['shipping_equipment_acknowledged'] ?? false),
             'imported_equipment' => $this->importedEquipmentRows(
                 (array) ($validated['imported_equipment'] ?? []),
                 (array) data_get($existingAnnex, 'imported_equipment', []),
@@ -2755,6 +2982,20 @@ class ApplicationController extends Controller
             });
 
         return $travelerRowsHaveData || $travelerEquipmentRowsHaveData;
+    }
+
+    private function shippingEquipmentAcknowledgementRequired(Request $request): bool
+    {
+        return collect((array) $request->input('imported_equipment', []))
+            ->contains(function ($row): bool {
+                if (! is_array($row) || ($row['transport_group'] ?? 'shipping') === 'traveler') {
+                    return false;
+                }
+
+                return collect(Arr::except($row, ['transport_group']))
+                    ->filter(fn ($value): bool => filled($value))
+                    ->isNotEmpty();
+            });
     }
 
     /**

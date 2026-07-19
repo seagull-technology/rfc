@@ -206,10 +206,7 @@
     $canAssignReviewer = auth()->user()?->can('applications.assign') ?? false;
     $canReviewApplication = auth()->user()?->can('applications.review') ?? false;
     $canApproveApplication = auth()->user()?->can('applications.approve') ?? false;
-    $canManageAuthorityApprovals = $canReviewApplication || $canApproveApplication;
-    $authorityApprovalStatuses = $canApproveApplication
-        ? ['pending', 'in_review', 'approved', 'rejected']
-        : ['pending', 'in_review'];
+    $canViewAuthorityApprovals = auth()->user()?->can('applications.view.all') ?? false;
     $sharedAuthorityInboxLabel = __('app.admin.applications.authority_shared_inbox');
 @endphp
 
@@ -374,7 +371,7 @@
             padding: 1rem;
         }
 
-        .admin-application-show-layout .admin-approval-demo-table tbody tr:not(.approval-management-row) td {
+        .admin-application-show-layout .admin-approval-demo-table tbody td {
             border: 0;
             padding: 1rem;
             vertical-align: middle;
@@ -388,12 +385,12 @@
             overflow-wrap: anywhere;
         }
 
-        .admin-application-show-layout .admin-approval-demo-table.table-striped > tbody > tr:nth-of-type(odd):not(.approval-management-row) > * {
+        .admin-application-show-layout .admin-approval-demo-table.table-striped > tbody > tr:nth-of-type(odd) > * {
             --bs-table-accent-bg: #f2f3f6;
             background-color: #f2f3f6;
         }
 
-        .admin-application-show-layout .admin-approval-demo-table.table-striped > tbody > tr:nth-of-type(even):not(.approval-management-row) > * {
+        .admin-application-show-layout .admin-approval-demo-table.table-striped > tbody > tr:nth-of-type(even) > * {
             --bs-table-accent-bg: #fff;
             background-color: #fff;
         }
@@ -473,27 +470,6 @@
             color: #dc3545;
         }
 
-        .admin-application-show-layout .approval-management-row > td {
-            background: transparent !important;
-            border: 0;
-            padding: 0 !important;
-        }
-
-        .admin-application-show-layout .approval-management-panel {
-            background: #fff;
-            border: 1px solid rgba(17, 24, 39, .08);
-            box-shadow: 0 12px 28px rgba(17, 24, 39, .08);
-            margin: -.25rem auto .75rem;
-            padding: 1rem;
-            width: 100%;
-        }
-
-        .admin-application-show-layout .approval-management-meta {
-            color: #6c757d;
-            font-size: .875rem;
-            font-weight: 700;
-        }
-
         .admin-application-show-layout .approval-authority-cell {
             font-weight: 700;
             line-height: 1.45;
@@ -508,13 +484,6 @@
 
         .admin-application-show-layout .approval-status-cell {
             text-align: center;
-        }
-
-        .admin-application-show-layout .approval-status-trigger {
-            background: transparent;
-            border: 0;
-            padding: 0;
-            text-align: inherit;
         }
 
         .admin-application-show-layout .approval-audit-shell {
@@ -862,7 +831,7 @@
                                     @if ($canReviewApplication || $canApproveApplication)
                                         <a class="btn btn-outline-secondary" data-bs-toggle="tab" href="#profile-decision" role="tab">{{ __('app.admin_request_state.open_review') }}</a>
                                     @endif
-                                    @if ($canManageAuthorityApprovals)
+                                    @if ($canViewAuthorityApprovals)
                                         <a class="btn btn-outline-secondary" data-bs-toggle="tab" href="#profile-activity2" role="tab">{{ __('app.admin_request_state.open_approvals') }}</a>
                                     @endif
                                     @if ($canReviewApplication)
@@ -1213,10 +1182,11 @@
                                         <div class="table-responsive rounded py-3 admin-application-table-scroll admin-approval-table-scroll">
 	                                            <table id="basic-table-approvals" class="table table-striped mb-0 request-narrow-table admin-approval-demo-table" role="grid">
 		                                                <colgroup>
-		                                                    <col style="width: 42%;">
-		                                                    <col style="width: 24%;">
-		                                                    <col style="width: 13%;">
-		                                                    <col style="width: 13%;">
+		                                                    <col style="width: 36%;">
+		                                                    <col style="width: 22%;">
+		                                                    <col style="width: 12%;">
+		                                                    <col style="width: 12%;">
+		                                                    <col style="width: 10%;">
 		                                                    <col style="width: 8%;">
 		                                                </colgroup>
                                                 <thead>
@@ -1226,12 +1196,12 @@
                                                         <th>{{ __('app.admin.applications.approval_issue_date') }}</th>
                                                         <th>{{ __('app.admin.applications.approval_last_movement') }}</th>
                                                         <th>{{ __('app.applications.status') }}</th>
+                                                        <th>{{ __('app.approvals.response_book') }}</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     @forelse ($authorityApprovals as $approval)
                                                         @php
-                                                            $approvalSignal = $authorityApprovalSignals[$approval->getKey()] ?? ['enabled' => false, 'label' => null, 'is_due_soon' => false, 'is_overdue' => false, 'is_escalated' => false, 'due_at' => null];
                                                             $approvalLetter = $officialLetterForApproval($approval);
                                                             $approvalModelTitle = $approvalLetter?->subject
                                                                 ?: ($approval->authority_code
@@ -1265,12 +1235,7 @@
                                                                 'changes_requested' => 'ph-fill ph-pencil-line',
                                                                 default => 'ph-fill ph-hourglass',
                                                             };
-	                                                            $approvalIsWaitingApplicant = $approval->status === 'changes_requested';
-	                                                            $canManageThisApproval = ! $approvalIsWaitingApplicant
-	                                                                && $canManageAuthorityApprovals
-	                                                                && ($canApproveApplication || ! in_array($approval->status, ['approved', 'rejected'], true));
-	                                                            $hasApprovalDetails = $approvalIsWaitingApplicant || $canManageThisApproval || $approval->response_attachment_path || $approvalSignal['label'] || $approvalSignal['is_escalated'];
-	                                                            $approvalManagementId = 'approval-management-'.$approval->getKey();
+	                                                        $approvalSlaSignal = $authorityApprovalSlaSignals->get($approval->getKey(), []);
 	                                                        @endphp
 	                                                        <tr>
 	                                                            <td class="approval-model-cell">
@@ -1290,112 +1255,41 @@
                                                             </td>
 	                                                            <td class="approval-date-cell">{{ $approvalLastMovement?->format('Y-m-d') ?: __('app.dashboard.not_available') }}</td>
 	                                                            <td class="approval-status-cell">
-	                                                                @if ($hasApprovalDetails)
-	                                                                    <button class="approval-status-trigger" type="button" data-bs-toggle="collapse" data-bs-target="#{{ $approvalManagementId }}" aria-expanded="false" aria-controls="{{ $approvalManagementId }}" title="{{ __('app.admin.applications.approval_manage_action') }}">
-	                                                                        <span class="approval-status-line is-{{ $approvalStatusKey }}">
-	                                                                            <i class="{{ $approvalStatusIcon }}" aria-hidden="true"></i>
-	                                                                            {{ __('app.admin.applications.approval_status_display.'.$approvalStatusKey) }}
-	                                                                        </span>
-	                                                                    </button>
-	                                                                @else
-	                                                                    <span class="approval-status-line is-{{ $approvalStatusKey }}">
-	                                                                        <i class="{{ $approvalStatusIcon }}" aria-hidden="true"></i>
-	                                                                        {{ __('app.admin.applications.approval_status_display.'.$approvalStatusKey) }}
-	                                                                    </span>
-	                                                                @endif
-
-	                                                                <span class="visually-hidden">
-	                                                                    @if ($approvalSignal['label'])
-	                                                                        {{ __('app.admin.authority_escalations.response_window') }} {{ $approvalSignal['label'] }}
-	                                                                    @endif
-	                                                                    @if ($approvalSignal['is_escalated'])
-	                                                                        {{ __('app.admin.authority_escalations.escalated_badge') }}
-	                                                                    @endif
-	                                                                    @if ($approval->response_attachment_path)
-	                                                                        {{ __('app.approvals.response_book') }} {{ __('app.approvals.response_book_download') }} {{ $approval->response_attachment_name ?: __('app.approvals.response_book') }}
-	                                                                    @endif
+	                                                                <span class="approval-status-line is-{{ $approvalStatusKey }}">
+	                                                                    <i class="{{ $approvalStatusIcon }}" aria-hidden="true"></i>
+	                                                                    {{ __('app.admin.applications.approval_status_display.'.$approvalStatusKey) }}
 	                                                                </span>
+	                                                                <div class="small text-muted mt-2">{{ __('app.authority.applications.response_window') }}</div>
+	                                                                @if ($approvalSlaSignal['label'] ?? null)
+	                                                                    <span class="badge mt-1 bg-{{ ($approvalSlaSignal['is_overdue'] ?? false) ? 'danger' : (($approvalSlaSignal['is_due_soon'] ?? false) ? 'warning text-dark' : 'secondary') }}">
+	                                                                        {{ $approvalSlaSignal['label'] }}
+	                                                                    </span>
+	                                                                @else
+	                                                                    <div class="small text-muted">{{ __('app.admin.authority_escalations.unconfigured_badge') }}</div>
+	                                                                @endif
+	                                                                @if ($approvalSlaSignal['is_escalated'] ?? false)
+	                                                                    <span class="badge bg-dark mt-1">{{ __('app.admin.authority_escalations.escalated_badge') }}</span>
+	                                                                @endif
+	                                                                @if ($approvalSlaSignal['due_at'] ?? null)
+	                                                                    <div class="small text-muted mt-1">
+	                                                                        {{ __('app.admin.authority_escalations.due_at_label', ['date' => $approvalSlaSignal['due_at']->format('Y-m-d h:i A')]) }}
+	                                                                    </div>
+	                                                                @endif
+	                                                            </td>
+	                                                            <td class="approval-status-cell">
+	                                                                @if ($approval->response_attachment_path)
+	                                                                    <a class="btn btn-sm btn-outline-primary" href="{{ route('admin.applications.approvals.attachment.download', [$application, $approval]) }}" title="{{ __('app.approvals.response_book_download') }}">
+	                                                                        <i class="ph ph-download-simple" aria-hidden="true"></i>
+	                                                                        <span class="visually-hidden">{{ __('app.approvals.response_book_download') }}</span>
+	                                                                    </a>
+	                                                                @else
+	                                                                    <span class="text-muted">{{ __('app.dashboard.not_available') }}</span>
+	                                                                @endif
 	                                                            </td>
 	                                                        </tr>
-
-	                                                        @if ($hasApprovalDetails)
-	                                                            <tr class="approval-management-row">
-	                                                                <td colspan="5">
-	                                                                    <div class="collapse" id="{{ $approvalManagementId }}">
-                                                                        <div class="approval-management-panel">
-                                                                            <div class="row g-4 align-items-start">
-                                                                                <div class="col-lg-4">
-                                                                                    <h6 class="mb-3">{{ __('app.admin.applications.approval_management_title') }}</h6>
-                                                                                    <div class="approval-management-meta mb-2">{{ __('app.admin.applications.current_delegate') }}: {{ $approval->assignedTo?->displayName() ?? $sharedAuthorityInboxLabel }}</div>
-                                                                                    <div class="authority-sla-badges mb-2">
-                                                                                        @if ($approvalSignal['label'])
-                                                                                            <span class="badge bg-{{ $approvalSignal['is_overdue'] ? 'danger' : ($approvalSignal['is_due_soon'] ? 'warning text-dark' : 'secondary') }}">{{ $approvalSignal['label'] }}</span>
-                                                                                        @else
-                                                                                            <span class="badge bg-light text-dark">{{ __('app.admin.authority_escalations.unconfigured_badge') }}</span>
-                                                                                        @endif
-                                                                                        @if ($approvalSignal['is_escalated'])
-                                                                                            <span class="badge bg-dark">{{ __('app.admin.authority_escalations.escalated_badge') }}</span>
-                                                                                        @endif
-                                                                                    </div>
-                                                                                    @if ($approvalSignal['due_at'])
-                                                                                        <div class="small text-muted">{{ __('app.admin.authority_escalations.due_at_label', ['date' => $approvalSignal['due_at']->format('Y-m-d h:i A')]) }}</div>
-                                                                                    @endif
-	                                                                                    @if ($approval->response_attachment_path)
-	                                                                                        <div class="small text-muted mt-2 text-break">{{ $approval->response_attachment_name ?: __('app.approvals.response_book') }}</div>
-	                                                                                        <a class="btn btn-sm btn-outline-primary mt-2" href="{{ route('admin.applications.approvals.attachment.download', [$application, $approval]) }}">
-	                                                                                            <i class="ph ph-download-simple me-1"></i>{{ __('app.approvals.response_book_download') }}
-	                                                                                        </a>
-	                                                                                    @else
-	                                                                                        <div class="small text-muted mt-2">{{ __('app.approvals.response_book_none') }}</div>
-	                                                                                    @endif
-                                                                                </div>
-
-	                                                                                <div class="col-lg-4">
-	                                                                                    @if ($approvalIsWaitingApplicant)
-	                                                                                        <div class="alert alert-warning mb-0">
-	                                                                                            <strong class="d-block mb-1">{{ __('app.authority_change_requests.waiting_applicant_short') }}</strong>
-	                                                                                            {{ __('app.authority_change_requests.admin_locked') }}
-	                                                                                        </div>
-	                                                                                    @elseif ($canManageThisApproval)
-	                                                                                        <form method="POST" action="{{ route('admin.applications.approvals.update', [$application, $approval]) }}" class="d-grid gap-2">
-	                                                                                            @csrf
-	                                                                                            <select name="status" class="form-select form-select-sm">
-	                                                                                                @foreach ($authorityApprovalStatuses as $approvalStatus)
-	                                                                                                    <option value="{{ $approvalStatus }}" @selected($approval->status === $approvalStatus)>{{ __('app.approvals.statuses.'.$approvalStatus) }}</option>
-	                                                                                                @endforeach
-	                                                                                            </select>
-	                                                                                            <input name="note" type="text" class="form-control form-control-sm" value="{{ $approval->note }}" placeholder="{{ __('app.admin.applications.review_note') }}">
-	                                                                                            <button class="btn btn-sm btn-outline-primary" type="submit">{{ __('app.approvals.update_action') }}</button>
-	                                                                                        </form>
-	                                                                                    @endif
-	                                                                                </div>
-
-	                                                                                <div class="col-lg-4">
-	                                                                                    @if ($canManageThisApproval && $canAssignReviewer && ($authorityApprovalDelegates->get($approval->getKey())?->isNotEmpty() ?? false))
-	                                                                                        <form method="POST" action="{{ route('admin.applications.approvals.assign', [$application, $approval]) }}" class="d-grid gap-2">
-	                                                                                            @csrf
-	                                                                                            <select name="assigned_user_id" class="form-select form-select-sm">
-                                                                                                <option value="">{{ $sharedAuthorityInboxLabel }}</option>
-                                                                                                @foreach ($authorityApprovalDelegates->get($approval->getKey(), collect()) as $delegate)
-                                                                                                    <option value="{{ $delegate->getKey() }}" @selected($approval->assigned_user_id === $delegate->getKey())>{{ $delegate->displayName() }}</option>
-                                                                                                @endforeach
-                                                                                            </select>
-                                                                                            <input name="assignment_note" type="text" class="form-control form-control-sm" value="{{ old('assignment_note') }}" placeholder="{{ __('app.admin.applications.authority_assignment_note') }}">
-	                                                                                            <button class="btn btn-sm btn-outline-secondary" type="submit">{{ __('app.admin.applications.reassign_approval_action') }}</button>
-	                                                                                        </form>
-	                                                                                    @elseif ($canManageThisApproval)
-	                                                                                        <div class="alert alert-light mb-0">{{ __('app.admin.applications.authority_assignment_unavailable') }}</div>
-	                                                                                    @endif
-	                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                        @endif
                                                     @empty
                                                         <tr>
-                                                            <td colspan="5">{{ __('app.applications.no_required_approvals') }}</td>
+	                                                            <td colspan="6">{{ __('app.applications.no_required_approvals') }}</td>
                                                         </tr>
                                                     @endforelse
                                                 </tbody>

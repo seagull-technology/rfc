@@ -38,26 +38,39 @@ class ForeignProducerInvitationNotification extends Notification
 
     public function toMail(object $notifiable): MailMessage
     {
+        $nameReplacements = [
+            'name' => $notifiable->displayName(),
+        ];
+        $projectReplacements = [
+            'project' => $this->application->project_name,
+            'code' => $this->application->code,
+        ];
+        $usernameReplacements = [
+            'username' => $notifiable->username,
+        ];
+        $expiryReplacements = [
+            'minutes' => (int) config('auth.passwords.users.expire', 60),
+        ];
+
         return (new MailMessage)
-            ->subject(__('app.notifications.foreign_producer_invitation_mail_subject'))
-            ->greeting(__('app.notifications.foreign_producer_invitation_mail_greeting', [
-                'name' => $notifiable->displayName(),
-            ]))
-            ->line(__('app.notifications.foreign_producer_invitation_mail_intro', [
-                'project' => $this->application->project_name,
-                'code' => $this->application->code,
-            ]))
-            ->line(__('app.notifications.foreign_producer_invitation_mail_username', [
-                'username' => $notifiable->username,
-            ]))
-            ->line(__('app.notifications.foreign_producer_invitation_mail_security'))
+            ->subject($this->mailText('foreign_producer_invitation_mail_subject', [], 'ar')
+                .' | '.$this->mailText('foreign_producer_invitation_mail_subject', [], 'en'))
+            ->greeting($this->mailText('foreign_producer_invitation_mail_greeting', $nameReplacements, 'ar'))
+            ->line($this->mailText('foreign_producer_invitation_mail_intro', $projectReplacements, 'ar'))
+            ->line($this->mailText('foreign_producer_invitation_mail_username', $usernameReplacements, 'ar'))
+            ->line($this->mailText('foreign_producer_invitation_mail_security', [], 'ar'))
+            ->line($this->mailText('foreign_producer_invitation_mail_expiry', $expiryReplacements, 'ar'))
+            ->line('English')
+            ->line($this->mailText('foreign_producer_invitation_mail_greeting', $nameReplacements, 'en'))
+            ->line($this->mailText('foreign_producer_invitation_mail_intro', $projectReplacements, 'en'))
+            ->line($this->mailText('foreign_producer_invitation_mail_username', $usernameReplacements, 'en'))
+            ->line($this->mailText('foreign_producer_invitation_mail_security', [], 'en'))
+            ->line($this->mailText('foreign_producer_invitation_mail_expiry', $expiryReplacements, 'en'))
             ->action(
-                __('app.notifications.foreign_producer_invitation_mail_action'),
+                $this->mailText('foreign_producer_invitation_mail_action', [], 'ar')
+                    .' | '.$this->mailText('foreign_producer_invitation_mail_action', [], 'en'),
                 $this->activationUrl($notifiable),
-            )
-            ->line(__('app.notifications.foreign_producer_invitation_mail_expiry', [
-                'minutes' => (int) config('auth.passwords.users.expire', 60),
-            ]));
+            );
     }
 
     public function toSms(object $notifiable): string
@@ -115,5 +128,13 @@ class ForeignProducerInvitationNotification extends Notification
             'email' => $notifiable->email,
             'invitation' => 1,
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $replacements
+     */
+    private function mailText(string $key, array $replacements, string $locale): string
+    {
+        return trans('app.notifications.'.$key, $replacements, $locale);
     }
 }

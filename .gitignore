@@ -18,8 +18,10 @@
 /public/hot
 /public/storage
 /deployment/releases/
+/output/
 /storage/*.key
 /storage/pail
+/tmp/
 /vendor
 docs/postman/*.local.postman_environment.json
 Homestead.json

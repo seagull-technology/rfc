@@ -26,7 +26,7 @@
             <div class="application-location-card__section">
                 <div class="row g-3">
                     <div class="col-md-6 col-xl-3">
-                        <label class="form-label">{{ __('app.scouting.governorate') }}</label>
+                        <label class="form-label">{{ __('app.scouting.governorate') }} <span class="text-danger">*</span></label>
                         <select class="form-select" name="filming_locations[{{ $index }}][governorate]" data-location-governorate required>
                             <option value="">{{ __('app.admin.select_placeholder') }}</option>
                             @if (filled($selectedGovernorate) && ! $governorateOptions->contains('code', $selectedGovernorate))
@@ -38,7 +38,7 @@
                         </select>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <label class="form-label">{{ __('app.applications.annex_fields.location_type') }}</label>
+                        <label class="form-label">{{ __('app.applications.annex_fields.location_type') }} <span class="text-danger">*</span></label>
                         <select class="form-select" name="filming_locations[{{ $index }}][location_type]" data-location-type-select data-selected-type="{{ $selectedLocationType }}" required>
                             <option value="">{{ __('app.admin.select_placeholder') }}</option>
                             @if (filled($selectedLocationType) && ! $rowLocationTypeOptions->contains('code', $selectedLocationType))
@@ -51,23 +51,23 @@
                         <div class="form-text text-warning fw-semibold d-none" data-location-type-approval-note></div>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <label class="form-label">{{ __('app.applications.annex_fields.location_exact_name') }}</label>
+                        <label class="form-label">{{ __('app.applications.annex_fields.location_exact_name') }} <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="filming_locations[{{ $index }}][location_name]" value="{{ $row['location_name'] ?? '' }}" data-location-name required>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">{{ __('app.applications.annex_fields.location_address') }}</label>
-                        <input type="text" class="form-control" name="filming_locations[{{ $index }}][address]" value="{{ $row['address'] ?? '' }}">
+                        <label class="form-label">{{ __('app.applications.annex_fields.location_address') }} <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="filming_locations[{{ $index }}][address]" value="{{ $row['address'] ?? '' }}" required>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">{{ __('app.applications.annex_fields.location_nature') }}</label>
+                        <label class="form-label">{{ __('app.applications.annex_fields.location_nature') }} <span class="text-danger">*</span></label>
                         <textarea class="form-control" name="filming_locations[{{ $index }}][nature]" rows="2" required>{{ $row['nature'] ?? '' }}</textarea>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <label class="form-label">{{ __('app.scouting.start_date') }}</label>
+                        <label class="form-label">{{ __('app.scouting.start_date') }} <span class="text-danger">*</span></label>
                         <input type="date" class="form-control" name="filming_locations[{{ $index }}][start_date]" value="{{ $locationStartDate }}" min="{{ $minimumFilmingLocationStartDate }}" data-location-start-date required>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <label class="form-label">{{ __('app.scouting.end_date') }}</label>
+                        <label class="form-label">{{ __('app.scouting.end_date') }} <span class="text-danger">*</span></label>
                         <input type="date" class="form-control" name="filming_locations[{{ $index }}][end_date]" value="{{ $locationEndDate }}" @if (filled($locationStartDate)) min="{{ $locationStartDate }}" @endif data-location-end-date required>
                     </div>
                 </div>

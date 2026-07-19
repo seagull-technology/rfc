@@ -321,6 +321,7 @@ class ApprovalRoutingTest extends TestCase
             'filming_locations' => [[
                 'governorate' => 'aqaba',
                 'location_name' => 'King Hussein International Airport',
+                'address' => 'King Hussein International Airport map pin',
                 'location_type' => 'public_locations',
                 'start_date' => $filmingStart,
                 'end_date' => $filmingEnd,
@@ -330,6 +331,16 @@ class ApprovalRoutingTest extends TestCase
             'airport_filming_date' => $filmingStart,
             'airport_filming_crew_count' => 18,
             'airport_filming_notes' => 'Requires airport coordination.',
+            'airport_people' => [[
+                'full_name' => 'International Airport Coordinator',
+                'nationality' => 'egyptian',
+                'mother_name' => 'Mariam',
+                'identity_number' => 'P1234567',
+                'profession' => 'Coordinator',
+                'address_phone' => 'Aqaba +962790000000',
+                'entry_reason' => 'Filming coordination',
+                'target_area' => 'Terminal and apron',
+            ]],
         ]));
 
         $application = Application::query()->where('project_name', 'Airport Annex Shoot')->firstOrFail();
@@ -358,6 +369,7 @@ class ApprovalRoutingTest extends TestCase
             'filming_locations' => [[
                 'governorate' => 'amman',
                 'location_name' => 'Downtown Amman',
+                'address' => 'Downtown Amman map pin',
                 'location_type' => 'public_locations',
                 'start_date' => '2026-05-04',
                 'end_date' => '2026-05-05',
@@ -415,6 +427,7 @@ class ApprovalRoutingTest extends TestCase
                 [
                     'governorate' => 'amman',
                     'location_name' => 'Downtown Amman',
+                    'address' => 'Downtown Amman map pin',
                     'location_type' => 'public_locations',
                     'support_requirements' => [
                         ['authority' => 'public_security', 'date' => '2026-05-04', 'time_from' => '08:00', 'time_to' => '12:00', 'requirement' => 'Traffic escort', 'notes' => 'Lockup support'],

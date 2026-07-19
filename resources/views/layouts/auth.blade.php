@@ -80,6 +80,7 @@
     <script src="{{ asset('js/select2.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/flatpickr.js') }}?v=5.4.0" defer></script>
     <script src="{{ asset('js/countdown.js') }}?v=5.4.0" defer></script>
+    @include('layouts.partials.form-submit-state')
     @stack('scripts')
 </body>
 </html>

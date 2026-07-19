@@ -25,6 +25,21 @@
             overflow: auto;
             white-space: pre-wrap;
         }
+
+        .notification-center-pagination .pagination {
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: .25rem;
+            margin-bottom: 0;
+        }
+
+        .notification-center-pagination .page-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 2.5rem;
+            min-height: 2.5rem;
+        }
     </style>
 @endpush
 
@@ -180,8 +195,8 @@
                                         <div class="notification-center-code text-muted mt-2">{{ $typeLabel === 'app.admin.notification_center.types.'.$typeKey ? \Illuminate\Support\Str::headline($typeKey) : $typeLabel }}</div>
                                     </td>
                                     <td>
-                                        @if ($log->url)
-                                            <a href="{{ $log->url }}" class="btn btn-sm btn-outline-primary">{{ __('app.admin.notification_center.open_context') }}</a>
+                                        @if ($log->url || $log->route_name || ($log->context_type && $log->context_id))
+                                            <a href="{{ route('admin.notification-center.open', $log) }}" class="btn btn-sm btn-outline-primary">{{ __('app.admin.notification_center.open_context') }}</a>
                                         @else
                                             <span class="text-muted">{{ __('app.dashboard.not_available') }}</span>
                                         @endif
@@ -210,8 +225,8 @@
                 </div>
 
                 @if ($logs->hasPages())
-                    <div class="mt-3">
-                        {{ $logs->links() }}
+                    <div class="notification-center-pagination mt-4">
+                        {{ $logs->onEachSide(1)->links('pagination::bootstrap-5') }}
                     </div>
                 @endif
             </div>

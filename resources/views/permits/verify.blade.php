@@ -48,5 +48,6 @@
             </div>
         </div>
     </div>
+    @include('layouts.partials.form-submit-state')
 </body>
 </html>

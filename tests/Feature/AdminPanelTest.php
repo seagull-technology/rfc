@@ -109,12 +109,37 @@ class AdminPanelTest extends TestCase
             'phone' => '0795551234',
         ]);
 
+        foreach (range(1, 22) as $index) {
+            NotificationLog::query()->create([
+                'notification_type' => 'manual',
+                'type_key' => 'application_status_changed',
+                'channel' => 'system',
+                'status' => 'sent',
+                'recipient_name' => 'Pagination Recipient '.$index,
+                'title' => 'Pagination Notification '.$index,
+            ]);
+        }
+
         $recipient->notify(new InboxMessageNotification(
             typeKey: 'application_status_changed',
             title: 'Notification Center Smoke',
             body: 'This should be logged across all configured delivery channels.',
             routeName: 'dashboard',
         ));
+
+        $dashboardLog = NotificationLog::query()
+            ->where('recipient_email', 'recipient@example.test')
+            ->where('type_key', 'application_status_changed')
+            ->where('channel', 'database')
+            ->firstOrFail();
+
+        $entity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+        $recipient->notify(new RegistrationApprovedNotification($entity));
+        $entityLog = NotificationLog::query()
+            ->where('recipient_email', 'recipient@example.test')
+            ->where('type_key', 'registration_approved')
+            ->where('channel', 'database')
+            ->firstOrFail();
 
         $this->assertSame(3, NotificationLog::query()
             ->where('recipient_email', 'recipient@example.test')
@@ -143,7 +168,28 @@ class AdminPanelTest extends TestCase
             ->assertOk()
             ->assertSeeText('Notification Center')
             ->assertSeeText('Notification Center Smoke')
-            ->assertSeeText('OTP/SMS');
+            ->assertSeeText('OTP/SMS')
+            ->assertSee('notification-center-pagination', false)
+            ->assertSee('page-item', false)
+            ->assertDontSee('w-5 h-5', false);
+
+        $this
+            ->actingAs($admin)
+            ->get(route('admin.notification-center.open', $dashboardLog))
+            ->assertRedirect(route('admin.dashboard'));
+
+        $this
+            ->actingAs($admin)
+            ->get(route('admin.notification-center.open', $entityLog))
+            ->assertRedirect(route('admin.entities.show', $entity));
+
+        $entityLog->forceFill(['context_id' => 999999])->save();
+
+        $this
+            ->actingAs($admin)
+            ->get(route('admin.notification-center.open', $entityLog))
+            ->assertRedirect(route('admin.notification-center.index'))
+            ->assertSessionHas('status', 'The record related to this notification is no longer available.');
 
         $this
             ->actingAs($admin)

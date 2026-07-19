@@ -345,6 +345,14 @@
         @if ($sectionVisible('imported_equipment'))
         <div>
             <h5 class="mb-3">{{ __('app.applications.annex_sections.imported_equipment') }}</h5>
+            @if ($shippingEquipmentRows->isNotEmpty())
+                <div class="mb-3">
+                    <span class="fw-600">{{ __('app.applications.shipping_equipment_acknowledgement') }}</span>
+                    <span class="ms-2 badge bg-{{ data_get($annex, 'shipping_equipment_acknowledged') ? 'success' : 'secondary' }}">
+                        {{ data_get($annex, 'shipping_equipment_acknowledged') ? __('app.applications.annex_confirmed') : __('app.applications.annex_not_confirmed') }}
+                    </span>
+                </div>
+            @endif
             <div class="table-responsive rounded py-4 annex-summary-table-scroll">
                 <table class="{{ $annexTableClass }} annex-imported-equipment-table">
                     <colgroup>
@@ -366,7 +374,7 @@
                             <th>{{ __('app.applications.annex_fields.arrival_date') }}</th>
                             <th>{{ __('app.applications.annex_fields.departure_date') }}</th>
                             <th>{{ __('app.applications.annex_fields.customs_center') }}</th>
-                            <th>{{ __('app.applications.annex_fields.attachment') }}</th>
+                            <th>{{ __('app.applications.annex_fields.invoice_attachment') }}</th>
                         </tr>
                     </thead>
                     <tbody>

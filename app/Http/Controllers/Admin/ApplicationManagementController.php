@@ -162,10 +162,6 @@ class ApplicationManagementController extends Controller
         ]);
         $reviewers = $this->workflowAssignableUsers();
         $authorityApprovals = $record->authorityApprovals()->with(['reviewedBy', 'assignedTo', 'entity', 'changeRequests.requestedBy'])->get();
-        $authorityApprovalSignals = $authorityApprovals
-            ->mapWithKeys(fn (ApplicationAuthorityApproval $approval): array => [
-                $approval->getKey() => $this->authorityEscalationService->signalForApproval($approval),
-            ]);
         $rfcDecisionUserIds = collect([
             data_get($record->metadata ?? [], 'rfc_decision.decided_by_user_id'),
             data_get($record->metadata ?? [], 'rfc_decision.official_books_prepared_by_user_id'),
@@ -181,16 +177,9 @@ class ApplicationManagementController extends Controller
             'application' => $record,
             'statusHistory' => $record->statusHistory,
             'authorityApprovals' => $authorityApprovals,
-            'authorityApprovalSignals' => $authorityApprovalSignals,
-            'authorityApprovalSignalStats' => [
-                'live' => $authorityApprovals->whereIn('status', ['pending', 'in_review'])->count(),
-                'overdue' => $authorityApprovalSignals->where('is_overdue', true)->count(),
-                'escalated' => $authorityApprovals->whereNotNull('escalated_at')->count(),
-            ],
-            'authorityApprovalDelegates' => $authorityApprovals
-                ->mapWithKeys(fn (ApplicationAuthorityApproval $approval): array => [
-                    $approval->getKey() => $this->authorityApprovalAssignableUsers($approval),
-                ]),
+            'authorityApprovalSlaSignals' => $authorityApprovals->mapWithKeys(fn (ApplicationAuthorityApproval $approval): array => [
+                $approval->getKey() => $this->authorityEscalationService->signalForApproval($approval),
+            ]),
             'authorityAuditTrail' => $record->statusHistory
                 ->filter(fn ($event): bool => in_array((string) data_get($event->metadata, 'type'), ['authority_status_updated', 'authority_reassigned', 'authority_sla_warning', 'authority_escalated'], true))
                 ->values(),
@@ -637,98 +626,6 @@ class ApplicationManagementController extends Controller
         return redirect()
             ->route('admin.applications.show', $record)
             ->with('status', __('app.workflow.assigned'));
-    }
-
-    public function updateApproval(Request $request, string $application, ApplicationAuthorityApproval $approval): RedirectResponse
-    {
-        $record = $this->findApplication($application);
-        abort_unless($approval->application_id === $record->getKey(), 404);
-
-        if ($approval->status === 'changes_requested') {
-            return redirect()
-                ->route('admin.applications.show', $record)
-                ->withErrors(['status' => __('app.authority_change_requests.admin_locked')]);
-        }
-
-        $validated = $request->validate([
-            'status' => ['required', Rule::in(['pending', 'in_review', 'approved', 'rejected'])],
-            'note' => ['nullable', 'string', 'max:2000'],
-        ]);
-
-        if (
-            in_array($validated['status'], ['approved', 'rejected'], true)
-            && ! $request->user()?->can('applications.approve')
-        ) {
-            return redirect()
-                ->route('admin.applications.show', $record)
-                ->withErrors(['status' => __('app.workflow.approver_required')]);
-        }
-
-        $approval->forceFill([
-            'status' => $validated['status'],
-            'note' => $validated['note'] ?: null,
-            'reviewed_by_user_id' => $request->user()?->getKey(),
-            'decided_at' => in_array($validated['status'], ['approved', 'rejected'], true) ? now() : null,
-        ])->save();
-
-        $statuses = $record->authorityApprovals()->pluck('status');
-
-        $record->forceFill([
-            'current_stage' => $statuses->contains('pending') || $statuses->contains('in_review')
-                ? 'authority_review'
-                : 'final_decision',
-        ])->save();
-
-        $record->statusHistory()->create([
-            'user_id' => $request->user()?->getKey(),
-            'status' => $record->status,
-            'note' => __('app.workflow.history.authority_updated', [
-                'authority' => $approval->localizedAuthority(),
-                'status' => $approval->localizedStatus(),
-            ]),
-            'metadata' => [
-                'type' => 'authority_status_updated',
-                'approval_id' => $approval->getKey(),
-                'authority_code' => $approval->authority_code,
-                'authority_label' => $approval->localizedAuthority(),
-                'approval_status' => $approval->status,
-                'approval_status_label' => $approval->localizedStatus(),
-                'assigned_user_id' => $approval->assigned_user_id,
-                'assigned_user_name' => $approval->assignedTo?->displayName(),
-                'reason' => $validated['note'] ?: null,
-            ],
-            'happened_at' => now(),
-        ]);
-
-        NotificationRecipients::except(NotificationRecipients::authorityUsersForApproval($approval), $request->user()?->getKey())
-            ->each(fn (User $recipient) => $recipient->notify(new InboxMessageNotification(
-                typeKey: 'authority_approval_updated',
-                title: $record->project_name,
-                body: __('app.notifications.authority_approval_updated_body', [
-                    'authority' => $approval->localizedAuthority(),
-                    'status' => $approval->localizedStatus(),
-                ]),
-                routeName: 'authority.applications.show',
-                routeParameters: ['application' => $record->getKey()],
-                meta: WorkflowMessageMetadata::application($record),
-            )));
-
-        NotificationRecipients::except(NotificationRecipients::applicationApplicants($record), $request->user()?->getKey())
-            ->each(fn (User $recipient) => $recipient->notify(new InboxMessageNotification(
-                typeKey: 'authority_approval_updated',
-                title: $record->project_name,
-                body: __('app.notifications.authority_approval_updated_body', [
-                    'authority' => $approval->localizedAuthority(),
-                    'status' => $approval->localizedStatus(),
-                ]),
-                routeName: 'applications.show',
-                routeParameters: ['application' => $record->getKey()],
-                meta: WorkflowMessageMetadata::application($record),
-            )));
-
-        return redirect()
-            ->route('admin.applications.show', $record)
-            ->with('status', __('app.workflow.approval_updated'));
     }
 
     public function assignApproval(Request $request, string $application, ApplicationAuthorityApproval $approval): RedirectResponse

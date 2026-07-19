@@ -32,6 +32,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Spatie\Permission\PermissionRegistrar;
@@ -102,12 +103,18 @@ class ApplicationWorkflowTest extends TestCase
             ->assertDontSeeText(__('app.applications.submit_confirm_body'))
             ->assertSee('id="form-wizard1"', false)
             ->assertSee('data-page-validation-message=', false)
+            ->assertSee('data-auto-required-marker', false)
             ->assertSee('id="step1"', false)
             ->assertSee('id="step2"', false)
             ->assertSee('class="btn btn-danger request-wizard-next action-button float-end btn-lg"', false)
             ->assertSee('value="egyptian"', false)
             ->assertSeeText('Egyptian')
             ->assertSeeText(__('app.applications.approval_route_preview_title'))
+            ->assertSeeText(__('app.applications.shipping_customs_instruction_before_project'))
+            ->assertSeeText(__('app.applications.shipping_customs_instruction_after_project'))
+            ->assertSeeText(__('app.applications.shipping_customs_conclusion'))
+            ->assertSee('data-shipping-customs-project-name', false)
+            ->assertSee('name="shipping_equipment_acknowledged"', false)
             ->assertSeeText(__('app.applications.traveler_customs_instruction_before_project'))
             ->assertSeeText(__('app.applications.traveler_customs_instruction_after_project'))
             ->assertSee('data-traveler-customs-project-name', false)
@@ -499,7 +506,54 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertNotNull($foreignProducer->invitation_sent_at);
         $this->assertFalse($foreignProducer->canSignIn());
 
-        Notification::assertSentTo($foreignProducer, ForeignProducerInvitationNotification::class);
+        Notification::assertSentTo(
+            $foreignProducer,
+            ForeignProducerInvitationNotification::class,
+            function (ForeignProducerInvitationNotification $notification) use ($application, $foreignProducer): bool {
+                $mail = $notification->toMail($foreignProducer);
+                $mailLines = collect([...$mail->introLines, ...$mail->outroLines])
+                    ->map(static fn (mixed $line): string => (string) $line)
+                    ->implode("\n");
+
+                $this->assertStringContainsString(
+                    trans('app.notifications.foreign_producer_invitation_mail_subject', [], 'ar'),
+                    (string) $mail->subject,
+                );
+                $this->assertStringContainsString(
+                    trans('app.notifications.foreign_producer_invitation_mail_subject', [], 'en'),
+                    (string) $mail->subject,
+                );
+                $this->assertStringContainsString(
+                    trans('app.notifications.foreign_producer_invitation_mail_intro', [
+                        'project' => $application->project_name,
+                        'code' => $application->code,
+                    ], 'ar'),
+                    $mailLines,
+                );
+                $this->assertStringContainsString(
+                    trans('app.notifications.foreign_producer_invitation_mail_intro', [
+                        'project' => $application->project_name,
+                        'code' => $application->code,
+                    ], 'en'),
+                    $mailLines,
+                );
+                $this->assertStringContainsString(
+                    trans('app.notifications.foreign_producer_invitation_mail_action', [], 'ar'),
+                    (string) $mail->actionText,
+                );
+                $this->assertStringContainsString(
+                    trans('app.notifications.foreign_producer_invitation_mail_action', [], 'en'),
+                    (string) $mail->actionText,
+                );
+
+                parse_str((string) parse_url((string) $mail->actionUrl, PHP_URL_QUERY), $query);
+
+                $this->assertSame($foreignProducer->email, $query['email'] ?? null);
+                $this->assertSame('1', (string) ($query['invitation'] ?? ''));
+
+                return true;
+            },
+        );
 
         $this
             ->actingAs($user)
@@ -975,6 +1029,44 @@ class ApplicationWorkflowTest extends TestCase
         $application->refresh();
 
         $this->assertSame('draft', $application->status);
+
+        $this->travelBack();
+    }
+
+    public function test_filming_location_address_is_required_on_final_submit(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->travelTo(Carbon::parse('2026-07-10 09:00:00'));
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'filming_locations' => [[
+                    'governorate' => 'maan',
+                    'location_name' => 'Wadi Rum Reserve',
+                    'address' => '',
+                    'nature' => 'Protected reserve landscape',
+                    'location_type' => 'reserves',
+                    'start_date' => '2026-08-10',
+                    'end_date' => '2026-08-12',
+                ]],
+            ]))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $application = Application::query()->firstOrFail();
+
+        $this
+            ->from(route('applications.show', $application))
+            ->actingAs($user)
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasErrors('filming_locations.0.address');
+
+        $this->assertSame('draft', $application->fresh()->status);
 
         $this->travelBack();
     }
@@ -1617,6 +1709,114 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertSame('draft', $application->fresh()->status);
     }
 
+    public function test_shipping_equipment_acknowledgement_is_required_before_final_submit(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $this->actingAs($user)->post(route('applications.store'), $this->applicationPayload([
+            'imported_equipment' => [
+                [
+                    'transport_group' => 'shipping',
+                    'shipping_company_name' => 'RFC Freight Services',
+                    'invoice_number' => 'INV-2026-001',
+                ],
+            ],
+            'shipping_equipment_acknowledged' => '0',
+        ]));
+
+        $application = Application::query()->firstOrFail();
+
+        $this
+            ->from(route('applications.show', $application))
+            ->actingAs($user)
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasErrors('shipping_equipment_acknowledged');
+
+        $this->assertSame('draft', $application->fresh()->status);
+    }
+
+    public function test_started_project_needs_forms_require_completion_before_final_submit(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $cases = [
+            [
+                'payload' => [
+                    'ministry_interior_personal_details' => [[
+                        'current_full_name' => 'Partially Entered Visitor',
+                    ]],
+                ],
+                'errors' => [
+                    'ministry_interior_personal_details.0.current_nationality',
+                    'ministry_interior_personal_details.0.confirmed',
+                ],
+            ],
+            [
+                'payload' => [
+                    'imported_equipment' => [[
+                        'transport_group' => 'shipping',
+                        'shipping_company_name' => 'Partial Shipping Company',
+                    ]],
+                    'shipping_equipment_acknowledged' => '0',
+                ],
+                'errors' => [
+                    'imported_equipment.0.invoice_number',
+                    'imported_equipment.0.arrival_date',
+                    'shipping_equipment_acknowledged',
+                ],
+            ],
+            [
+                'payload' => [
+                    'airport_filming_airport_name' => 'Queen Alia International Airport',
+                ],
+                'errors' => [
+                    'airport_filming_area',
+                    'airport_filming_date',
+                    'airport_people',
+                ],
+            ],
+            [
+                'payload' => [
+                    'governmental_scenes' => [[
+                        'site_name' => 'Partially Entered Government Site',
+                    ]],
+                    'governmental_scenes_confirmed' => '0',
+                ],
+                'errors' => [
+                    'governmental_scenes.0.authority',
+                    'governmental_scenes.0.scene_description',
+                    'governmental_scenes_confirmed',
+                ],
+            ],
+        ];
+
+        foreach ($cases as $case) {
+            $this
+                ->actingAs($user)
+                ->post(route('applications.store'), $this->applicationPayload($case['payload']))
+                ->assertRedirect()
+                ->assertSessionHasNoErrors();
+
+            $application = Application::query()->latest('id')->firstOrFail();
+
+            $this
+                ->from(route('applications.show', $application))
+                ->actingAs($user)
+                ->post(route('applications.submit', $application))
+                ->assertRedirect(route('applications.show', $application))
+                ->assertSessionHasErrors($case['errors']);
+
+            $this->assertSame('draft', $application->fresh()->status);
+        }
+    }
+
     public function test_applicant_can_create_a_draft_and_submit_it_for_review(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -1660,7 +1860,9 @@ class ApplicationWorkflowTest extends TestCase
 
         $submitResponse = $this->actingAs($user)->post(route('applications.submit', $application));
 
-        $submitResponse->assertRedirect(route('applications.show', $application));
+        $submitResponse
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('applications', [
             'id' => $application->getKey(),
@@ -2039,8 +2241,9 @@ class ApplicationWorkflowTest extends TestCase
                 ],
             ],
             'traveler_equipment_acknowledged' => '1',
+            'shipping_equipment_acknowledged' => '1',
             'imported_equipment' => [
-                ['transport_group' => 'shipping', 'shipping_company_name' => 'Jordan Freight', 'invoice_number' => 'INV-7788', 'bill_of_lading_number' => '', 'arrival_date' => '2026-04-28', 'departure_date' => '', 'customs_center' => 'queen_alia_international_airport'],
+                ['transport_group' => 'shipping', 'shipping_company_name' => 'Jordan Freight', 'invoice_number' => 'INV-7788', 'bill_of_lading_number' => '', 'arrival_date' => '2026-04-28', 'departure_date' => '', 'customs_center' => 'queen_alia_international_airport', 'attachment' => UploadedFile::fake()->create('jordan-freight-invoice.pdf', 240, 'application/pdf')],
                 ['transport_group' => 'traveler', 'item' => 'Camera crane', 'serial_number' => 'CR-7788', 'flight_reference' => 'RJ102', 'traveler_name' => 'Equipment Handler', 'quantity' => 3, 'unit_value' => 9000, 'total_value' => 1, 'classification' => 'camera_equipment', 'shipping_method' => 'luggage', 'origin_country' => 'Germany', 'entry_point' => 'queen_alia_international_airport'],
             ],
             'airport_filming_airport_name' => 'Queen Alia International Airport',
@@ -2049,7 +2252,7 @@ class ApplicationWorkflowTest extends TestCase
             'airport_filming_crew_count' => 12,
             'airport_filming_notes' => 'Small handheld crew.',
             'airport_people' => [
-                ['full_name' => 'Airport Crew Member', 'nationality' => 'jordanian', 'mother_name' => 'Mariam', 'identity_number' => '9876543210', 'profession' => 'Camera operator', 'address_phone' => 'Amman 0790000000', 'entry_reason' => 'Filming', 'target_area' => 'Departures hall'],
+                ['full_name' => 'Airport Crew Member', 'first_name' => 'Airport', 'second_name' => 'Crew', 'third_name' => 'Test', 'family_name' => 'Member', 'nationality' => 'jordanian', 'mother_name' => 'Mariam', 'identity_number' => '9876543210', 'profession' => 'Camera operator', 'address_phone' => 'Amman 0790000000', 'entry_reason' => 'Filming', 'target_area' => 'Departures hall'],
             ],
             'governmental_scenes' => [
                 ['site_name' => 'Municipal archive', 'authority' => 'Greater Amman Municipality', 'scene_description' => 'Exterior establishing shot', 'filming_date' => '2026-05-05'],
@@ -2275,8 +2478,11 @@ class ApplicationWorkflowTest extends TestCase
             ],
             'safety_guidelines_acknowledged' => '1',
             'airport_filming_airport_name' => 'Queen Alia International Airport',
+            'airport_filming_area' => 'Departures hall',
+            'airport_filming_date' => '2026-05-06',
+            'airport_filming_crew_count' => 1,
             'airport_people' => [
-                ['full_name' => 'Airport Access Lead', 'nationality' => 'jordanian', 'mother_name' => 'Mariam', 'identity_number' => '9876543210', 'profession' => 'Producer', 'address_phone' => 'Amman 0790000000', 'entry_reason' => 'Filming', 'target_area' => 'Departures hall'],
+                ['full_name' => 'Airport Access Lead', 'first_name' => 'Airport', 'second_name' => 'Access', 'third_name' => 'Test', 'family_name' => 'Lead', 'nationality' => 'jordanian', 'mother_name' => 'Mariam', 'identity_number' => '9876543210', 'profession' => 'Producer', 'address_phone' => 'Amman 0790000000', 'entry_reason' => 'Filming', 'target_area' => 'Departures hall'],
             ],
             'filming_locations' => [
                 [
@@ -2495,8 +2701,10 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Open review');
     }
 
-    public function test_admin_can_assign_reviewer_and_update_authority_approval(): void
+    public function test_admin_can_assign_reviewer_but_cannot_change_authority_decision(): void
     {
+        Storage::fake('local');
+
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
 
@@ -2527,29 +2735,51 @@ class ApplicationWorkflowTest extends TestCase
 
         $this->routeApplicationToAuthorities($admin, $application);
 
-        $approvalId = Application::query()->firstOrFail()->authorityApprovals()->value('id');
+        $approval = Application::query()->firstOrFail()->authorityApprovals()->firstOrFail();
 
-        $updateResponse = $this->actingAs($admin)->post(route('admin.applications.approvals.update', [$application, $approvalId]), [
+        $this->assertFalse(Route::has('admin.applications.approvals.update'));
+
+        $updateResponse = $this->actingAs($admin)->post("/en/admin/applications/{$application->getKey()}/approvals/{$approval->getKey()}/update", [
             'status' => 'approved',
             'note' => 'Airport approval issued.',
         ]);
 
-        $updateResponse->assertRedirect(route('admin.applications.show', $application));
+        $updateResponse->assertNotFound();
 
         $this->assertDatabaseHas('application_authority_approvals', [
-            'id' => $approvalId,
+            'id' => $approval->getKey(),
+            'status' => 'pending',
+            'note' => null,
+            'reviewed_by_user_id' => null,
+        ]);
+
+        $this->actingAs($authorityUser)->post(route('authority.applications.approval.update', $application), [
             'status' => 'approved',
             'note' => 'Airport approval issued.',
-            'reviewed_by_user_id' => $admin->getKey(),
+            'response_attachment' => UploadedFile::fake()->create('authority-book.pdf', 120, 'application/pdf'),
+        ])->assertRedirect(route('authority.applications.show', $application));
+
+        $this->assertDatabaseHas('application_authority_approvals', [
+            'id' => $approval->getKey(),
+            'status' => 'approved',
+            'note' => 'Airport approval issued.',
+            'reviewed_by_user_id' => $authorityUser->getKey(),
         ]);
+
+        $approval->refresh();
+        Storage::disk('local')->assertExists($approval->response_attachment_path);
+
+        $this->actingAs($admin)
+            ->get(route('admin.applications.show', $application))
+            ->assertOk()
+            ->assertSee(route('admin.applications.approvals.attachment.download', [$application, $approval]), false)
+            ->assertDontSee("/admin/applications/{$application->getKey()}/approvals/{$approval->getKey()}/update", false);
+
         $this->assertDatabaseHas('applications', [
             'id' => $application->getKey(),
             'current_stage' => 'final_decision',
         ]);
         $this->assertTrue($user->fresh()->unreadNotifications->contains(
-            fn ($notification) => data_get($notification->data, 'type_key') === 'authority_approval_updated'
-        ));
-        $this->assertTrue($authorityUser->fresh()->unreadNotifications->contains(
             fn ($notification) => data_get($notification->data, 'type_key') === 'authority_approval_updated'
         ));
     }
@@ -2935,6 +3165,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $dashboardResponse
             ->assertOk()
+            ->assertSee('data-admin-home-link', false)
             ->assertSeeText('Applicant response received');
     }
 
@@ -3054,6 +3285,9 @@ class ApplicationWorkflowTest extends TestCase
 
         $showResponse
             ->assertOk()
+            ->assertSee('data-authority-request-section="project-information"', false)
+            ->assertSee('data-authority-request-section="director-information"', false)
+            ->assertSee('data-authority-request-section="work-summary"', false)
             ->assertSeeText('Authority Decision')
             ->assertSeeText('Procedures')
             ->assertSeeText('Request Timeline')
@@ -3071,7 +3305,7 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Approve request')
             ->assertSeeText('Reject request')
             ->assertSeeText('Entity book')
-            ->assertSeeText('Required when approving')
+            ->assertSeeText('You may attach your authority\'s official letter or response when available.')
             ->assertDontSee('value="pending"', false)
             ->assertDontSeeText('Official Books')
             ->assertDontSeeText('AUTH-BOOK-100')
@@ -3093,6 +3327,12 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSee('authority-detail-table', false)
             ->assertDontSee('authority-documents-table', false)
             ->assertSeeText($authorityEntity->displayName('en'));
+
+        $this->assertSame(
+            3,
+            substr_count($showResponse->getContent(), 'data-authority-request-section='),
+            'The authority request tab must expose only project information, director information, and the work summary.'
+        );
 
         $updateResponse = $this->actingAs($authorityUser)->post(route('authority.applications.approval.update', $application), [
             'status' => 'approved',
@@ -3173,16 +3413,16 @@ class ApplicationWorkflowTest extends TestCase
             $applicant->fresh()->unreadNotifications->where('data.type_key', 'application_correspondence')->count(),
         );
 
-        $applicantCorrespondenceResponse = $this->actingAs($authorityUser)->post(route('authority.applications.correspondence.store', $application), [
+        $applicantOnlyCorrespondenceResponse = $this->actingAs($authorityUser)->post(route('authority.applications.correspondence.store', $application), [
             'recipient_type' => ApplicationCorrespondence::RECIPIENT_APPLICANT,
             'subject' => 'Applicant-only Authority Note',
             'message' => 'Please review the attached authority instructions.',
             'attachment' => UploadedFile::fake()->create('applicant-authority-letter.pdf', 50, 'application/pdf'),
         ]);
 
-        $applicantCorrespondenceResponse->assertRedirect(route('authority.applications.show', $application));
+        $applicantOnlyCorrespondenceResponse->assertSessionHasErrors('recipient_type');
 
-        $this->assertDatabaseHas('application_correspondences', [
+        $this->assertDatabaseMissing('application_correspondences', [
             'application_id' => $application->getKey(),
             'sender_type' => 'authority',
             'recipient_type' => ApplicationCorrespondence::RECIPIENT_APPLICANT,
@@ -3193,7 +3433,7 @@ class ApplicationWorkflowTest extends TestCase
             $admin->fresh()->unreadNotifications->where('data.type_key', 'application_correspondence')->count(),
         );
         $this->assertSame(
-            $applicantCorrespondenceCount + 1,
+            $applicantCorrespondenceCount,
             $applicant->fresh()->unreadNotifications->where('data.type_key', 'application_correspondence')->count(),
         );
 
@@ -3217,25 +3457,22 @@ class ApplicationWorkflowTest extends TestCase
             $admin->fresh()->unreadNotifications->where('data.type_key', 'application_correspondence')->count(),
         );
         $this->assertSame(
-            $applicantCorrespondenceCount + 2,
+            $applicantCorrespondenceCount + 1,
             $applicant->fresh()->unreadNotifications->where('data.type_key', 'application_correspondence')->count(),
         );
 
         $rfcMessage = ApplicationCorrespondence::query()->where('subject', 'RFC-only Authority Note')->firstOrFail();
-        $applicantMessage = ApplicationCorrespondence::query()->where('subject', 'Applicant-only Authority Note')->firstOrFail();
         $sharedMessage = ApplicationCorrespondence::query()->where('subject', 'Shared Authority Note')->firstOrFail();
 
         $this->actingAs($admin)
             ->get(route('admin.applications.show', $application))
             ->assertOk()
             ->assertSeeText('RFC-only Authority Note')
-            ->assertSeeText('Shared Authority Note')
-            ->assertDontSeeText('Applicant-only Authority Note');
+            ->assertSeeText('Shared Authority Note');
 
         $this->actingAs($applicant)
             ->get(route('applications.show', $application))
             ->assertOk()
-            ->assertSeeText('Applicant-only Authority Note')
             ->assertSeeText('Shared Authority Note')
             ->assertDontSeeText('RFC-only Authority Note');
 
@@ -3251,16 +3488,12 @@ class ApplicationWorkflowTest extends TestCase
             ->get(route('applications.correspondence.download', [$application, $rfcMessage]))
             ->assertNotFound();
 
-        $this->actingAs($admin)
-            ->get(route('admin.applications.correspondence.download', [$application, $applicantMessage]))
-            ->assertNotFound();
-
         $this->actingAs($authorityUser)
             ->get(route('authority.applications.show', $application))
             ->assertOk()
             ->assertSee('data-correspondence-recipient-selector', false)
+            ->assertDontSee('authority_correspondence_recipient_applicant', false)
             ->assertSeeText('Royal Film Commission (RFC)')
-            ->assertSeeText('Application submitter')
             ->assertSeeText('RFC and applicant');
     }
 
@@ -3419,16 +3652,14 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Correct the national number for the second crew member.');
 
         $adminOverrideResponse = $this->actingAs($admin)->post(
-            route('admin.applications.approvals.update', [$application, $requestingApproval]),
+            "/en/admin/applications/{$application->getKey()}/approvals/{$requestingApproval->getKey()}/update",
             [
                 'status' => 'approved',
                 'note' => 'This shortcut must remain blocked.',
             ],
         );
 
-        $adminOverrideResponse
-            ->assertRedirect(route('admin.applications.show', $application))
-            ->assertSessionHasErrors('status');
+        $adminOverrideResponse->assertNotFound();
         $this->assertSame('changes_requested', $requestingApproval->fresh()->status);
 
         $this->actingAs($applicant)
@@ -3460,7 +3691,7 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSee('class="authority-decision-panel" enctype="multipart/form-data" data-authority-decision-form', false);
     }
 
-    public function test_authority_approval_requires_response_book_and_rfc_can_download_it(): void
+    public function test_authority_can_approve_without_uploading_a_response_book(): void
     {
         Storage::fake('local');
 
@@ -3484,56 +3715,32 @@ class ApplicationWorkflowTest extends TestCase
             ->where('authority_code', 'public_security')
             ->firstOrFail();
 
-        $missingBookResponse = $this->actingAs($authorityUser)->post(route('authority.applications.approval.update', $application), [
-            'status' => 'approved',
-            'note' => 'Approved without book should fail.',
-        ]);
-
-        $missingBookResponse
-            ->assertRedirect()
-            ->assertSessionHasErrors('response_attachment');
-
-        $this->assertDatabaseHas('application_authority_approvals', [
-            'id' => $approval->getKey(),
-            'status' => 'pending',
-            'response_attachment_path' => null,
-        ]);
+        $this->actingAs($authorityUser)
+            ->get(route('authority.applications.show', $application))
+            ->assertOk()
+            ->assertSeeText('You may attach your authority\'s official letter or response when available.');
 
         $approveResponse = $this->actingAs($authorityUser)->post(route('authority.applications.approval.update', $application), [
             'status' => 'approved',
-            'note' => 'Security approval book attached.',
-            'response_attachment' => UploadedFile::fake()->create('public-security-book.pdf', 120, 'application/pdf'),
+            'note' => 'Approved without an attached book.',
         ]);
 
-        $approveResponse->assertRedirect(route('authority.applications.show', $application));
+        $approveResponse
+            ->assertRedirect(route('authority.applications.show', $application))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('application_authority_approvals', [
+            'id' => $approval->getKey(),
+            'status' => 'approved',
+            'note' => 'Approved without an attached book.',
+            'response_attachment_path' => null,
+        ]);
 
         $approval->refresh();
 
         $this->assertSame('approved', $approval->status);
-        $this->assertSame('public-security-book.pdf', $approval->response_attachment_name);
-        $this->assertNotNull($approval->response_attachment_uploaded_at);
-        Storage::disk('local')->assertExists($approval->response_attachment_path);
-
-        $this->actingAs($authorityUser)
-            ->get(route('authority.applications.show', $application))
-            ->assertOk()
-            ->assertSeeText('Download entity book')
-            ->assertSeeText('public-security-book.pdf');
-
-        $this->actingAs($admin)
-            ->get(route('admin.applications.show', $application))
-            ->assertOk()
-            ->assertSeeText('Entity book')
-            ->assertSeeText('Download entity book')
-            ->assertSeeText('public-security-book.pdf');
-
-        $this->actingAs($admin)
-            ->get(route('admin.applications.approvals.attachment.download', [$application, $approval]))
-            ->assertOk();
-
-        $this->actingAs($authorityUser)
-            ->get(route('authority.applications.approvals.attachment.download', [$application, $approval]))
-            ->assertOk();
+        $this->assertNull($approval->response_attachment_name);
+        $this->assertNull($approval->response_attachment_uploaded_at);
     }
 
     public function test_authority_reviewer_cannot_resolve_approval_without_approver_permission(): void
@@ -4392,6 +4599,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
         [$applicant] = $this->createApplicantContext();
+        [$authorityUser] = $this->createAuthorityContext();
 
         $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
             'required_approvals' => ['public_security', 'environment'],
@@ -4403,7 +4611,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $approval = $application->fresh()->authorityApprovals()->where('authority_code', 'public_security')->firstOrFail();
 
-        $this->actingAs($admin)->post(route('admin.applications.approvals.update', [$application, $approval]), [
+        $this->actingAs($authorityUser)->post(route('authority.applications.approval.update', $application), [
             'status' => 'approved',
             'note' => 'Security approval granted.',
         ]);
@@ -4480,6 +4688,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('data-portal-home-link', false)
             ->assertSee('card-dashboard', false)
             ->assertSee('portal-request-table', false)
             ->assertSeeText('Production requests')
@@ -5170,6 +5379,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
         [$applicant] = $this->createApplicantContext();
+        [$authorityUser] = $this->createAuthorityContext();
 
         $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
             'required_approvals' => ['public_security'],
@@ -5181,7 +5391,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $approval = $application->authorityApprovals()->firstOrFail();
 
-        $this->actingAs($admin)->post(route('admin.applications.approvals.update', [$application, $approval]), [
+        $this->actingAs($authorityUser)->post(route('authority.applications.approval.update', $application), [
             'status' => 'approved',
             'note' => 'Authority approval is complete.',
         ]);
@@ -5284,6 +5494,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
         [$applicant] = $this->createApplicantContext();
+        [$authorityUser] = $this->createAuthorityContext();
 
         $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
             'required_approvals' => ['public_security'],
@@ -5294,7 +5505,7 @@ class ApplicationWorkflowTest extends TestCase
         $this->routeApplicationToAuthorities($admin, $application);
 
         $approval = ApplicationAuthorityApproval::query()->where('application_id', $application->getKey())->firstOrFail();
-        $this->actingAs($admin)->post(route('admin.applications.approvals.update', [$application, $approval]), [
+        $this->actingAs($authorityUser)->post(route('authority.applications.approval.update', $application), [
             'status' => 'approved',
             'note' => 'Authority approval complete.',
         ]);
@@ -5366,6 +5577,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
         [$applicant] = $this->createApplicantContext();
+        [$authorityUser] = $this->createAuthorityContext();
 
         $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
             'required_approvals' => ['public_security'],
@@ -5376,7 +5588,7 @@ class ApplicationWorkflowTest extends TestCase
         $this->routeApplicationToAuthorities($admin, $application);
 
         $approval = ApplicationAuthorityApproval::query()->where('application_id', $application->getKey())->firstOrFail();
-        $this->actingAs($admin)->post(route('admin.applications.approvals.update', [$application, $approval]), [
+        $this->actingAs($authorityUser)->post(route('authority.applications.approval.update', $application), [
             'status' => 'approved',
             'note' => 'Authority approval complete.',
         ]);

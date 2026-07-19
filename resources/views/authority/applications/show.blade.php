@@ -4,12 +4,9 @@
     $metadata = $application->metadata ?? [];
     $producer = data_get($metadata, 'producer', []);
     $director = data_get($metadata, 'director', []);
-    $international = data_get($metadata, 'international', []);
-    $requirements = data_get($metadata, 'requirements', []);
-    $formattedBudget = $application->estimated_budget ? number_format((float) $application->estimated_budget, 2) : __('app.dashboard.not_available');
-    $requiredApprovals = collect(data_get($requirements, 'required_approvals', []))
-        ->map(fn ($approval) => __('app.applications.required_approval_options.'.$approval))
-        ->join('، ') ?: __('app.applications.no_required_approvals');
+    $workSummary = data_get($metadata, 'annex.work_content_summary.synopsis')
+        ?: $application->project_summary
+        ?: __('app.dashboard.not_available');
     $asDate = static function ($value): ?\Carbon\CarbonInterface {
         if ($value instanceof \Carbon\CarbonInterface) {
             return $value;
@@ -399,7 +396,7 @@
 
         .authority-request-show-layout .correspondence-recipient-options {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: .5rem;
         }
 
@@ -409,6 +406,32 @@
             justify-content: center;
             min-height: 3.5rem;
             white-space: normal;
+        }
+
+        .authority-request-show-layout .authority-correspondence-create {
+            height: 100dvh;
+            max-height: 100dvh;
+        }
+
+        .authority-request-show-layout .authority-correspondence-create > form {
+            display: flex;
+            flex: 1 1 auto;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .authority-request-show-layout .authority-correspondence-create .offcanvas-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+        }
+
+        .authority-request-show-layout .authority-correspondence-create .offcanvas-footer {
+            background: var(--bs-body-bg);
+            flex: 0 0 auto;
+            position: relative;
+            z-index: 2;
         }
 
         @media (max-width: 991.98px) {
@@ -479,7 +502,7 @@
                     <div class="col-lg-8">
                         <div class="profile-content tab-content iq-tab-fade-up">
                             <div id="authority-request" class="tab-pane fade active show">
-                                <div class="card request-pane-card">
+                                <div class="card request-pane-card" data-authority-request-section="project-information">
                                     <div class="card-header">
                                         <div class="header-title">
                                             <h2 class="episode-playlist-title wp-heading-inline">
@@ -500,7 +523,7 @@
                                     </div>
                                 </div>
 
-                                <div class="card request-pane-card">
+                                <div class="card request-pane-card" data-authority-request-section="director-information">
                                     <div class="card-header">
                                         <div class="header-title">
                                             <h2 class="episode-playlist-title wp-heading-inline">
@@ -522,74 +545,16 @@
                                     </div>
                                 </div>
 
-                                @if (filled(data_get($international, 'international_producer_name')) || filled(data_get($international, 'international_producer_company')))
-                                    <div class="card request-pane-card">
-                                        <div class="card-header">
-                                            <div class="header-title">
-                                                <h2 class="episode-playlist-title wp-heading-inline">
-                                                    <span class="position-relative">{{ __('app.applications.international_project_information') }}</span>
-                                                </h2>
-                                            </div>
-                                        </div>
-                                        <div class="card-body">
-                                            <div class="mb-1"><span class="fw-600">{{ __('app.applications.international_producer_name') }}:</span><span class="ms-2">{{ data_get($international, 'international_producer_name', __('app.dashboard.not_available')) }}</span></div>
-                                            <div class="mb-0"><span class="fw-600">{{ __('app.applications.international_producer_company') }}:</span><span class="ms-2">{{ data_get($international, 'international_producer_company', __('app.dashboard.not_available')) }}</span></div>
-                                        </div>
-                                    </div>
-                                @endif
-
-                                <div class="card request-pane-card">
+                                <div class="card request-pane-card" data-authority-request-section="work-summary">
                                     <div class="card-header">
-                                        <h2 class="episode-playlist-title wp-heading-inline">
-                                            <span class="position-relative">{{ __('app.applications.schedule_title') }}</span>
-                                        </h2>
+                                        <div class="header-title">
+                                            <h2 class="episode-playlist-title wp-heading-inline">
+                                                <span class="position-relative">{{ __('app.applications.project_summary') }}</span>
+                                            </h2>
+                                        </div>
                                     </div>
                                     <div class="card-body">
-                                        <div class="mb-1"><span class="fw-600">{{ __('app.applications.planned_start_date') }}:</span><span class="ms-2">{{ optional($application->planned_start_date)->format('Y-m-d') ?: __('app.dashboard.not_available') }}</span></div>
-                                        <div class="mb-0"><span class="fw-600">{{ __('app.applications.planned_end_date') }}:</span><span class="ms-2">{{ optional($application->planned_end_date)->format('Y-m-d') ?: __('app.dashboard.not_available') }}</span></div>
-                                    </div>
-                                </div>
-
-                                <div class="card request-pane-card">
-                                    <div class="card-header">
-                                        <h2 class="episode-playlist-title wp-heading-inline">
-                                            <span class="position-relative">{{ __('app.applications.crew_title') }}</span>
-                                        </h2>
-                                    </div>
-                                    <div class="card-body">
-                                        <div class="mb-0">{{ __('app.applications.estimated_crew_count') }}: <span class="ms-2">{{ $application->estimated_crew_count ?: __('app.dashboard.not_available') }}</span></div>
-                                    </div>
-                                </div>
-
-                                <div class="card request-pane-card">
-                                    <div class="card-header">
-                                        <h2 class="episode-playlist-title wp-heading-inline">
-                                            <span class="position-relative">{{ __('app.applications.budget_title') }}</span>
-                                        </h2>
-                                    </div>
-                                    <div class="card-body">
-                                        <div class="mb-0"><span class="fw-600">{{ __('app.applications.estimated_budget') }}:</span><span class="ms-2">{{ $formattedBudget }}</span></div>
-                                    </div>
-                                </div>
-
-                                <div class="card request-pane-card">
-                                    <div class="card-header">
-                                        <h2 class="episode-playlist-title wp-heading-inline">
-                                            <span class="position-relative">{{ __('app.applications.annex_title') }}</span>
-                                        </h2>
-                                    </div>
-                                    <div class="card-body">
-                                        <div class="mb-4">
-                                            <span class="fw-600 d-block mb-2">{{ __('app.applications.required_approvals') }}</span>
-                                            <div>{{ $requiredApprovals }}</div>
-                                        </div>
-                                        <div class="mb-0">
-                                            <span class="fw-600 d-block mb-2">{{ __('app.applications.supporting_notes') }}</span>
-                                            <div>{{ data_get($requirements, 'supporting_notes', __('app.applications.annex_empty_state')) }}</div>
-                                        </div>
-                                        <div class="border-top mt-4 pt-4">
-                                            @include('applications.partials.annex-summary', ['application' => $application])
-                                        </div>
+                                        <div class="mb-0 text-break" style="white-space: pre-line;">{{ $workSummary }}</div>
                                     </div>
                                 </div>
                             </div>
@@ -938,7 +903,7 @@
                                         </div>
 
                                         <div class="authority-decision-dependent mb-3" data-decision-panel="approved" hidden>
-                                            <label class="form-label" for="response_attachment">{{ __('app.approvals.response_book') }} <span class="text-danger">*</span></label>
+                                            <label class="form-label" for="response_attachment">{{ __('app.approvals.response_book') }}</label>
                                             <input id="response_attachment" name="response_attachment" type="file" class="form-control" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                             <div class="form-text">{{ __('app.approvals.response_book_hint') }}</div>
                                         </div>
@@ -1060,7 +1025,7 @@
                             </div>
                         </div>
 
-                        <div class="offcanvas offcanvas-end offcanvas-width-80" tabindex="-1" id="authorityCorrespondenceCreate">
+                        <div class="offcanvas offcanvas-end offcanvas-width-80 authority-correspondence-create" tabindex="-1" id="authorityCorrespondenceCreate">
                             <div class="offcanvas-header">
                                 <h2 class="episode-playlist-title wp-heading-inline">
                                     <span class="position-relative">{{ __('app.correspondence.new_message_title') }}</span>
@@ -1077,11 +1042,6 @@
                                                 <input class="btn-check" id="authority_correspondence_recipient_rfc" name="recipient_type" type="radio" value="rfc" required @checked(old('recipient_type', 'rfc') === 'rfc')>
                                                 <label class="btn btn-outline-primary py-3" for="authority_correspondence_recipient_rfc">
                                                     <i class="ph ph-buildings me-2"></i>{{ __('app.correspondence.recipients.rfc') }}
-                                                </label>
-
-                                                <input class="btn-check" id="authority_correspondence_recipient_applicant" name="recipient_type" type="radio" value="applicant" required @checked(old('recipient_type') === 'applicant')>
-                                                <label class="btn btn-outline-primary py-3" for="authority_correspondence_recipient_applicant">
-                                                    <i class="ph ph-user me-2"></i>{{ __('app.correspondence.recipients.applicant') }}
                                                 </label>
 
                                                 <input class="btn-check" id="authority_correspondence_recipient_all" name="recipient_type" type="radio" value="all" required @checked(old('recipient_type') === 'all')>
@@ -1253,7 +1213,6 @@
                 }
                 if (responseAttachment) {
                     responseAttachment.disabled = !isApproved;
-                    responseAttachment.required = isApproved;
                 }
 
                 setCorrectionFieldsEnabled(isChangesRequested);

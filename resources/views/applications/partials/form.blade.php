@@ -674,7 +674,7 @@
                                             ['target' => 'FilmingAirports', 'label' => __('app.applications.annex_sections.airport_filming'), 'filled' => filled(data_get($airportFilming, 'airport_name')) || collect($airportPeopleRows)->filter(fn ($row) => collect($row)->filter(fn ($value) => filled($value))->isNotEmpty())->isNotEmpty()],
                                             ['target' => 'FilmingGovernmental', 'label' => __('app.applications.annex_sections.governmental_scenes'), 'filled' => collect($governmentalSceneRows)->filter(fn ($row) => collect($row)->filter(fn ($value) => filled($value))->isNotEmpty())->isNotEmpty() || data_get($annex, 'governmental_scenes_confirmed')],
                                         ] as $formRow)
-                                            <tr data-requirement-row data-requirement-target="{{ $formRow['target'] }}">
+                                            <tr data-requirement-row data-requirement-target="{{ $formRow['target'] }}" data-requirement-optional="1">
                                                 <td>
                                                     <div class="d-flex align-items-center">
                                                         <img class="rounded img-fluid avatar-40 me-3 bg-primary-subtle" src="{{ asset('images/clapboard.png') }}" alt="" loading="lazy">
@@ -688,6 +688,7 @@
                                                 </td>
                                                 <td data-requirement-status>
                                                     <div class="text-success {{ $formRow['filled'] ? '' : 'd-none' }}" data-requirement-filled><i class="ph-fill ph-check fa-xl me-2 lh-lg"></i>{{ __('app.applications.form_filled_status') }}</div>
+                                                    <div class="text-danger d-none" data-requirement-incomplete><i class="ph-fill ph-warning-circle fa-xl me-2 lh-lg"></i>{{ __('app.applications.form_incomplete_status') }}</div>
                                                 </td>
                                             </tr>
                                         @endforeach
@@ -829,7 +830,7 @@
                                             <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap mb-3">
                                                 <h5 class="mb-0">{{ __('app.applications.annex_sections.filming_locations') }}</h5>
                                                 <button type="button" class="btn btn-sm btn-success" onclick="addApplicationAnnexRow('filmingLocationsTable', 'filming_locations')">
-                                                    <i class="fa-solid fa-plus me-2"></i>{{ __('app.scouting.add_location_action') }}
+                                                    <i class="fa-solid fa-plus me-2"></i>{{ __('app.applications.add_filming_location') }}
                                                 </button>
                                             </div>
                                             <div class="table-responsive">
@@ -872,7 +873,7 @@
                                                             <th>{{ __('app.applications.annex_fields.arrival_date') }}</th>
                                                             <th>{{ __('app.applications.annex_fields.departure_date') }}</th>
                                                             <th>{{ __('app.applications.annex_fields.customs_center') }}</th>
-                                                            <th>{{ __('app.applications.annex_fields.attachment') }}</th>
+                                                            <th>{{ __('app.applications.annex_fields.invoice_attachment') }}</th>
                                                             <th>{{ __('app.applications.actions') }}</th>
                                                         </tr>
                                                     </thead>
@@ -1270,13 +1271,13 @@
                 + "<button type=\"button\" class=\"btn btn-sm btn-icon btn-danger-subtle rounded\" onclick=\"removeApplicationAnnexRow(this, '#" + tableId + "')\" aria-label=\"" + applicationEscapeHtml(applicationLocationCardLabels.deleteLabel) + "\"><i class=\"ph-fill ph ph-trash-simple fs-6\"></i></button>"
                 + '</div>'
                 + '<div class="application-location-card__section"><div class="row g-3">'
-                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.governorate) + '</label><select class="form-select" name="filming_locations[' + index + '][governorate]" data-location-governorate required>' + applicationGovernorateOptionsHtml + '</select></div>'
-                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationType) + '</label><select class="form-select" name="filming_locations[' + index + '][location_type]" data-location-type-select required>' + applicationLocationTypeOptionsHtml('', '') + '</select><div class="form-text text-warning fw-semibold d-none" data-location-type-approval-note></div></div>'
-                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationName) + '</label><input type="text" class="form-control" name="filming_locations[' + index + '][location_name]" data-location-name required></div>'
-                + '<div class="col-md-6"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationAddress) + '</label><input type="text" class="form-control" name="filming_locations[' + index + '][address]"></div>'
-                + '<div class="col-md-6"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationNature) + '</label><textarea class="form-control" name="filming_locations[' + index + '][nature]" rows="2" required></textarea></div>'
-                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.startDate) + '</label><input type="date" class="form-control" name="filming_locations[' + index + '][start_date]" min="' + applicationEscapeHtml(applicationFilmingLocationStartMin) + '" data-location-start-date required></div>'
-                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.endDate) + '</label><input type="date" class="form-control" name="filming_locations[' + index + '][end_date]" data-location-end-date required></div>'
+                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.governorate) + ' <span class="text-danger">*</span></label><select class="form-select" name="filming_locations[' + index + '][governorate]" data-location-governorate required>' + applicationGovernorateOptionsHtml + '</select></div>'
+                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationType) + ' <span class="text-danger">*</span></label><select class="form-select" name="filming_locations[' + index + '][location_type]" data-location-type-select required>' + applicationLocationTypeOptionsHtml('', '') + '</select><div class="form-text text-warning fw-semibold d-none" data-location-type-approval-note></div></div>'
+                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationName) + ' <span class="text-danger">*</span></label><input type="text" class="form-control" name="filming_locations[' + index + '][location_name]" data-location-name required></div>'
+                + '<div class="col-md-6"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationAddress) + ' <span class="text-danger">*</span></label><input type="text" class="form-control" name="filming_locations[' + index + '][address]" required></div>'
+                + '<div class="col-md-6"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.locationNature) + ' <span class="text-danger">*</span></label><textarea class="form-control" name="filming_locations[' + index + '][nature]" rows="2" required></textarea></div>'
+                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.startDate) + ' <span class="text-danger">*</span></label><input type="date" class="form-control" name="filming_locations[' + index + '][start_date]" min="' + applicationEscapeHtml(applicationFilmingLocationStartMin) + '" data-location-start-date required></div>'
+                + '<div class="col-md-6 col-xl-3"><label class="form-label">' + applicationEscapeHtml(applicationLocationCardLabels.endDate) + ' <span class="text-danger">*</span></label><input type="date" class="form-control" name="filming_locations[' + index + '][end_date]" data-location-end-date required></div>'
                 + '</div></div>'
                 + '</div>'
                 + '</td>';
@@ -1606,7 +1607,7 @@
                 return;
             }
 
-            document.querySelectorAll('[data-traveler-customs-project-name]').forEach(function (target) {
+            document.querySelectorAll('[data-traveler-customs-project-name], [data-shipping-customs-project-name]').forEach(function (target) {
                 target.textContent = String(projectName.value || '').trim();
             });
         }
@@ -2222,6 +2223,20 @@
             return hasData && isValid;
         }
 
+        function requirementFormHasData(targetId) {
+            const drawer = document.getElementById(targetId);
+
+            if (!drawer) {
+                return false;
+            }
+
+            return Array.from(drawer.querySelectorAll('input, select, textarea'))
+                .filter(function (control) {
+                    return !control.disabled && control.type !== 'hidden' && !control.closest('.legacy-annex-inline');
+                })
+                .some(controlHasRequirementValue);
+        }
+
         function updateRequirementStatuses() {
             document.querySelectorAll('[data-requirement-row]').forEach(function (row) {
                 const status = row.querySelector('[data-requirement-filled]');
@@ -2232,11 +2247,13 @@
                 }
 
                 const isFilled = requirementFormIsFilled(row.dataset.requirementTarget);
+                const hasData = requirementFormHasData(row.dataset.requirementTarget);
+                const isOptional = row.dataset.requirementOptional === '1';
 
                 status.classList.toggle('d-none', !isFilled);
 
                 if (incompleteStatus) {
-                    incompleteStatus.classList.toggle('d-none', isFilled);
+                    incompleteStatus.classList.toggle('d-none', isFilled || (isOptional && !hasData));
                 }
             });
         }

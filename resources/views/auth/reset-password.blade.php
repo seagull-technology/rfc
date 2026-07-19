@@ -177,11 +177,6 @@
 
                 submitting = true;
 
-                if (submitButton) {
-                    submitButton.disabled = true;
-                    submitButton.setAttribute('aria-busy', 'true');
-                }
-
                 HTMLFormElement.prototype.submit.call(form);
             };
 
