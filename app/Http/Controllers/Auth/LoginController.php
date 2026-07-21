@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\Gsb\SignFlowService;
 use App\Services\OtpService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -17,9 +18,11 @@ class LoginController extends Controller
         return (bool) config('services.otp_debug_fallback', false);
     }
 
-    public function create(): View
+    public function create(SignFlowService $signFlow): View
     {
-        return view('auth.login');
+        return view('auth.login', [
+            'sanadReady' => $signFlow->isAuthorizationConfigured(),
+        ]);
     }
 
     public function store(Request $request, OtpService $otpService): RedirectResponse

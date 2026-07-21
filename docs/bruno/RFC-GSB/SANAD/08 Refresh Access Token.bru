@@ -1,0 +1,29 @@
+meta {
+  name: Refresh Access Token
+  type: http
+  seq: 8
+}
+
+post {
+  url: https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/signflow/v2/refresh
+  body: json
+  auth: none
+}
+
+headers {
+  X-IBM-Client-Id: {{sanad_client_id}}
+  X-IBM-Client-Secret: {{sanad_client_secret}}
+  Accept: text/plain
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "grant_type": "refresh_token",
+    "refresh_token": "{{sanad_refresh_token}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+}

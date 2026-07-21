@@ -100,7 +100,7 @@
     </div>
 
     <div class="row">
-        <div class="col-xl-4">
+        <div class="col-xl-6">
             <div class="card">
                 <div class="card-header">
                     <div class="iq-header-title">
@@ -170,7 +170,7 @@
             </div>
         </div>
 
-        <div class="col-xl-4">
+        <div class="col-xl-6">
             <div class="card">
                 <div class="card-header">
                     <div class="iq-header-title">
@@ -266,7 +266,7 @@
             </div>
         </div>
 
-        <div class="col-xl-4">
+        <div class="col-xl-6">
             <div class="card">
                 <div class="card-header">
                     <div class="iq-header-title">
@@ -290,37 +290,102 @@
                         </div>
                     </form>
 
-                    @if ($results['mohe_sanad'])
+                    @if ($results['mohe_undergraduate_students'])
                         <div class="border rounded p-3 mt-4">
                             <h6 class="mb-3">{{ __('app.admin.integrations.last_mohe_result') }}</h6>
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <small class="text-muted d-block">{{ __('app.admin.integrations.result') }}</small>
-                                    <div>{{ ($results['mohe_sanad']['ok'] ?? false) ? __('app.admin.integrations.success') : __('app.admin.integrations.failed') }}</div>
+                                    <div>{{ ($results['mohe_undergraduate_students']['ok'] ?? false) ? __('app.admin.integrations.success') : __('app.admin.integrations.failed') }}</div>
                                 </div>
                                 <div class="col-md-6">
                                     <small class="text-muted d-block">{{ __('app.admin.integrations.error_code') }}</small>
-                                    <div>{{ $results['mohe_sanad']['error'] ?? __('app.dashboard.not_available') }}</div>
+                                    <div>{{ $results['mohe_undergraduate_students']['error'] ?? __('app.dashboard.not_available') }}</div>
                                 </div>
                                 <div class="col-md-6">
                                     <small class="text-muted d-block">{{ __('app.admin.integrations.university_name') }}</small>
-                                    <div>{{ data_get($results, 'mohe_sanad.data.university_name') ?: __('app.dashboard.not_available') }}</div>
+                                    <div>{{ data_get($results, 'mohe_undergraduate_students.data.university_name') ?: __('app.dashboard.not_available') }}</div>
                                 </div>
                                 <div class="col-md-6">
                                     <small class="text-muted d-block">{{ __('app.admin.integrations.major') }}</small>
-                                    <div>{{ data_get($results, 'mohe_sanad.data.major') ?: __('app.dashboard.not_available') }}</div>
+                                    <div>{{ data_get($results, 'mohe_undergraduate_students.data.major') ?: __('app.dashboard.not_available') }}</div>
                                 </div>
                                 <div class="col-md-6">
                                     <small class="text-muted d-block">{{ __('app.admin.integrations.degree') }}</small>
-                                    <div>{{ data_get($results, 'mohe_sanad.data.degree') ?: __('app.dashboard.not_available') }}</div>
+                                    <div>{{ data_get($results, 'mohe_undergraduate_students.data.degree') ?: __('app.dashboard.not_available') }}</div>
                                 </div>
                                 <div class="col-md-6">
                                     <small class="text-muted d-block">{{ __('app.admin.integrations.source') }}</small>
-                                    <div>{{ data_get($results, 'mohe_sanad.meta.source') ?: __('app.dashboard.not_available') }}</div>
+                                    <div>{{ data_get($results, 'mohe_undergraduate_students.meta.source') ?: __('app.dashboard.not_available') }}</div>
                                 </div>
                                 <div class="col-12">
                                     <small class="text-muted d-block">{{ __('app.admin.integrations.technical_message') }}</small>
-                                    <div>{{ $results['mohe_sanad']['technical_message'] ?? __('app.dashboard.not_available') }}</div>
+                                    <div>{{ $results['mohe_undergraduate_students']['technical_message'] ?? __('app.dashboard.not_available') }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-6">
+            <div class="card">
+                <div class="card-header">
+                    <div class="iq-header-title">
+                        <h3 class="card-title">{{ __('app.admin.integrations.sanad_title') }}</h3>
+                    </div>
+                    <p class="mb-0 text-muted">{{ __('app.admin.integrations.sanad_intro') }}</p>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ route('admin.integrations.sanad-status-test') }}" class="row g-3">
+                        @csrf
+
+                        <div class="col-md-8">
+                            <label for="sanad_national_id" class="form-label">{{ __('app.auth.national_id') }}</label>
+                            <input
+                                id="sanad_national_id"
+                                name="sanad_national_id"
+                                type="text"
+                                class="form-control"
+                                value="{{ old('sanad_national_id') }}"
+                                inputmode="numeric"
+                                pattern="\d{10}"
+                                maxlength="10"
+                                required
+                            >
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button class="btn btn-primary w-100" type="submit">
+                                {{ __('app.admin.integrations.run_sanad_status') }}
+                            </button>
+                        </div>
+                    </form>
+
+                    @if ($results['sanad_status'])
+                        <div class="border rounded p-3 mt-4">
+                            <h6 class="mb-3">{{ __('app.admin.integrations.last_sanad_result') }}</h6>
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <small class="text-muted d-block">{{ __('app.admin.integrations.result') }}</small>
+                                    <div>{{ ($results['sanad_status']['ok'] ?? false) ? __('app.admin.integrations.success') : __('app.admin.integrations.failed') }}</div>
+                                </div>
+                                <div class="col-md-4">
+                                    <small class="text-muted d-block">{{ __('app.admin.integrations.http_status') }}</small>
+                                    <div>{{ data_get($results, 'sanad_status.meta.status') ?? data_get($results, 'sanad_status.status') ?? __('app.dashboard.not_available') }}</div>
+                                </div>
+                                <div class="col-md-4">
+                                    <small class="text-muted d-block">{{ __('app.admin.integrations.error_code') }}</small>
+                                    <div>{{ $results['sanad_status']['error'] ?? __('app.dashboard.not_available') }}</div>
+                                </div>
+                                <div class="col-12">
+                                    <small class="text-muted d-block">{{ __('app.admin.integrations.sanad_registration_status') }}</small>
+                                    <div class="text-break">
+                                        {{ data_get($results, 'sanad_status.data.status')
+                                            ?? data_get($results, 'sanad_status.data.data.status')
+                                            ?? data_get($results, 'sanad_status.data.message')
+                                            ?? __('app.dashboard.not_available') }}
+                                    </div>
                                 </div>
                             </div>
                         </div>

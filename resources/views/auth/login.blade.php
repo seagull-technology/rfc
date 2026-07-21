@@ -33,6 +33,43 @@
             color: #ffffff;
             border-color: rgba(255, 255, 255, 0.32);
         }
+
+        .sanad-login-action {
+            display: inline-flex;
+            width: min(100%, 260px);
+            min-height: 72px;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 18px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.08);
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+        }
+
+        .sanad-login-action:not(.is-disabled):hover {
+            border-color: rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.14);
+        }
+
+        .sanad-login-action img {
+            display: block;
+            width: auto;
+            max-width: 132px;
+            max-height: 52px;
+        }
+
+        .sanad-login-action.is-disabled {
+            cursor: not-allowed;
+            opacity: 0.48;
+        }
+
+        .sanad-login-note {
+            margin-top: 8px;
+            color: rgba(255, 255, 255, 0.72);
+            font-size: 0.8rem;
+            text-align: center;
+        }
     </style>
 @endpush
 
@@ -112,10 +149,26 @@
                                             <span class="or-section">{{ __('app.auth.login_with') }}</span>
                                         </div>
 
-                                        <div class="d-flex justify-content-center align-items-center">
-                                            <a href="javascript:void(0)" class="text-center">
-                                                <img src="{{ asset('images/sanad.png') }}" class="w-30" style="width: 30%;" alt="Sanad">
-                                            </a>
+                                        <div class="d-flex flex-column justify-content-center align-items-center">
+                                            @if ($sanadReady)
+                                                <a
+                                                    href="{{ route('sanad.redirect') }}"
+                                                    class="sanad-login-action"
+                                                    aria-label="{{ __('app.auth.sanad_login') }}"
+                                                    title="{{ __('app.auth.sanad_login') }}"
+                                                >
+                                                    <img src="{{ asset('images/sanad.png') }}" alt="{{ __('app.auth.sanad') }}">
+                                                </a>
+                                            @else
+                                                <span
+                                                    class="sanad-login-action is-disabled"
+                                                    aria-disabled="true"
+                                                    title="{{ __('app.auth.sanad_unavailable') }}"
+                                                >
+                                                    <img src="{{ asset('images/sanad.png') }}" alt="{{ __('app.auth.sanad') }}">
+                                                </span>
+                                                <span class="sanad-login-note">{{ __('app.auth.sanad_unavailable') }}</span>
+                                            @endif
                                         </div>
 
                                         <div class="login-form-bottom">

@@ -43,6 +43,7 @@ class StudentLookupController extends Controller
         if (! ($lookup['ok'] ?? false)) {
             $message = match ($lookup['error'] ?? null) {
                 'IDENTITY_MISMATCH' => __('app.auth.student_lookup_identity_mismatch'),
+                'STUDENT_NOT_FOUND' => __('app.auth.student_lookup_not_found'),
                 'NOT_CURRENT_STUDENT' => __('app.auth.student_not_current'),
                 default => __('app.auth.student_lookup_failed'),
             };

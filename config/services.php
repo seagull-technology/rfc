@@ -50,11 +50,17 @@ return [
         'send_modee_headers' => filter_var(env('GSB_SEND_MODEE_HEADERS', true), FILTER_VALIDATE_BOOL),
         'send_ibm_headers' => filter_var(env('GSB_SEND_IBM_HEADERS', false), FILTER_VALIDATE_BOOL),
         'services' => [
-            'mohe_sanad' => [
-                'enabled' => filter_var(env('GSB_MOHE_SANAD_ENABLED', env('GSB_ENABLED', false)), FILTER_VALIDATE_BOOL),
-                'base_url' => env('GSB_MOHE_SANAD_BASE_URL', env('GSB_BASE_URL', 'https://api-gateway.stg.gsb.gov.jo:9443')),
-                'path' => env('GSB_MOHE_SANAD_PATH', '/porg-g2g/g2g/newstandard/api/MoheStandard'),
-                'method' => env('GSB_MOHE_SANAD_METHOD', 'POST'),
+            'mohe_undergraduate_students' => [
+                'enabled' => filter_var(env(
+                    'GSB_MOHE_UNDERGRADUATE_ENABLED',
+                    env('GSB_MOHE_SANAD_ENABLED', env('GSB_ENABLED', false)),
+                ), FILTER_VALIDATE_BOOL),
+                'base_url' => env(
+                    'GSB_MOHE_UNDERGRADUATE_BASE_URL',
+                    env('GSB_MOHE_SANAD_BASE_URL', env('GSB_BASE_URL', 'https://api-gateway.stg.gsb.gov.jo:9443')),
+                ),
+                'path' => env('GSB_MOHE_UNDERGRADUATE_PATH', '/porg-g2g/g2g/api/LastSemester'),
+                'method' => env('GSB_MOHE_UNDERGRADUATE_METHOD', 'POST'),
             ],
             'cspd_personal_info_masked' => [
                 'enabled' => filter_var(env('GSB_CSPD_MASKED_ENABLED', env('GSB_ENABLED', false)), FILTER_VALIDATE_BOOL),
@@ -88,17 +94,35 @@ return [
             ],
             'signflow_v2' => [
                 'enabled' => filter_var(env('GSB_SIGNFLOW_V2_ENABLED', env('GSB_ENABLED', false)), FILTER_VALIDATE_BOOL),
-                'base_url' => env('GSB_SIGNFLOW_V2_BASE_URL', env('GSB_BASE_URL', 'https://api-gateway.g2b.gsb.gov.jo:9443')),
-                'path' => env('GSB_SIGNFLOW_V2_PATH', ''),
+                'base_url' => env('GSB_SIGNFLOW_V2_BASE_URL', env('GSB_BASE_URL', 'https://api-gateway.stg.gsb.gov.jo:9443')),
+                'path' => env('GSB_SIGNFLOW_V2_PATH', '/porg-g2g/g2g/signflow/v2'),
                 'method' => env('GSB_SIGNFLOW_V2_METHOD', 'POST'),
+                'send_modee_headers' => false,
+                'send_ibm_headers' => true,
+                'accept' => 'text/plain',
+                'client_id' => env('SANAD_CLIENT_ID', env('GSB_CLIENT_ID')),
+                'client_secret' => env('SANAD_CLIENT_SECRET', env('GSB_CLIENT_SECRET')),
             ],
             'signflow_v2_open' => [
                 'enabled' => filter_var(env('GSB_SIGNFLOW_V2_OPEN_ENABLED', env('GSB_ENABLED', false)), FILTER_VALIDATE_BOOL),
-                'base_url' => env('GSB_SIGNFLOW_V2_OPEN_BASE_URL', env('GSB_BASE_URL', 'https://api-gateway.g2b.gsb.gov.jo:9443')),
-                'path' => env('GSB_SIGNFLOW_V2_OPEN_PATH', ''),
+                'base_url' => env('GSB_SIGNFLOW_V2_OPEN_BASE_URL', env('GSB_BASE_URL', 'https://api-gateway.stg.gsb.gov.jo:9443')),
+                'path' => env('GSB_SIGNFLOW_V2_OPEN_PATH', '/porg-g2g/g2g/signflow/v2'),
                 'method' => env('GSB_SIGNFLOW_V2_OPEN_METHOD', 'POST'),
+                'send_modee_headers' => false,
+                'send_ibm_headers' => true,
+                'accept' => 'text/plain',
+                'client_id' => env('SANAD_CLIENT_ID', env('GSB_CLIENT_ID')),
+                'client_secret' => env('SANAD_CLIENT_SECRET', env('GSB_CLIENT_SECRET')),
             ],
         ],
+    ],
+
+    'sanad' => [
+        'authorization_url' => env('SANAD_AUTHORIZATION_URL', ''),
+        'client_id' => env('SANAD_CLIENT_ID', env('GSB_CLIENT_ID')),
+        'client_secret' => env('SANAD_CLIENT_SECRET', env('GSB_CLIENT_SECRET')),
+        'redirect_uri' => env('SANAD_REDIRECT_URI', ''),
+        'scope' => env('SANAD_SCOPE', 'openid'),
     ],
 
     'otp_debug_fallback' => filter_var(env('OTP_DEBUG_FALLBACK', false), FILTER_VALIDATE_BOOL),

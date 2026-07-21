@@ -38,10 +38,12 @@ class MitEstablishmentService
         $response = $this->client->request('mit_services', ['nationalNo' => $nationalNumber]);
 
         if (! ($response['ok'] ?? false) || ! is_array($response['json'] ?? null)) {
+            $status = $response['status'] ?? null;
+
             return [
                 'ok' => false,
-                'error' => $response['error'] ?? 'LOOKUP_FAILED',
-                'status' => $response['status'] ?? null,
+                'error' => $status === 404 ? 'NOT_FOUND' : ($response['error'] ?? 'LOOKUP_FAILED'),
+                'status' => $status,
             ];
         }
 

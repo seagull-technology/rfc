@@ -1,0 +1,34 @@
+meta {
+  name: Sign Hash
+  type: http
+  seq: 7
+}
+
+post {
+  url: https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/signflow/v2/sign
+  body: json
+  auth: none
+}
+
+headers {
+  X-IBM-Client-Id: {{sanad_client_id}}
+  X-IBM-Client-Secret: {{sanad_client_secret}}
+  Accept: text/plain
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "access_token": "{{sanad_access_token}}",
+    "hash": "{{sanad_hash}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Signs the provider-supported document hash. Keep the source document,
+  hash algorithm, and returned signature together in the application audit trail.
+}

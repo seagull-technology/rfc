@@ -8,6 +8,7 @@ use App\Http\Controllers\Auth\OtpController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\ResetPasswordController;
+use App\Http\Controllers\Auth\SanadLoginController;
 use App\Http\Controllers\Auth\StudentLookupController;
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\Admin\AdminDashboardController;
@@ -54,6 +55,12 @@ Route::group([
     Route::middleware('guest')->group(function (): void {
         Route::get('/login', [LoginController::class, 'create'])->name('login');
         Route::post('/login', [LoginController::class, 'store'])->name('login.store');
+        Route::get('/login/sanad', [SanadLoginController::class, 'redirectToProvider'])
+            ->middleware('throttle:10,1')
+            ->name('sanad.redirect');
+        Route::get('/login/sanad/callback', [SanadLoginController::class, 'callback'])
+            ->middleware('throttle:20,1')
+            ->name('sanad.callback');
         Route::get('/forgot-password', [ForgotPasswordController::class, 'create'])->name('password.request');
         Route::post('/forgot-password', [ForgotPasswordController::class, 'store'])->name('password.email');
         Route::get('/reset-password/{token}', [ResetPasswordController::class, 'create'])->name('password.reset');
@@ -327,6 +334,9 @@ Route::group([
                 Route::post('/integrations/mohe-student-test', [IntegrationDiagnosticsController::class, 'lookupMoheStudent'])
                     ->middleware('permission:settings.manage')
                     ->name('integrations.mohe-student-test');
+                Route::post('/integrations/sanad-status-test', [IntegrationDiagnosticsController::class, 'lookupSanadStatus'])
+                    ->middleware('permission:settings.manage')
+                    ->name('integrations.sanad-status-test');
 
                 Route::get('/nationalities', [NationalityLookupController::class, 'index'])
                     ->middleware('permission:settings.manage')

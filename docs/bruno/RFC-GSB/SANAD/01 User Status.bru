@@ -1,0 +1,27 @@
+meta {
+  name: User Status
+  type: http
+  seq: 1
+}
+
+get {
+  url: https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/signflow/v2/info/status/{{test_national_no}}
+  body: none
+  auth: none
+}
+
+headers {
+  X-IBM-Client-Id: {{sanad_client_id}}
+  X-IBM-Client-Secret: {{sanad_client_secret}}
+  Accept: text/plain
+  Content-Type: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  SignFlow.v2.Open status lookup. Configure a 10-digit test_national_no
+  and the SANAD product credentials in the local STG environment.
+}

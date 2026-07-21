@@ -1,0 +1,37 @@
+meta {
+  name: Exchange Authorization Code
+  type: http
+  seq: 2
+}
+
+post {
+  url: https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/signflow/v2/token
+  body: json
+  auth: none
+}
+
+headers {
+  X-IBM-Client-Id: {{sanad_client_id}}
+  X-IBM-Client-Secret: {{sanad_client_secret}}
+  Accept: text/plain
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "client_id": "{{sanad_client_id}}",
+    "client_secret": "{{sanad_client_secret}}",
+    "code": "{{sanad_authorization_code}}",
+    "redirect_uri": "{{sanad_redirect_uri}}",
+    "verifier": "{{sanad_pkce_verifier}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Exchanges a short-lived SANAD authorization code using the matching
+  PKCE verifier and the exact redirect URI registered with the provider.
+}

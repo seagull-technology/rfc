@@ -20,25 +20,60 @@ class GsbClient
     ): array {
         $config = $this->serviceConfig($service);
 
+        return $this->performRequest(
+            $service,
+            (string) ($config['path'] ?? ''),
+            $payload,
+            $method,
+            $pathParameters,
+        );
+    }
+
+    /**
+     * Send a request to another operation exposed by the same GSB product.
+     *
+     * @return array<string, mixed>
+     */
+    public function requestPath(
+        string $service,
+        string $path,
+        array $payload = [],
+        ?string $method = null,
+        array $pathParameters = [],
+    ): array {
+        return $this->performRequest($service, $path, $payload, $method, $pathParameters);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function performRequest(
+        string $service,
+        string $path,
+        array $payload,
+        ?string $method,
+        array $pathParameters,
+    ): array {
+        $config = $this->serviceConfig($service);
+
         if (! $this->isEnabled($service)) {
             return $this->failure($service, 'SERVICE_DISABLED');
         }
 
-        if (! $this->hasPath($service)) {
+        if (! filled($path)) {
             return $this->failure($service, 'SERVICE_PATH_MISSING');
         }
 
-        if (! $this->credentialsConfigured()) {
+        if (! $this->credentialsConfigured($service)) {
             return $this->failure($service, 'MISSING_CREDENTIALS');
         }
 
-        $url = $this->url($service, $pathParameters);
+        $url = $this->urlFromPath($service, $path, $pathParameters);
         $method = strtoupper($method ?: (string) ($config['method'] ?? 'POST'));
 
         try {
             $pendingRequest = Http::withOptions($this->httpOptions($url))
-                ->withHeaders($this->headers())
-                ->acceptJson()
+                ->withHeaders($this->headers($service))
                 ->asJson()
                 ->timeout((int) config('services.gsb.timeout', 25))
                 ->retry(2, 200, throw: false);
@@ -105,13 +140,19 @@ class GsbClient
         return filled(data_get($this->serviceConfig($service), 'path'));
     }
 
-    public function credentialsConfigured(): bool
+    public function credentialsConfigured(?string $service = null): bool
     {
-        if (! (bool) config('services.gsb.send_modee_headers', true)) {
+        $serviceConfig = $service ? $this->serviceConfig($service) : [];
+        $sendModeeHeaders = (bool) ($serviceConfig['send_modee_headers']
+            ?? config('services.gsb.send_modee_headers', true));
+        $sendIbmHeaders = (bool) ($serviceConfig['send_ibm_headers']
+            ?? config('services.gsb.send_ibm_headers', false));
+
+        if (! $sendModeeHeaders && ! $sendIbmHeaders) {
             return true;
         }
 
-        return filled(config('services.gsb.client_id')) && filled(config('services.gsb.client_secret'));
+        return filled($this->clientId($serviceConfig)) && filled($this->clientSecret($serviceConfig));
     }
 
     /**
@@ -127,8 +168,8 @@ class GsbClient
                     'key' => $key,
                     'enabled' => $this->isEnabled($key),
                     'path_configured' => filled($config['path'] ?? null),
-                    'credentials_configured' => $this->credentialsConfigured(),
-                    'callable' => $this->isEnabled($key) && $this->hasPath($key) && $this->credentialsConfigured(),
+                    'credentials_configured' => $this->credentialsConfigured($key),
+                    'callable' => $this->isEnabled($key) && $this->hasPath($key) && $this->credentialsConfigured($key),
                     'method' => strtoupper((string) ($config['method'] ?? 'POST')),
                     'base_url' => (string) ($config['base_url'] ?? config('services.gsb.base_url')),
                     'path' => (string) ($config['path'] ?? ''),
@@ -183,21 +224,25 @@ class GsbClient
     /**
      * @return array<string, string>
      */
-    private function headers(): array
+    private function headers(string $service): array
     {
+        $serviceConfig = $this->serviceConfig($service);
         $headers = [
-            'Accept' => 'application/json',
+            'Accept' => (string) ($serviceConfig['accept'] ?? 'application/json'),
         ];
+        $clientId = $this->clientId($serviceConfig);
+        $clientSecret = $this->clientSecret($serviceConfig);
+        $sendModeeHeaders = (bool) ($serviceConfig['send_modee_headers']
+            ?? config('services.gsb.send_modee_headers', true));
+        $sendIbmHeaders = (bool) ($serviceConfig['send_ibm_headers']
+            ?? config('services.gsb.send_ibm_headers', false));
 
-        $clientId = (string) config('services.gsb.client_id');
-        $clientSecret = (string) config('services.gsb.client_secret');
-
-        if ((bool) config('services.gsb.send_modee_headers', true)) {
+        if ($sendModeeHeaders) {
             $headers['X-MODEE-Client-Id'] = $clientId;
             $headers['X-MODEE-Client-Secret'] = $clientSecret;
         }
 
-        if ((bool) config('services.gsb.send_ibm_headers', false)) {
+        if ($sendIbmHeaders) {
             $headers['X-IBM-Client-Id'] = $clientId;
             $headers['X-IBM-Client-Secret'] = $clientSecret;
         }
@@ -213,6 +258,18 @@ class GsbClient
         }
 
         return $headers;
+    }
+
+    /** @param array<string, mixed> $serviceConfig */
+    private function clientId(array $serviceConfig): string
+    {
+        return trim((string) ($serviceConfig['client_id'] ?? config('services.gsb.client_id')));
+    }
+
+    /** @param array<string, mixed> $serviceConfig */
+    private function clientSecret(array $serviceConfig): string
+    {
+        return trim((string) ($serviceConfig['client_secret'] ?? config('services.gsb.client_secret')));
     }
 
     /**
@@ -244,7 +301,12 @@ class GsbClient
     private function url(string $service, array $pathParameters = []): string
     {
         $config = $this->serviceConfig($service);
-        $path = (string) ($config['path'] ?? '');
+        return $this->urlFromPath($service, (string) ($config['path'] ?? ''), $pathParameters);
+    }
+
+    private function urlFromPath(string $service, string $path, array $pathParameters = []): string
+    {
+        $config = $this->serviceConfig($service);
 
         foreach ($pathParameters as $key => $value) {
             $path = str_replace('{'.$key.'}', rawurlencode((string) $value), $path);
@@ -290,6 +352,10 @@ class GsbClient
         }
 
         $value = (string) $value;
+
+        if (preg_match('/(token|secret|password|authorization|code|verifier|hash|signature)/i', $key) === 1) {
+            return '[redacted]';
+        }
 
         if (preg_match('/(national|identity|id|no|number|phone|mobile)/i', $key) !== 1) {
             return mb_strlen($value) > 80 ? mb_substr($value, 0, 77).'...' : $value;

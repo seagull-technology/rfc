@@ -14,15 +14,32 @@ Before running the deployment:
    GSB_ENVIRONMENT=stg
    GSB_BASE_URL=https://api-gateway.stg.gsb.gov.jo:9443
    GSB_MOHE_SANAD_ENABLED=true
-   GSB_MOHE_SANAD_PATH=/porg-g2g/g2g/newstandard/api/MoheStandard
+   GSB_MOHE_UNDERGRADUATE_ENABLED=true
+   GSB_MOHE_UNDERGRADUATE_PATH=/porg-g2g/g2g/api/LastSemester
+   GSB_MOHE_UNDERGRADUATE_METHOD=POST
    GSB_CCD_COMPANY_ENABLED=true
    GSB_CCD_COMPANY_PATH=/porg-g2g/g2g/api/companies/CompanybyNo/{nationalNo}
    GSB_CCD_COMPANY_METHOD=GET
    GSB_MIT_SERVICES_ENABLED=true
    GSB_MIT_SERVICES_PATH=/porg-g2g/g2g/api/Registry/getIndividualRegistry
    GSB_MIT_SERVICES_METHOD=POST
+   GSB_SIGNFLOW_V2_ENABLED=true
+   GSB_SIGNFLOW_V2_PATH=/porg-g2g/g2g/signflow/v2
+   GSB_SIGNFLOW_V2_METHOD=POST
+   GSB_SIGNFLOW_V2_OPEN_ENABLED=true
+   GSB_SIGNFLOW_V2_OPEN_PATH=/porg-g2g/g2g/signflow/v2
+   GSB_SIGNFLOW_V2_OPEN_METHOD=POST
+
+   Add SANAD_AUTHORIZATION_URL only after MODEE supplies the browser
+   authorization endpoint and registers the RFC callback URL. Then set:
+
+   SANAD_AUTHORIZATION_URL=<provider URL>
+   SANAD_REDIRECT_URI=http://10.0.41.97/ar/login/sanad/callback
+   SANAD_SCOPE=openid
 
 4. Keep the real GSB_CLIENT_ID and GSB_CLIENT_SECRET values already stored in .env.
+   Store SANAD_CLIENT_ID and SANAD_CLIENT_SECRET separately when the SignFlow
+   product subscription uses different IBM credentials.
 5. Confirm C: has enough free space for the new release and one full application backup.
 6. Run PowerShell as Administrator.
 

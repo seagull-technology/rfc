@@ -1,0 +1,28 @@
+meta {
+  name: User Info
+  type: http
+  seq: 4
+}
+
+post {
+  url: https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/signflow/v2/info/user
+  body: json
+  auth: none
+}
+
+headers {
+  X-IBM-Client-Id: {{sanad_client_id}}
+  X-IBM-Client-Secret: {{sanad_client_secret}}
+  Accept: text/plain
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "access_token": "{{sanad_access_token}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+}

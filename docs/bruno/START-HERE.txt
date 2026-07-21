@@ -7,10 +7,12 @@ RFC GSB BRUNO COLLECTION - V3
 4. Open the STG environment configuration and fill:
    - gsb_client_id
    - gsb_client_secret
+   - sanad_client_id
+   - sanad_client_secret
    - test_national_no (10 digits for MOHE)
    - test_birth_date (YYYY-MM-DD, for example 2000-01-31)
    - test_company_national_no (numeric and up to 10 digits)
-5. For students, open MOHE > Lookup Student - Mohe Standard.
+5. For students, open MOHE > Lookup Undergraduate Student - Last Semester.
 6. For companies, open COMPANIES and test both requests:
    - Lookup Company - CCD
    - Lookup Individual Registry - MIT
@@ -18,5 +20,14 @@ RFC GSB BRUNO COLLECTION - V3
 The RFC application checks CCD first and then MIT when CCD has no usable
 company record. Testing both requests directly helps identify which registry
 contains a specific establishment.
+
+7. For SANAD, open SANAD and start with User Status. This confirms the
+   SignFlow.v2.Open subscription without needing a browser login.
+8. Configure authorization codes, tokens, PKCE values, and hashes only for
+   the individual SANAD request being tested. Never save real values in Git.
+
+The SignFlow contracts supplied by MODEE do not publish the SANAD browser
+authorization URL. Obtain that URL and register the RFC callback URL before
+enabling the application's Login with SANAD button.
 
 Never place real credentials directly in request files or screenshots.

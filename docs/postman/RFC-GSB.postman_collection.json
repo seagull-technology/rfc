@@ -14,7 +14,7 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "const requiredVariables = ['gsb_base_url', 'gsb_client_id', 'gsb_client_secret'];",
+          "const requiredVariables = ['gsb_base_url'];",
           "const missingVariables = requiredVariables.filter((name) => !String(pm.variables.get(name) || '').trim());",
           "if (missingVariables.length) {",
           "    throw new Error(`Missing required Postman variables: ${missingVariables.join(', ')}`);",
@@ -25,11 +25,11 @@
   ],
   "item": [
     {
-      "name": "MOHE - Student Verification",
-      "description": "Ministry of Higher Education student lookup through Mohe-Standard-Api v1.0.0.",
+      "name": "MOHE - Undergraduate Student Verification",
+      "description": "Ministry of Higher Education undergraduate lookup through MOHE-Standard-UndergraduateStudents-API v1.0.3.",
       "item": [
         {
-          "name": "Lookup Student - Mohe Standard",
+          "name": "Lookup Undergraduate Student - Last Semester",
           "event": [
             {
               "listen": "prerequest",
@@ -38,6 +38,10 @@
                 "exec": [
                   "const nationalNo = String(pm.variables.get('test_national_no') || '').trim();",
                   "const birthDate = String(pm.variables.get('test_birth_date') || '').trim();",
+                  "const credentials = ['gsb_client_id', 'gsb_client_secret'].filter((name) => !String(pm.variables.get(name) || '').trim());",
+                  "if (credentials.length) {",
+                  "    throw new Error(`Missing required Postman variables: ${credentials.join(', ')}`);",
+                  "}",
                   "if (!/^\\d{10}$/.test(nationalNo)) {",
                   "    throw new Error('test_national_no must contain exactly 10 digits.');",
                   "}",
@@ -101,8 +105,168 @@
                 }
               }
             },
-            "url": "{{gsb_base_url}}{{mohe_standard_path}}",
-            "description": "POST Mohe-Standard-Api v1.0.0. Both nationalNo and birthDate are required by the provider's OpenAPI contract."
+            "url": "{{gsb_base_url}}{{mohe_undergraduate_last_semester_path}}",
+            "description": "POST MOHE-Standard-UndergraduateStudents-API v1.0.3 LastSemester. Both nationalNo and birthDate are required by the provider's OpenAPI contract."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "SANAD - SignFlow",
+      "description": "SignFlow.v2 and SignFlow.v2.Open operations from the MODEE contracts. Both API products must be subscribed.",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const requiredVariables = ['sanad_client_id', 'sanad_client_secret'];",
+              "const missingVariables = requiredVariables.filter((name) => !String(pm.variables.get(name) || '').trim());",
+              "if (missingVariables.length) {",
+              "    throw new Error(`Missing SANAD variables: ${missingVariables.join(', ')}`);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "User Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-IBM-Client-Id", "value": "{{sanad_client_id}}" },
+              { "key": "X-IBM-Client-Secret", "value": "{{sanad_client_secret}}" },
+              { "key": "Accept", "value": "text/plain" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{gsb_base_url}}{{signflow_path}}/info/status/{{test_national_no}}",
+            "description": "SignFlow.v2.Open status lookup. This is the first staging connectivity test."
+          },
+          "response": []
+        },
+        {
+          "name": "Exchange Authorization Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-IBM-Client-Id", "value": "{{sanad_client_id}}" },
+              { "key": "X-IBM-Client-Secret", "value": "{{sanad_client_secret}}" },
+              { "key": "Accept", "value": "text/plain" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{sanad_client_id}}\",\n  \"client_secret\": \"{{sanad_client_secret}}\",\n  \"code\": \"{{sanad_authorization_code}}\",\n  \"redirect_uri\": \"{{sanad_redirect_uri}}\",\n  \"verifier\": \"{{sanad_pkce_verifier}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{gsb_base_url}}{{signflow_path}}/token"
+          },
+          "response": []
+        },
+        {
+          "name": "Introspect Access Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-IBM-Client-Id", "value": "{{sanad_client_id}}" },
+              { "key": "X-IBM-Client-Secret", "value": "{{sanad_client_secret}}" },
+              { "key": "Accept", "value": "text/plain" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"access_token\": \"{{sanad_access_token}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{gsb_base_url}}{{signflow_path}}/introspect"
+          },
+          "response": []
+        },
+        {
+          "name": "User Info",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-IBM-Client-Id", "value": "{{sanad_client_id}}" },
+              { "key": "X-IBM-Client-Secret", "value": "{{sanad_client_secret}}" },
+              { "key": "Accept", "value": "text/plain" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"access_token\": \"{{sanad_access_token}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{gsb_base_url}}{{signflow_path}}/info/user"
+          },
+          "response": []
+        },
+        {
+          "name": "Certificate",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-IBM-Client-Id", "value": "{{sanad_client_id}}" },
+              { "key": "X-IBM-Client-Secret", "value": "{{sanad_client_secret}}" },
+              { "key": "Accept", "value": "text/plain" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"access_token\": \"{{sanad_access_token}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{gsb_base_url}}{{signflow_path}}/info/x509"
+          },
+          "response": []
+        },
+        {
+          "name": "Signature Info",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-IBM-Client-Id", "value": "{{sanad_client_id}}" },
+              { "key": "X-IBM-Client-Secret", "value": "{{sanad_client_secret}}" },
+              { "key": "Accept", "value": "text/plain" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"access_token\": \"{{sanad_access_token}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{gsb_base_url}}{{signflow_path}}/info/signature"
+          },
+          "response": []
+        },
+        {
+          "name": "Sign Hash",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-IBM-Client-Id", "value": "{{sanad_client_id}}" },
+              { "key": "X-IBM-Client-Secret", "value": "{{sanad_client_secret}}" },
+              { "key": "Accept", "value": "text/plain" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"access_token\": \"{{sanad_access_token}}\",\n  \"hash\": \"{{sanad_hash}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{gsb_base_url}}{{signflow_path}}/sign"
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Access Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-IBM-Client-Id", "value": "{{sanad_client_id}}" },
+              { "key": "X-IBM-Client-Secret", "value": "{{sanad_client_secret}}" },
+              { "key": "Accept", "value": "text/plain" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"grant_type\": \"refresh_token\",\n  \"refresh_token\": \"{{sanad_refresh_token}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{gsb_base_url}}{{signflow_path}}/refresh"
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-IBM-Client-Id", "value": "{{sanad_client_id}}" },
+              { "key": "X-IBM-Client-Secret", "value": "{{sanad_client_secret}}" },
+              { "key": "Accept", "value": "text/plain" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"access_token\": \"{{sanad_access_token}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{gsb_base_url}}{{signflow_path}}/logout"
           },
           "response": []
         }
@@ -116,8 +280,13 @@
       "type": "string"
     },
     {
-      "key": "mohe_standard_path",
-      "value": "/porg-g2g/g2g/newstandard/api/MoheStandard",
+      "key": "mohe_undergraduate_last_semester_path",
+      "value": "/porg-g2g/g2g/api/LastSemester",
+      "type": "string"
+    },
+    {
+      "key": "signflow_path",
+      "value": "/porg-g2g/g2g/signflow/v2",
       "type": "string"
     }
   ]

@@ -1,11 +1,11 @@
 meta {
-  name: Lookup Student - Mohe Standard
+  name: Lookup Undergraduate Student - Last Semester
   type: http
   seq: 1
 }
 
 post {
-  url: https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/newstandard/api/MoheStandard
+  url: https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/LastSemester
   body: json
   auth: none
 }
@@ -29,7 +29,8 @@ assert {
 }
 
 docs {
-  MOHE Standard student verification through the Government Service Bus staging gateway.
+  MOHE Standard Undergraduate Students API v1.0.3, LastSemester operation,
+  through the Government Service Bus staging gateway.
 
   Select the STG environment before sending and configure:
   - gsb_client_id

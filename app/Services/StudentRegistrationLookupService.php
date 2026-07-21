@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Services\Gsb\CspdPersonalInfoService;
-use App\Services\Gsb\MoheSanadService;
+use App\Services\Gsb\MoheUndergraduateStudentsService;
 use Carbon\Carbon;
 use Throwable;
 
@@ -12,10 +12,9 @@ class StudentRegistrationLookupService
     public const SESSION_KEY = 'student_registration_lookup';
 
     public function __construct(
-        private readonly MoheSanadService $moheSanadService,
+        private readonly MoheUndergraduateStudentsService $moheUndergraduateStudentsService,
         private readonly CspdPersonalInfoService $cspdPersonalInfoService,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array<string, mixed>
@@ -69,14 +68,14 @@ class StudentRegistrationLookupService
             $sources[] = (string) data_get($personLookup, 'meta.source', 'gsb_cspd_personal_info_masked');
         }
 
-        if ($this->moheSanadService->isRunnable()) {
-            $educationLookup = $this->moheSanadService->lookupCurrentStudent($nationalId, $birthDate);
+        if ($this->moheUndergraduateStudentsService->isRunnable()) {
+            $educationLookup = $this->moheUndergraduateStudentsService->lookupCurrentStudent($nationalId, $birthDate);
 
             if (! ($educationLookup['ok'] ?? false)) {
                 return [
                     'ok' => false,
                     'error' => ($educationLookup['error'] ?? null) === 'NOT_FOUND'
-                        ? 'NOT_CURRENT_STUDENT'
+                        ? 'STUDENT_NOT_FOUND'
                         : ($educationLookup['error'] ?? 'EDUCATION_LOOKUP_FAILED'),
                     'technical_message' => $educationLookup['technical_message'] ?? null,
                 ];
@@ -93,7 +92,7 @@ class StudentRegistrationLookupService
             }
 
             $data = $this->mergeFilled($data, (array) ($educationLookup['data'] ?? []));
-            $sources[] = (string) data_get($educationLookup, 'meta.source', 'gsb_mohe_sanad');
+            $sources[] = (string) data_get($educationLookup, 'meta.source', 'gsb_mohe_undergraduate_last_semester');
         }
 
         return [
@@ -123,7 +122,7 @@ class StudentRegistrationLookupService
 
         $source = (string) data_get($lookupState, 'meta.source', '');
 
-        return ! str_contains($source, 'gsb_mohe_sanad')
+        return ! str_contains($source, 'gsb_mohe_undergraduate')
             || $this->isCurrentlyStudying(data_get($lookupState, 'data.student_status'));
     }
 
@@ -185,13 +184,13 @@ class StudentRegistrationLookupService
         $status = preg_replace('/[\x{200B}-\x{200D}\x{FEFF}]/u', '', (string) $status) ?? '';
         $status = preg_replace('/\s+/u', ' ', trim($status)) ?? '';
 
-        return $status === 'على مقاعد الدراسة';
+        return in_array($status, ['على مقاعد الدراسة', 'منتظم'], true);
     }
 
     private function shouldUseLocalLookup(): bool
     {
         return ! $this->cspdPersonalInfoService->isRunnable()
-            && ! $this->moheSanadService->isRunnable();
+            && ! $this->moheUndergraduateStudentsService->isRunnable();
     }
 
     /**

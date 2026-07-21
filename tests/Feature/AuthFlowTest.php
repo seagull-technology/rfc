@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\Entity;
+use App\Models\Group;
 use App\Models\User;
 use App\Notifications\RegistrationCompletionRequestedNotification;
+use App\Services\SmsService;
 use App\Services\StudentRegistrationLookupService;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -14,6 +16,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\ViewErrorBag;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
@@ -116,21 +119,21 @@ class AuthFlowTest extends TestCase
         ]);
     }
 
-    public function test_student_lookup_uses_mohe_sanad_when_gsb_is_configured(): void
+    public function test_student_lookup_uses_mohe_undergraduate_last_semester_when_gsb_is_configured(): void
     {
         $this->seed(AccessControlSeeder::class);
 
-        Cache::forget('gsb:mohe_sanad:current:9876543213:1998-10-03');
+        Cache::forget('gsb:mohe_undergraduate:last_semester:9876543213:1998-10-03');
 
         config()->set('services.gsb.enabled', true);
         config()->set('services.gsb.client_id', 'client-id');
         config()->set('services.gsb.client_secret', 'client-secret');
-        config()->set('services.gsb.services.mohe_sanad.enabled', true);
-        config()->set('services.gsb.services.mohe_sanad.base_url', 'https://api-gateway.stg.gsb.gov.jo:9443');
-        config()->set('services.gsb.services.mohe_sanad.path', '/porg-g2g/g2g/newstandard/api/MoheStandard');
+        config()->set('services.gsb.services.mohe_undergraduate_students.enabled', true);
+        config()->set('services.gsb.services.mohe_undergraduate_students.base_url', 'https://api-gateway.stg.gsb.gov.jo:9443');
+        config()->set('services.gsb.services.mohe_undergraduate_students.path', '/porg-g2g/g2g/api/LastSemester');
 
         Http::fake([
-            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/newstandard/api/MoheStandard' => Http::response([
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/LastSemester' => Http::response([
                 'code' => 200,
                 'message' => 'Success',
                 'data' => [
@@ -139,6 +142,7 @@ class AuthFlowTest extends TestCase
                         'BIRTH_DATE' => '03-OCT-98',
                         'INSTITUTE_NAME' => 'جامعة سابقة',
                         'major' => 'تخصص سابق',
+                        'STATUS_CODE' => '7',
                         'student_status' => 'خريج',
                     ],
                     [
@@ -147,9 +151,11 @@ class AuthFlowTest extends TestCase
                         'gender_desc' => 'ذكر',
                         'NATIONALITY' => 'أردني',
                         'INSTITUTE_NAME' => 'جامعة تجريبية',
-                        'S_MAJOR_NAME' => 'هندسة برمجيات',
+                        'major' => 'ذكاء الاعمال',
+                        'S_MAJOR_NAME' => 'اقتصاد',
                         'degree' => 'البكالوريوس',
-                        'student_status' => 'على مقاعد الدراسة',
+                        'STATUS_CODE' => '1',
+                        'student_status' => 'منتظم',
                         'STUDENT_PHONE' => '799999999',
                         'STUDENT_ID' => 'TEST-2018-001',
                         'UNIVERSITY_TYPE_NAME' => 'خاصة',
@@ -172,30 +178,30 @@ class AuthFlowTest extends TestCase
             ->assertJsonPath('data.gender', 'male')
             ->assertJsonPath('data.nationality', 'أردني')
             ->assertJsonPath('data.university_name', 'جامعة تجريبية')
-            ->assertJsonPath('data.major', 'هندسة برمجيات')
+            ->assertJsonPath('data.major', 'ذكاء الاعمال')
             ->assertJsonPath('data.student_phone', '0799999999')
             ->assertJsonPath('data.student_id', 'TEST-2018-001');
 
-        Http::assertSent(fn ($request): bool => $request->url() === 'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/newstandard/api/MoheStandard'
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/LastSemester'
             && $request['nationalNo'] === '9876543213'
             && $request['birthDate'] === '1998-10-03');
     }
 
-    public function test_student_lookup_rejects_mohe_graduate_record(): void
+    public function test_student_lookup_rejects_mohe_undergraduate_graduate_record(): void
     {
         $this->seed(AccessControlSeeder::class);
 
-        Cache::forget('gsb:mohe_sanad:current:9876543214:1998-10-03');
+        Cache::forget('gsb:mohe_undergraduate:last_semester:9876543214:1998-10-03');
 
         config()->set('services.gsb.enabled', true);
         config()->set('services.gsb.client_id', 'client-id');
         config()->set('services.gsb.client_secret', 'client-secret');
-        config()->set('services.gsb.services.mohe_sanad.enabled', true);
-        config()->set('services.gsb.services.mohe_sanad.base_url', 'https://api-gateway.stg.gsb.gov.jo:9443');
-        config()->set('services.gsb.services.mohe_sanad.path', '/porg-g2g/g2g/newstandard/api/MoheStandard');
+        config()->set('services.gsb.services.mohe_undergraduate_students.enabled', true);
+        config()->set('services.gsb.services.mohe_undergraduate_students.base_url', 'https://api-gateway.stg.gsb.gov.jo:9443');
+        config()->set('services.gsb.services.mohe_undergraduate_students.path', '/porg-g2g/g2g/api/LastSemester');
 
         Http::fake([
-            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/newstandard/api/MoheStandard' => Http::response([
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/LastSemester' => Http::response([
                 'code' => 200,
                 'message' => 'Success',
                 'data' => [[
@@ -203,6 +209,7 @@ class AuthFlowTest extends TestCase
                     'BIRTH_DATE' => '03-OCT-98',
                     'INSTITUTE_NAME' => 'جامعة تجريبية',
                     'major' => 'هندسة البرمجيات',
+                    'STATUS_CODE' => '7',
                     'student_status' => 'خريج',
                 ]],
             ], 200),
@@ -220,6 +227,40 @@ class AuthFlowTest extends TestCase
         $this->assertNull(session(StudentRegistrationLookupService::SESSION_KEY));
 
         Http::assertSent(fn ($request): bool => $request['birthDate'] === '1998-10-03');
+    }
+
+    public function test_student_lookup_reports_no_matching_student_separately_from_graduate_status(): void
+    {
+        $this->seed(AccessControlSeeder::class);
+
+        Cache::forget('gsb:mohe_undergraduate:last_semester:9876543215:1998-10-03');
+
+        config()->set('services.gsb.enabled', true);
+        config()->set('services.gsb.client_id', 'client-id');
+        config()->set('services.gsb.client_secret', 'client-secret');
+        config()->set('services.gsb.services.mohe_undergraduate_students.enabled', true);
+        config()->set('services.gsb.services.mohe_undergraduate_students.base_url', 'https://api-gateway.stg.gsb.gov.jo:9443');
+        config()->set('services.gsb.services.mohe_undergraduate_students.path', '/porg-g2g/g2g/api/LastSemester');
+
+        Http::fake([
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/LastSemester' => Http::response([
+                'code' => 404,
+                'message' => 'No data found',
+                'data' => [],
+            ], 404),
+        ]);
+
+        $response = $this->post(route('register.student.lookup'), [
+            'national_id' => '9876543215',
+            'birth_date' => '03/10/1998',
+        ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error', 'STUDENT_NOT_FOUND')
+            ->assertJsonPath('message', 'No student matched the entered national ID and date of birth.');
+
+        $this->assertNull(session(StudentRegistrationLookupService::SESSION_KEY));
     }
 
     public function test_pending_student_user_cannot_sign_in_before_admin_approval(): void
@@ -457,6 +498,28 @@ class AuthFlowTest extends TestCase
             && $request['nationalNo'] === '66677');
     }
 
+    public function test_company_lookup_reports_unknown_national_number_as_not_found(): void
+    {
+        Cache::forget('gsb:ccd_company:99999');
+        Cache::forget('gsb:mit_individual_registry:99999');
+
+        $this->configureCompanyGsbServices();
+
+        Http::fake([
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/companies/CompanybyNo/99999' => Http::response([], 404),
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getIndividualRegistry' => Http::response([], 404),
+        ]);
+
+        $this->postJson(route('register.company.lookup'), [
+            'registration_number' => '99999',
+        ])->assertUnprocessable()
+            ->assertJsonPath('error', 'NOT_FOUND')
+            ->assertJsonPath(
+                'message',
+                'The establishment national number is incorrect, or no company or establishment is registered under it.',
+            );
+    }
+
     public function test_company_lookup_rejects_non_numeric_or_more_than_ten_digit_numbers(): void
     {
         $this->postJson(route('register.company.lookup'), [
@@ -496,7 +559,7 @@ class AuthFlowTest extends TestCase
         $this->seed(AccessControlSeeder::class);
         Mail::fake();
 
-        $group = \App\Models\Group::query()->where('code', 'organizations')->firstOrFail();
+        $group = Group::query()->where('code', 'organizations')->firstOrFail();
         $reviewer = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
 
         $user = User::query()->create([
@@ -588,7 +651,7 @@ class AuthFlowTest extends TestCase
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
 
-        $group = \App\Models\Group::query()->where('code', 'organizations')->firstOrFail();
+        $group = Group::query()->where('code', 'organizations')->firstOrFail();
 
         $user = User::query()->create([
             'name' => 'Pending School',
@@ -641,7 +704,7 @@ class AuthFlowTest extends TestCase
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
 
-        $group = \App\Models\Group::query()->where('code', 'organizations')->firstOrFail();
+        $group = Group::query()->where('code', 'organizations')->firstOrFail();
 
         $user = User::query()->create([
             'name' => 'Pending NGO',
@@ -742,7 +805,7 @@ class AuthFlowTest extends TestCase
 
         config()->set('services.otp_debug_fallback', true);
 
-        app()->instance(\App\Services\SmsService::class, new class extends \App\Services\SmsService
+        app()->instance(SmsService::class, new class extends SmsService
         {
             public function send(string $text, string $to): array
             {
@@ -797,7 +860,7 @@ class AuthFlowTest extends TestCase
         $html = view('auth.verify-otp', [
             'maskedPhone' => '******2233',
             'debugCode' => '12345',
-            'errors' => new \Illuminate\Support\ViewErrorBag,
+            'errors' => new ViewErrorBag,
         ])->render();
 
         $this->assertStringContainsString('data-index="0"', $html);

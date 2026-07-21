@@ -4,7 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\Gsb\GsbClient;
-use App\Services\Gsb\MoheSanadService;
+use App\Services\Gsb\MoheUndergraduateStudentsService;
+use App\Services\Gsb\SignFlowOpenService;
 use App\Services\OrganizationRegistrationLookupService;
 use App\Services\SmsService;
 use Illuminate\Http\RedirectResponse;
@@ -17,9 +18,9 @@ class IntegrationDiagnosticsController extends Controller
         private readonly SmsService $smsService,
         private readonly OrganizationRegistrationLookupService $lookupService,
         private readonly GsbClient $gsbClient,
-        private readonly MoheSanadService $moheSanadService,
-    ) {
-    }
+        private readonly MoheUndergraduateStudentsService $moheUndergraduateStudentsService,
+        private readonly SignFlowOpenService $signFlowOpenService,
+    ) {}
 
     public function index(Request $request): View
     {
@@ -45,7 +46,8 @@ class IntegrationDiagnosticsController extends Controller
             'results' => [
                 'sms' => $request->session()->get('diagnostics.sms'),
                 'company_registry' => $request->session()->get('diagnostics.company_registry'),
-                'mohe_sanad' => $request->session()->get('diagnostics.mohe_sanad'),
+                'mohe_undergraduate_students' => $request->session()->get('diagnostics.mohe_undergraduate_students'),
+                'sanad_status' => $request->session()->get('diagnostics.sanad_status'),
             ],
         ]);
     }
@@ -100,13 +102,28 @@ class IntegrationDiagnosticsController extends Controller
             'national_id.regex' => __('app.auth.national_id_digits'),
         ]);
 
-        $result = $this->moheSanadService->lookupCurrentStudent(
+        $result = $this->moheUndergraduateStudentsService->lookupCurrentStudent(
             (string) $payload['national_id'],
             (string) $payload['birth_date'],
         );
 
         return redirect()
             ->route('admin.integrations.index')
-            ->with('diagnostics.mohe_sanad', $result);
+            ->with('diagnostics.mohe_undergraduate_students', $result);
+    }
+
+    public function lookupSanadStatus(Request $request): RedirectResponse
+    {
+        $payload = $request->validate([
+            'sanad_national_id' => ['required', 'regex:/^\d{10}$/'],
+        ], [
+            'sanad_national_id.regex' => __('app.auth.national_id_digits'),
+        ]);
+
+        $result = $this->signFlowOpenService->status((string) $payload['sanad_national_id']);
+
+        return redirect()
+            ->route('admin.integrations.index')
+            ->with('diagnostics.sanad_status', $result);
     }
 }
