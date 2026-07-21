@@ -19,7 +19,8 @@ class CompanyRegistryRecordNormalizer
         $entityName = $this->first($values, [
             'company_name_ar', 'company_arabic_name', 'company_name', 'company',
             'establishment_name_ar', 'establishment_name', 'registry_name', 'registery_name',
-            'commercial_name', 'trade_name', 'comm_name', 'reg_name', 'name_ar', 'name',
+            'commercial_name', 'trade_name', 'comm_name', 'reg_name', 'str_registry_name',
+            'companame', 'name_ar', 'name',
         ]);
 
         if (! filled($entityName)) {
@@ -31,22 +32,28 @@ class CompanyRegistryRecordNormalizer
             'registration_number' => $nationalNumber,
             'company_registration_date' => $this->date($this->first($values, [
                 'company_registration_date', 'registration_date', 'register_date', 'registry_date',
-                'establishment_date', 'est_date', 'reg_date', 'regdate',
+                'establishment_date', 'est_date', 'reg_date', 'regdate', 'dtm_registry_date',
             ])),
             'company_capital' => $this->number($this->first($values, [
                 'company_capital', 'registered_capital', 'capital_value', 'capital_amount', 'capital',
+                'dec_capital_value', 'dec_capital_value_2', 'totalcapital', 'registeredcap',
             ])),
             'organization_type' => $this->first($values, [
                 'company_type_name', 'company_type', 'organization_type_name', 'organization_type',
-                'establishment_type_name', 'establishment_type', 'registry_type', 'reg_type_name', 'type_name',
+                'establishment_type_name', 'establishment_type', 'registry_type', 'reg_type_name',
+                'type_name', 'typearabicname',
             ]),
             'governorate' => $this->first($values, [
                 'governorate_name', 'company_governorate', 'establishment_governorate',
-                'registry_governorate', 'gov_name', 'governorate',
+                'registry_governorate', 'gov_name', 'governorate', 'str_governorate_name',
+                'governate_desc', 'governat_e_desc', 'governat_e_d_e_s_c',
             ]),
             'commercial_registration_number' => $this->first($values, [
                 'commercial_registration_number', 'company_registration_number', 'registration_number',
-                'registry_number', 'register_no', 'reg_number', 'reg_no',
+                'registry_number', 'register_no', 'reg_number', 'reg_no', 'dec_registry_no', 'regno',
+            ]),
+            'registry_status' => $this->first($values, [
+                'registry_status', 'company_status', 'str_registry_status', 'compstat',
             ]),
         ];
     }
@@ -60,8 +67,12 @@ class CompanyRegistryRecordNormalizer
         foreach ($keys as $key) {
             $value = $values[$this->key($key)] ?? null;
 
-            if (is_scalar($value) && trim((string) $value) !== '') {
-                return trim((string) $value);
+            if (is_scalar($value)) {
+                $normalized = trim((string) $value);
+
+                if ($normalized !== '' && ! in_array(strtolower($normalized), ['_', '-', 'null', 'n/a'], true)) {
+                    return $normalized;
+                }
             }
         }
 
@@ -103,6 +114,18 @@ class CompanyRegistryRecordNormalizer
     {
         if (! filled($value)) {
             return null;
+        }
+
+        foreach (['!d/m/Y', '!Y-m-d', '!Y-m-d\\TH:i:s', '!d-M-y', '!d-M-Y'] as $format) {
+            try {
+                $date = Carbon::createFromFormat($format, $value);
+
+                if ($date !== false) {
+                    return $date->toDateString();
+                }
+            } catch (Throwable) {
+                // Try the next provider format.
+            }
         }
 
         try {

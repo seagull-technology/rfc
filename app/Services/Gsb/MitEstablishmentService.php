@@ -26,7 +26,7 @@ class MitEstablishmentService
         }
 
         return Cache::remember(
-            'gsb:mit_establishment:'.$nationalNumber,
+            'gsb:mit_individual_registry:'.$nationalNumber,
             now()->addMinutes((int) config('services.gsb.cache_minutes', 10)),
             fn (): array => $this->performLookup($nationalNumber),
         );
@@ -50,6 +50,8 @@ class MitEstablishmentService
         if ($data === null) {
             return ['ok' => false, 'error' => 'NOT_FOUND', 'status' => $response['status'] ?? null];
         }
+
+        $data['organization_type'] ??= 'مؤسسة فردية';
 
         return [
             'ok' => true,

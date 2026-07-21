@@ -19,7 +19,7 @@ Before running the deployment:
    GSB_CCD_COMPANY_PATH=/porg-g2g/g2g/api/companies/CompanybyNo/{nationalNo}
    GSB_CCD_COMPANY_METHOD=GET
    GSB_MIT_SERVICES_ENABLED=true
-   GSB_MIT_SERVICES_PATH=/porg-g2g/g2g/api/Registry/getRegisteryInfoByEstablishmentNationalNumber
+   GSB_MIT_SERVICES_PATH=/porg-g2g/g2g/api/Registry/getIndividualRegistry
    GSB_MIT_SERVICES_METHOD=POST
 
 4. Keep the real GSB_CLIENT_ID and GSB_CLIENT_SECRET values already stored in .env.
@@ -29,8 +29,8 @@ Before running the deployment:
 Deployment command example:
 
   Set-ExecutionPolicy -Scope Process Bypass
-  C:\Deploy\rfc-offline-release-20260713-v8\Deploy-RfcRelease.ps1 `
-    -ArchivePath C:\Deploy\rfc-offline-release-20260713-v8\rfc-app.tar.gz
+  C:\Deploy\rfc-offline-release-20260721-v1\Deploy-RfcRelease.ps1 `
+    -ArchivePath C:\Deploy\rfc-offline-release-20260721-v1\rfc-app.tar.gz
 
 The script preserves .env and storage, applies migrations, refreshes permissions and
 reference lookups without changing existing Super Admin/RFC passwords, swaps the

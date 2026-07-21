@@ -1,0 +1,36 @@
+RFC e-Permit staging release 20260721-v1
+=========================================
+
+This is a complete staging release containing the current application and all
+UAT refinements through July 21, 2026. It is not a partial API hotfix.
+
+Company registry integration:
+
+- Uses CCD CompanybyNo first for registered companies.
+- Falls back to MIT getIndividualRegistry for individual establishments.
+- Accepts numeric establishment national identifiers from 1 to 10 digits.
+- Maps the verified live CCD and MIT response fields for company name,
+  registration date, capital, organization type, governorate, commercial
+  registration number, and registry status.
+- Correctly parses the MIT day/month/year registration date format.
+- Ignores provider placeholder values such as an underscore.
+- Includes updated Bruno requests for direct staging API verification.
+
+Release contents:
+
+- Includes all application, registration, form, workflow, messaging,
+  notification, permission, reporting, and UAT refinements already delivered
+  to the shared-hosting environment.
+- Includes the complete migration history and reference seeders.
+- Preserves the government server .env, uploaded storage, and existing data.
+
+Deployment notes:
+
+- Read PRE-DEPLOY-CHECKLIST.txt before running the script.
+- Update GSB_MIT_SERVICES_PATH in the existing server .env before deployment.
+- Keep the real GSB client credentials already stored on the server; never put
+  them inside this release package.
+- The script applies pending migrations, refreshes access-control reference
+  data, swaps the application with rollback protection, rebuilds caches,
+  restarts queue workers, and performs a login-page smoke test.
+- Keep the generated C:\inetpub\rfc-backup-* directory until UAT is complete.

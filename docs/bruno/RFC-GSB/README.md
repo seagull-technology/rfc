@@ -21,7 +21,7 @@ This collection is designed to run fully offline on the RFC government server. B
 
 1. Configure `test_company_national_no` with the establishment national number. It may contain fewer than 10 digits.
 2. Open **COMPANIES > Lookup Company - CCD** and select **Send**.
-3. Open **COMPANIES > Lookup Establishment - MIT** and select **Send**.
+3. Open **COMPANIES > Lookup Individual Registry - MIT** and select **Send**.
 
 An establishment may be registered in only one provider. The RFC application uses CCD first and automatically tries MIT when CCD returns no usable company record. Keep both raw responses for the first known test numbers so field aliases can be confirmed against real staging data.
 

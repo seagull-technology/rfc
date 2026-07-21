@@ -374,14 +374,18 @@ class AuthFlowTest extends TestCase
 
         Http::fake([
             'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/companies/CompanybyNo/44455' => Http::response([
-                'data' => [[
-                    'COMPANY_NAME_AR' => 'شركة أفلام تجريبية',
-                    'REGISTRATION_DATE' => '2020-02-15',
-                    'CAPITAL' => '250000',
-                    'COMPANY_TYPE_NAME' => 'شركة ذات مسؤولية محدودة',
-                    'GOVERNORATE_NAME' => 'العاصمة',
-                    'REG_NO' => '4455',
-                ]],
+                'success' => 200,
+                'message' => 'Success',
+                'data' => [
+                    'companame' => 'النورس للحلول التكنولوجية',
+                    'regdate' => '2008-08-13T00:00:00',
+                    'totalcapital' => 10000,
+                    'typearabicname' => 'ذات مسؤولية محدودة',
+                    'governatE_DESC' => ' عمان',
+                    'regno' => 16985,
+                    'compstat' => 'قائمة',
+                    'compstatus' => 1,
+                ],
             ]),
         ]);
 
@@ -391,11 +395,13 @@ class AuthFlowTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertJsonPath('data.entity_name', 'شركة أفلام تجريبية')
-            ->assertJsonPath('data.company_registration_date', '2020-02-15')
-            ->assertJsonPath('data.company_capital', '250000')
-            ->assertJsonPath('data.organization_type', 'شركة ذات مسؤولية محدودة')
-            ->assertJsonPath('data.governorate', 'العاصمة')
+            ->assertJsonPath('data.entity_name', 'النورس للحلول التكنولوجية')
+            ->assertJsonPath('data.company_registration_date', '2008-08-13')
+            ->assertJsonPath('data.company_capital', '10000')
+            ->assertJsonPath('data.organization_type', 'ذات مسؤولية محدودة')
+            ->assertJsonPath('data.governorate', 'عمان')
+            ->assertJsonPath('data.commercial_registration_number', '16985')
+            ->assertJsonPath('data.registry_status', 'قائمة')
             ->assertJsonPath('meta.source', 'gsb_ccd_company');
 
         Http::assertSent(fn ($request): bool => $request->method() === 'GET'
@@ -406,21 +412,27 @@ class AuthFlowTest extends TestCase
     public function test_company_lookup_falls_back_to_mit_for_establishment_record(): void
     {
         Cache::forget('gsb:ccd_company:66677');
-        Cache::forget('gsb:mit_establishment:66677');
+        Cache::forget('gsb:mit_individual_registry:66677');
 
         $this->configureCompanyGsbServices();
 
         Http::fake([
             'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/companies/CompanybyNo/66677' => Http::response(['data' => []]),
-            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getRegisteryInfoByEstablishmentNationalNumber' => Http::response([
-                'code' => 200,
-                'data' => [[
-                    'ESTABLISHMENT_NAME' => 'مؤسسة إنتاج فردية',
-                    'REG_DATE' => '2021-06-10',
-                    'CAPITAL_VALUE' => '75000',
-                    'ESTABLISHMENT_TYPE_NAME' => 'مؤسسة فردية',
-                    'GOV_NAME' => 'إربد',
-                ]],
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getIndividualRegistry' => Http::response([
+                'status' => 200,
+                'message' => 'Success',
+                'data' => [
+                    'intID_Number' => 66677,
+                    'decCapitalValue' => 5000,
+                    'decRegistryNo' => '567036',
+                    'strGovernorateName' => 'عمان',
+                    'strRegistryAddress' => '_',
+                    'strRegistryName' => 'مؤسسة نطاق التميز للحلول البرمجية والتسويقية',
+                    'intRegistryStatusCode' => 1,
+                    'dtmRegistryDate' => '02/06/2024',
+                    'strRegistryStatus' => 'قائمه',
+                    'hasData' => true,
+                ],
             ]),
         ]);
 
@@ -430,16 +442,18 @@ class AuthFlowTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertJsonPath('data.entity_name', 'مؤسسة إنتاج فردية')
-            ->assertJsonPath('data.company_registration_date', '2021-06-10')
-            ->assertJsonPath('data.company_capital', '75000')
+            ->assertJsonPath('data.entity_name', 'مؤسسة نطاق التميز للحلول البرمجية والتسويقية')
+            ->assertJsonPath('data.company_registration_date', '2024-06-02')
+            ->assertJsonPath('data.company_capital', '5000')
             ->assertJsonPath('data.organization_type', 'مؤسسة فردية')
-            ->assertJsonPath('data.governorate', 'إربد')
+            ->assertJsonPath('data.governorate', 'عمان')
+            ->assertJsonPath('data.commercial_registration_number', '567036')
+            ->assertJsonPath('data.registry_status', 'قائمه')
             ->assertJsonPath('meta.source', 'gsb_mit_services')
             ->assertJsonCount(2, 'meta.attempts');
 
         Http::assertSent(fn ($request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getRegisteryInfoByEstablishmentNationalNumber'
+            && $request->url() === 'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getIndividualRegistry'
             && $request['nationalNo'] === '66677');
     }
 
@@ -823,7 +837,7 @@ class AuthFlowTest extends TestCase
         config()->set('services.gsb.services.ccd_company.method', 'GET');
         config()->set('services.gsb.services.mit_services.enabled', true);
         config()->set('services.gsb.services.mit_services.base_url', 'https://api-gateway.stg.gsb.gov.jo:9443');
-        config()->set('services.gsb.services.mit_services.path', '/porg-g2g/g2g/api/Registry/getRegisteryInfoByEstablishmentNationalNumber');
+        config()->set('services.gsb.services.mit_services.path', '/porg-g2g/g2g/api/Registry/getIndividualRegistry');
         config()->set('services.gsb.services.mit_services.method', 'POST');
     }
 

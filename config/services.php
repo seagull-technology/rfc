@@ -83,7 +83,7 @@ return [
             'mit_services' => [
                 'enabled' => filter_var(env('GSB_MIT_SERVICES_ENABLED', env('GSB_ENABLED', false)), FILTER_VALIDATE_BOOL),
                 'base_url' => env('GSB_MIT_SERVICES_BASE_URL', env('GSB_BASE_URL', 'https://api-gateway.stg.gsb.gov.jo:9443')),
-                'path' => env('GSB_MIT_SERVICES_PATH', '/porg-g2g/g2g/api/Registry/getRegisteryInfoByEstablishmentNationalNumber'),
+                'path' => env('GSB_MIT_SERVICES_PATH', '/porg-g2g/g2g/api/Registry/getIndividualRegistry'),
                 'method' => env('GSB_MIT_SERVICES_METHOD', 'POST'),
             ],
             'signflow_v2' => [

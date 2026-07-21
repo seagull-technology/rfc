@@ -13,7 +13,7 @@ RFC GSB BRUNO COLLECTION - V3
 5. For students, open MOHE > Lookup Student - Mohe Standard.
 6. For companies, open COMPANIES and test both requests:
    - Lookup Company - CCD
-   - Lookup Establishment - MIT
+   - Lookup Individual Registry - MIT
 
 The RFC application checks CCD first and then MIT when CCD has no usable
 company record. Testing both requests directly helps identify which registry

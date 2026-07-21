@@ -1,11 +1,11 @@
 meta {
-  name: Lookup Establishment - MIT
+  name: Lookup Individual Registry - MIT
   type: http
   seq: 2
 }
 
 post {
-  url: https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getRegisteryInfoByEstablishmentNationalNumber
+  url: https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getIndividualRegistry
   body: json
   auth: none
 }
@@ -28,7 +28,7 @@ assert {
 }
 
 docs {
-  Establishment lookup through the Ministry of Industry and Trade registry service.
+  Individual establishment lookup through the Ministry of Industry and Trade registry service.
 
   Select the STG environment before sending and configure:
   - gsb_client_id
