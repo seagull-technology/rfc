@@ -1,7 +1,7 @@
 RFC e-Permit staging release 20260721-v2
 =========================================
 
-This is a complete staging release built from commit f2963c1. It includes all
+This is a complete staging release built from the current main branch. It includes all
 application and UAT work already present in the repository, plus the latest
 government integration updates. It is not a partial API hotfix.
 
