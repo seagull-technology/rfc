@@ -11,6 +11,8 @@ use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\Auth\SanadLoginController;
 use App\Http\Controllers\Auth\StudentLookupController;
 use App\Http\Controllers\ApplicationController;
+use App\Http\Controllers\ApplicationAnnexAttachmentController;
+use App\Http\Controllers\ApplicationPersonalDetailsLookupController;
 use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\AuthorityEscalationController;
 use App\Http\Controllers\Admin\ApprovalRoutingRuleController;
@@ -117,6 +119,11 @@ Route::group([
         Route::post('/company/users/{member}/status', [CompanyEmployeeController::class, 'updateStatus'])->name('company.employees.status');
 
         Route::get('/applications', [ApplicationController::class, 'index'])->name('applications.index');
+        Route::post('/applications/personal-details/lookup', ApplicationPersonalDetailsLookupController::class)
+            ->middleware('throttle:20,1')
+            ->name('applications.personal-details.lookup');
+        Route::get('/applications/{application}/annex/personal-details/{person}/attachments/{attachment}', ApplicationAnnexAttachmentController::class)
+            ->name('applications.annex.personal-details.attachments.download');
         Route::get('/applications/create', [ApplicationController::class, 'create'])->name('applications.create');
         Route::post('/applications', [ApplicationController::class, 'store'])->name('applications.store');
         Route::get('/applications/{application}', [ApplicationController::class, 'show'])->name('applications.show');

@@ -58,11 +58,38 @@ final class MinistryInteriorPersonalDetails
     public static function normalizeForStorage(mixed $value): array
     {
         return collect(self::rows($value))
-            ->map(fn (array $row): array => collect($row)
-                ->map(fn ($fieldValue) => is_string($fieldValue) && blank($fieldValue) ? null : $fieldValue)
-                ->all())
+            ->map(fn (array $row): array => self::normalizeArray($row))
             ->filter(fn (array $row): bool => self::hasSubmittedData($row) || self::isConfirmed($row))
             ->values()
+            ->all();
+    }
+
+    public static function displayName(array $row): string
+    {
+        $parts = collect(['first_name', 'father_name', 'grandfather_name', 'family_name'])
+            ->map(fn (string $field): string => trim((string) data_get($row, $field)))
+            ->filter()
+            ->values();
+
+        return $parts->isNotEmpty()
+            ? $parts->implode(' ')
+            : trim((string) data_get($row, 'current_full_name'));
+    }
+
+    /**
+     * @param  array<string, mixed>  $value
+     * @return array<string, mixed>
+     */
+    private static function normalizeArray(array $value): array
+    {
+        return collect($value)
+            ->map(function ($fieldValue) {
+                if (is_array($fieldValue)) {
+                    return self::normalizeArray($fieldValue);
+                }
+
+                return is_string($fieldValue) && blank($fieldValue) ? null : $fieldValue;
+            })
             ->all();
     }
 }

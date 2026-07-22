@@ -146,6 +146,7 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSee('data-cast-crew-identity-feedback', false)
             ->assertSee('name="cast_crew[lead][passport_image]"', false)
             ->assertSee('data-cast-crew-passport-image', false)
+            ->assertSeeText(__('app.applications.annex_fields.passport_image_note'))
             ->assertSeeText(__('app.applications.cast_crew_national_id_digits'))
             ->assertSee('data-row-count-for', false)
             ->assertSee('name="work_content_summary_attachment"', false)
@@ -2148,6 +2149,113 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText(__('app.applications.annex_sections.ministry_interior_personal_details'));
     }
 
+    public function test_modern_ministry_personal_details_store_attachment_and_support_protected_download(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+        Storage::fake('local');
+
+        [$user] = $this->createApplicantContext();
+
+        $details = [
+            'personal_number' => '1234567890',
+            'nationality_category' => 'foreign',
+            'current_nationality' => 'egyptian',
+            'first_name' => 'Nadia',
+            'father_name' => 'Mahmoud',
+            'grandfather_name' => 'Hassan',
+            'family_name' => 'Ali',
+            'gender' => 'female',
+            'marital_status' => 'married',
+            'birth_place' => 'Cairo',
+            'birth_date' => '1992-05-11',
+            'mother_full_name' => 'Mona Hassan',
+            'mother_nationality' => 'egyptian',
+            'education_qualification' => 'Bachelor degree',
+            'country_of_arrival' => 'Egypt',
+            'country_of_residence' => 'Egypt',
+            'schengen_us_visa' => 'no',
+            'spouse_full_name' => 'Omar Salem',
+            'spouse_nationality' => 'egyptian',
+            'spouse_birth_date' => '1990-02-10',
+            'spouse_mother_full_name' => 'Huda Salem',
+            'residence_expiry_date' => '2028-01-01',
+            'previous_jordan_residence' => 'yes',
+            'investment_card' => 'no',
+            'free_zones_card' => 'no',
+            'jordan_governorate' => 'amman',
+            'jordan_residence_address' => 'Amman, Jordan',
+            'passport_type' => 'ordinary',
+            'passport_number' => 'A1234567',
+            'passport_issue_place' => 'Cairo',
+            'passport_issue_date' => '2024-01-01',
+            'passport_expiry_date' => '2029-01-01',
+            'entry_method' => 'visa',
+            'departure_document' => 'passport',
+            'departure_method' => 'facilitation_letter',
+            'attachments' => [[
+                'document_type' => 'passport_copy',
+                'file' => UploadedFile::fake()->image('passport.jpg', 800, 600)->size(200),
+            ]],
+            'confirmed' => '1',
+        ];
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'ministry_interior_personal_details' => [$details],
+            ]))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $application = Application::query()->firstOrFail();
+        $storedDetails = MinistryInteriorPersonalDetails::rows(
+            data_get($application->metadata, 'annex.ministry_interior_personal_details', []),
+        );
+        $storedAttachment = (array) data_get($storedDetails, '0.attachments.0', []);
+
+        $this->assertSame('Nadia Mahmoud Hassan Ali', data_get($storedDetails, '0.current_full_name'));
+        $this->assertSame('Applicant Owner', data_get($storedDetails, '0.signature'));
+        $this->assertSame('passport_copy', $storedAttachment['document_type'] ?? null);
+        Storage::disk('local')->assertExists((string) ($storedAttachment['path'] ?? ''));
+
+        $this
+            ->actingAs($user)
+            ->get(route('applications.edit', $application))
+            ->assertOk()
+            ->assertSee('data-ministry-residence-document-notice', false)
+            ->assertSeeText(__('app.applications.ministry_interior_personal_details.residence_document_notice'));
+
+        $this
+            ->actingAs($user)
+            ->get(route('applications.show', $application))
+            ->assertOk()
+            ->assertSee('value="Nadia"', false)
+            ->assertSee('value="Mahmoud"', false)
+            ->assertSee(route('applications.annex.personal-details.attachments.download', [
+                $application,
+                0,
+                $storedAttachment['id'],
+            ]), false);
+
+        $this
+            ->actingAs($user)
+            ->get(route('applications.annex.personal-details.attachments.download', [
+                $application,
+                0,
+                $storedAttachment['id'],
+            ]))
+            ->assertOk();
+
+        $this
+            ->actingAs($user)
+            ->get(route('applications.forms.print', $application).'?form=ministry_interior_personal_details')
+            ->assertOk()
+            ->assertSee('value="Nadia"', false)
+            ->assertSee('value="Mahmoud"', false)
+            ->assertSee('data-print-form="ministry_interior_personal_details"', false);
+    }
+
     public function test_application_stores_and_displays_structured_annex_forms(): void
     {
         $this->refreshApplicationWithLocale('en');
@@ -2690,6 +2798,8 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Clarification required')
             ->assertSeeText('Please clarify the airport filming dates.')
             ->assertSeeText('Open correspondence')
+            ->assertSee('data-open-applicant-correspondence', false)
+            ->assertSee('id="applicant-correspondence-section"', false)
             ->assertSee('streamit-wraper-table', false);
 
         $adminShowResponse = $this->actingAs($admin)->get(route('admin.applications.show', $application));
@@ -4573,7 +4683,7 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Amman, Jordan')
             ->assertSeeText('0793333111')
             ->assertSeeText('studio@applicant.test')
-            ->assertSeeText('Open profile')
+            ->assertDontSeeText('Open profile')
             ->assertDontSeeText('Producer Information')
             ->assertSeeText('Implementation schedule')
             ->assertSeeText('Pre-production')
@@ -5993,7 +6103,6 @@ class ApplicationWorkflowTest extends TestCase
             'director_name' => 'Director Name',
             'director_nationality' => 'jordanian',
             'director_email' => 'director@example.com',
-            'director_profile_url' => 'https://example.com/director',
             'international_producer_name' => 'Global Partner',
             'international_producer_nationality' => 'non_jordanian',
             'international_producer_company' => 'Global Films',

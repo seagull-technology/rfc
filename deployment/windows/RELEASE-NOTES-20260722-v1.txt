@@ -1,0 +1,37 @@
+RFC e-Permit staging release 20260722-v1
+=========================================
+
+This is a complete staging release built from the current main branch. It includes
+all committed application and UAT changes, not only the latest API integration.
+
+Personal Details Form:
+
+- Aligns the form structure and repeatable records with the supplied reference videos.
+- Supports multiple people, conditional residence details, supporting attachments,
+  secure downloads, structured display, and printing.
+- Adds Jordanian personal-data retrieval by national number through CSPD PERSONAL
+  INFO MASKED.
+- Adds non-Jordanian personal-data retrieval by individual number through PSD BASIC
+  INFO Token, with the masked PSD route available as a fallback when subscribed.
+- Normalizes available name, date of birth, gender, phone, email, address,
+  nationality, and document data into the approved form fields.
+- Keeps lookup errors localized and distinguishes invalid/not-found data from an
+  unavailable government service.
+
+Application workflow and UAT refinements:
+
+- Includes the latest application-form, annex, attachment, correspondence, and
+  applicant-view refinements already completed on the main branch.
+- Keeps uploaded annex evidence behind authorized application download routes.
+- Restores applicant correspondence access from the application status area.
+
+Deployment notes:
+
+- The deployment script preserves the government server .env, uploaded storage,
+  and database data.
+- Configure CSPD/PSD values in the existing server .env before testing retrieval.
+- The PSD token product requires its provider-issued OAuth bearer; no secret is
+  included in this archive.
+- Keep CSPD Personal Info Token disabled for arbitrary form lookups because that
+  product identifies the bearer rather than accepting a national-number parameter.
+- No new database migration is required by this release.

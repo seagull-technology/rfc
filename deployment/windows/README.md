@@ -81,7 +81,8 @@ Fill at minimum:
 - database credentials
 - `INITIAL_SUPER_ADMIN_PASSWORD`
 - `GSB_CLIENT_SECRET`
-- API product paths as they become available from GSB Swagger/WSDL files
+- `GSB_PSD_BASIC_INFO_BEARER` when enabling the token-protected non-Jordanian lookup
+- API product switches and paths listed in `PRE-DEPLOY-CHECKLIST.txt`
 
 Keep `GSB_ENABLED=false` until connectivity is confirmed from the VM.
 

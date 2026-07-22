@@ -490,7 +490,9 @@
                         </div>
                         <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mt-4">
                             <div class="d-flex gap-2 flex-wrap">
-                                <a class="btn btn-outline-secondary" data-bs-toggle="tab" href="#profile-approvals" role="tab" aria-selected="false">{{ __('app.request_state.open_correspondence') }}</a>
+                                <button class="btn btn-outline-secondary" type="button" data-open-applicant-correspondence>
+                                    {{ __('app.request_state.open_correspondence') }}
+                                </button>
                                 @if ($application->canBeEditedByApplicant() && $canUpdateApplication)
                                     <a class="btn btn-light" href="{{ route('applications.edit', $application) }}">{{ __('app.applications.edit_action') }}</a>
                                 @endif
@@ -752,3 +754,41 @@
     </div>
     @include('applications.partials.submit-confirmation-script')
 @endsection
+
+@push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const openButton = document.querySelector('[data-open-applicant-correspondence]');
+            const approvalsTab = document.querySelector('#profile-pills-tab [href="#profile-approvals"]');
+            const correspondenceSection = document.getElementById('applicant-correspondence-section');
+
+            if (!openButton || !approvalsTab || !correspondenceSection) {
+                return;
+            }
+
+            const showCorrespondence = function () {
+                window.requestAnimationFrame(function () {
+                    correspondenceSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    correspondenceSection.focus({ preventScroll: true });
+                    window.history.replaceState(null, '', '#applicant-correspondence-section');
+                });
+            };
+
+            openButton.addEventListener('click', function () {
+                if (approvalsTab.classList.contains('active')) {
+                    showCorrespondence();
+
+                    return;
+                }
+
+                approvalsTab.addEventListener('shown.bs.tab', showCorrespondence, { once: true });
+
+                if (window.bootstrap?.Tab) {
+                    window.bootstrap.Tab.getOrCreateInstance(approvalsTab).show();
+                } else {
+                    approvalsTab.click();
+                }
+            });
+        });
+    </script>
+@endpush

@@ -1,4 +1,4 @@
-<div class="card">
+<div class="card" id="applicant-correspondence-section" tabindex="-1">
     <div class="card-header">
         <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
             <div class="header-title">

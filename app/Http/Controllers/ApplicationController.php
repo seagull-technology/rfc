@@ -48,6 +48,14 @@ class ApplicationController extends Controller
 {
     private const PRODUCTION_TERMS_VERSION = 'production_form_2025';
 
+    private const MINISTRY_INTERIOR_ATTACHMENT_TYPES = [
+        'professional_license',
+        'kinship_proof',
+        'passport_copy',
+        'sponsor_residence',
+        'foreign_residence',
+    ];
+
     public function __construct(
         private readonly ApprovalRoutingService $approvalRoutingService,
     ) {}
@@ -851,13 +859,14 @@ class ApplicationController extends Controller
                 $confirmed = MinistryInteriorPersonalDetailsData::isConfirmed($row);
                 $existingRow = collect($existingRows)->first(function (array $candidate) use ($row): bool {
                     $passportNumber = trim((string) data_get($row, 'passport_number'));
-                    $currentFullName = trim((string) data_get($row, 'current_full_name'));
+                    $currentFullName = MinistryInteriorPersonalDetailsData::displayName($row);
 
                     return (filled($passportNumber) && $passportNumber === trim((string) data_get($candidate, 'passport_number')))
-                        || (filled($currentFullName) && $currentFullName === trim((string) data_get($candidate, 'current_full_name')));
+                        || (filled($currentFullName) && $currentFullName === MinistryInteriorPersonalDetailsData::displayName($candidate));
                 }) ?? ($existingRows[$index] ?? []);
                 $wasConfirmed = MinistryInteriorPersonalDetailsData::isConfirmed((array) $existingRow);
 
+                $row['current_full_name'] = MinistryInteriorPersonalDetailsData::displayName($row);
                 $row['confirmed'] = $confirmed;
                 $row['signature'] = $user->displayName();
                 $row['signed_at'] = $confirmed
@@ -1766,7 +1775,7 @@ class ApplicationController extends Controller
             'director_name' => ['required', 'string', 'max:255'],
             'director_nationality' => ['required', Rule::in(Nationality::activeCodesFor(Nationality::USAGE_DIRECTOR))],
             'director_email' => ['required', 'email', 'max:255'],
-            'director_profile_url' => ['required', 'url', 'max:500'],
+            'director_profile_url' => ['nullable', 'url', 'max:500'],
             'international_producer_name' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:255'],
             'international_producer_nationality' => [Rule::requiredIf($requiresInternationalProject), 'nullable', Rule::in(Nationality::activeCodesFor(Nationality::USAGE_INTERNATIONAL_PRODUCER))],
             'international_producer_company' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:255'],
@@ -2156,43 +2165,106 @@ class ApplicationController extends Controller
         foreach ($rows as $index => $row) {
             $requiresDetails = MinistryInteriorPersonalDetailsData::hasSubmittedData($row)
                 || MinistryInteriorPersonalDetailsData::isConfirmed($row);
-            $required = Rule::requiredIf($requiresDetails);
             $prefix = 'ministry_interior_personal_details.'.$index;
+            $legacyRow = blank(data_get($row, 'nationality_category'))
+                && filled(data_get($row, 'current_full_name'));
+            $required = Rule::requiredIf($requiresDetails);
+            $modernRequired = Rule::requiredIf($requiresDetails && ! $legacyRow);
+            $legacyRequired = Rule::requiredIf($requiresDetails && $legacyRow);
+            $usesSplitName = collect(['first_name', 'father_name', 'grandfather_name', 'family_name'])
+                ->contains(fn (string $field): bool => filled(data_get($row, $field)));
+            $splitNameRequired = Rule::requiredIf($requiresDetails && ! $legacyRow && ($usesSplitName || blank(data_get($row, 'current_full_name'))));
+            $spouseRequired = Rule::requiredIf($requiresDetails && ! $legacyRow && data_get($row, 'marital_status') === 'married');
+            $residencyRequired = Rule::requiredIf(
+                $requiresDetails
+                && ! $legacyRow
+                && data_get($row, 'nationality_category') !== 'jordanian'
+            );
+            $personalNumberRules = match ((string) data_get($row, 'nationality_category')) {
+                'jordanian' => ['digits:10'],
+                'arab', 'foreign' => ['regex:/^\d{1,20}$/'],
+                default => [],
+            };
 
             $rules += [
-                $prefix.'.personal_number' => ['nullable', 'string', 'max:100'],
+                $prefix.'.personal_number' => ['nullable', Rule::when(! $legacyRow, $personalNumberRules), 'max:100'],
+                $prefix.'.nationality_category' => [$modernRequired, 'nullable', Rule::in(['jordanian', 'arab', 'foreign'])],
                 $prefix.'.current_nationality' => [$required, 'nullable', 'string', 'max:255'],
-                $prefix.'.current_full_name' => [$required, 'nullable', 'string', 'max:255'],
-                $prefix.'.original_nationality' => [$required, 'nullable', 'string', 'max:255'],
-                $prefix.'.original_full_name' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.current_full_name' => [$legacyRequired, 'nullable', 'string', 'max:255'],
+                $prefix.'.first_name' => [$splitNameRequired, 'nullable', 'string', 'max:100'],
+                $prefix.'.father_name' => [$splitNameRequired, 'nullable', 'string', 'max:100'],
+                $prefix.'.grandfather_name' => [$splitNameRequired, 'nullable', 'string', 'max:100'],
+                $prefix.'.family_name' => [$splitNameRequired, 'nullable', 'string', 'max:100'],
+                $prefix.'.original_nationality' => [$legacyRequired, 'nullable', 'string', 'max:255'],
+                $prefix.'.original_full_name' => [$legacyRequired, 'nullable', 'string', 'max:255'],
                 $prefix.'.gender' => [$required, 'nullable', Rule::in(['male', 'female'])],
+                $prefix.'.marital_status' => [$modernRequired, 'nullable', Rule::in(['single', 'married', 'divorced', 'widowed'])],
                 $prefix.'.passport_number' => [$required, 'nullable', 'string', 'max:100'],
-                $prefix.'.passport_type' => [$required, 'nullable', 'string', 'max:100'],
+                $prefix.'.passport_type' => $legacyRow
+                    ? [$required, 'nullable', 'string', 'max:100']
+                    : [$modernRequired, 'nullable', Rule::in(['ordinary', 'diplomatic', 'service', 'temporary', 'travel_document', 'other'])],
                 $prefix.'.passport_issue_place' => [$required, 'nullable', 'string', 'max:255'],
                 $prefix.'.passport_issue_date' => [$required, 'nullable', 'date'],
                 $prefix.'.passport_expiry_date' => [$required, 'nullable', 'date', 'after_or_equal:'.$prefix.'.passport_issue_date'],
                 $prefix.'.birth_place' => [$required, 'nullable', 'string', 'max:255'],
                 $prefix.'.birth_date' => [$required, 'nullable', 'date', 'before:today'],
                 $prefix.'.education_qualification' => [$required, 'nullable', 'string', 'max:255'],
-                $prefix.'.profession' => [$required, 'nullable', 'string', 'max:255'],
-                $prefix.'.workplace' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.profession' => [$legacyRequired, 'nullable', 'string', 'max:255'],
+                $prefix.'.workplace' => [$legacyRequired, 'nullable', 'string', 'max:255'],
                 $prefix.'.mother_full_name' => [$required, 'nullable', 'string', 'max:255'],
                 $prefix.'.mother_nationality' => [$required, 'nullable', 'string', 'max:255'],
-                $prefix.'.spouse_full_name' => ['nullable', 'string', 'max:255'],
-                $prefix.'.spouse_nationality' => ['nullable', 'string', 'max:255'],
-                $prefix.'.spouse_birth_date' => ['nullable', 'date', 'before:today'],
-                $prefix.'.spouse_mother_full_name' => ['nullable', 'string', 'max:255'],
-                $prefix.'.visit_residence_reason' => [$required, 'nullable', 'string', 'max:1000'],
+                $prefix.'.spouse_full_name' => [$spouseRequired, 'nullable', 'string', 'max:255'],
+                $prefix.'.spouse_nationality' => [$spouseRequired, 'nullable', 'string', 'max:255'],
+                $prefix.'.spouse_birth_date' => [$spouseRequired, 'nullable', 'date', 'before:today'],
+                $prefix.'.spouse_mother_full_name' => [$spouseRequired, 'nullable', 'string', 'max:255'],
+                $prefix.'.visit_residence_reason' => [$legacyRequired, 'nullable', 'string', 'max:1000'],
                 $prefix.'.country_of_arrival' => [$required, 'nullable', 'string', 'max:255'],
                 $prefix.'.country_of_residence' => [$required, 'nullable', 'string', 'max:255'],
                 $prefix.'.residence_issue_date' => ['nullable', 'date'],
-                $prefix.'.residence_expiry_date' => ['nullable', 'date', 'after_or_equal:'.$prefix.'.residence_issue_date'],
-                $prefix.'.jordan_residence_address' => ['nullable', 'string', 'max:500'],
+                $prefix.'.residence_expiry_date' => [$residencyRequired, 'nullable', 'date'],
+                $prefix.'.schengen_us_visa' => [$residencyRequired, 'nullable', Rule::in(['yes', 'no'])],
+                $prefix.'.previous_jordan_residence' => [$residencyRequired, 'nullable', Rule::in(['yes', 'no'])],
+                $prefix.'.investment_card' => [$residencyRequired, 'nullable', Rule::in(['yes', 'no'])],
+                $prefix.'.free_zones_card' => [$residencyRequired, 'nullable', Rule::in(['yes', 'no'])],
+                $prefix.'.jordan_governorate' => [$modernRequired, 'nullable', 'string', 'max:100'],
+                $prefix.'.jordan_residence_address' => [$modernRequired, 'nullable', 'string', 'max:500'],
+                $prefix.'.entry_method' => [$modernRequired, 'nullable', Rule::in(['lawful_entry', 'visa', 'other'])],
+                $prefix.'.departure_document' => [$modernRequired, 'nullable', Rule::in(['foreign_travel_document', 'passport', 'palestinian_refugee_syrian_passport'])],
+                $prefix.'.departure_method' => [$modernRequired, 'nullable', Rule::in(['facilitation_letter', 'lawful_entry_departure', 'unhcr', 'voluntary_migration', 'other'])],
+                $prefix.'.attachments' => ['nullable', 'array'],
+                $prefix.'.attachments.*.id' => ['nullable', 'string', 'max:100'],
+                $prefix.'.attachments.*.document_type' => ['nullable', Rule::in(self::MINISTRY_INTERIOR_ATTACHMENT_TYPES)],
+                $prefix.'.attachments.*.file' => ['nullable', 'file', 'mimes:jpg,jpeg,tiff,tif', 'max:512'],
+                $prefix.'.attachments.*._remove' => ['nullable', 'boolean'],
                 $prefix.'.signature' => [$required, 'nullable', 'string', 'max:255'],
                 $prefix.'.confirmed' => $requiresDetails ? ['accepted'] : ['nullable', 'boolean'],
                 $prefix.'.signed_at' => ['nullable', 'date'],
                 $prefix.'.signed_by_user_id' => ['nullable', 'integer'],
             ];
+
+            foreach ((array) data_get($row, 'attachments', []) as $attachmentIndex => $attachment) {
+                if (! is_array($attachment) || filter_var($attachment['_remove'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                    continue;
+                }
+
+                $attachmentStarted = filled($attachment['id'] ?? null)
+                    || filled($attachment['document_type'] ?? null)
+                    || ($attachment['file'] ?? null) instanceof UploadedFile;
+                $attachmentPrefix = $prefix.'.attachments.'.$attachmentIndex;
+
+                $rules[$attachmentPrefix.'.document_type'] = [
+                    Rule::requiredIf($attachmentStarted),
+                    'nullable',
+                    Rule::in(self::MINISTRY_INTERIOR_ATTACHMENT_TYPES),
+                ];
+                $rules[$attachmentPrefix.'.file'] = [
+                    Rule::requiredIf($attachmentStarted && blank($attachment['id'] ?? null)),
+                    'nullable',
+                    'file',
+                    'mimes:jpg,jpeg,tiff,tif',
+                    'max:512',
+                ];
+            }
         }
 
         return $rules;
@@ -2814,7 +2886,12 @@ class ApplicationController extends Controller
             [],
         );
         $ministryInteriorPersonalDetails = array_key_exists('ministry_interior_personal_details', $validated)
-            ? MinistryInteriorPersonalDetailsData::normalizeForStorage($validated['ministry_interior_personal_details'])
+            ? $this->ministryInteriorPersonalDetailsRows(
+                (array) $validated['ministry_interior_personal_details'],
+                MinistryInteriorPersonalDetailsData::rows(
+                    data_get($existingAnnex, 'ministry_interior_personal_details', []),
+                ),
+            )
             : MinistryInteriorPersonalDetailsData::rows(
                 data_get($existingAnnex, 'ministry_interior_personal_details', []),
             );
@@ -2873,6 +2950,101 @@ class ApplicationController extends Controller
             'governmental_scenes' => $this->filledRows((array) ($validated['governmental_scenes'] ?? []), ['site_name', 'authority', 'scene_description', 'filming_date']),
             'governmental_scenes_confirmed' => (bool) ($validated['governmental_scenes_confirmed'] ?? false),
         ];
+    }
+
+    /**
+     * @param  array<int|string, array<string, mixed>>  $rows
+     * @param  array<int|string, array<string, mixed>>  $existingRows
+     * @return array<int, array<string, mixed>>
+     */
+    private function ministryInteriorPersonalDetailsRows(array $rows, array $existingRows = []): array
+    {
+        $existingValues = array_values($existingRows);
+
+        $normalizedRows = collect($rows)
+            ->filter(fn ($row): bool => is_array($row))
+            ->values()
+            ->map(function (array $row, int $index) use ($existingRows, $existingValues): array {
+                $existingRow = collect($existingRows)
+                    ->first(function ($candidate) use ($row): bool {
+                        if (! is_array($candidate)) {
+                            return false;
+                        }
+
+                        $passportNumber = trim((string) data_get($row, 'passport_number'));
+                        $displayName = MinistryInteriorPersonalDetailsData::displayName($row);
+
+                        return (filled($passportNumber) && $passportNumber === trim((string) data_get($candidate, 'passport_number')))
+                            || (filled($displayName) && $displayName === MinistryInteriorPersonalDetailsData::displayName($candidate));
+                    }) ?? (array) ($existingRows[$index] ?? $existingValues[$index] ?? []);
+                $existingAttachments = collect((array) data_get($existingRow, 'attachments', []))
+                    ->filter(fn ($attachment): bool => is_array($attachment))
+                    ->values();
+
+                $attachments = collect((array) data_get($row, 'attachments', []))
+                    ->filter(fn ($attachment): bool => is_array($attachment))
+                    ->values()
+                    ->map(function (array $attachment, int $attachmentIndex) use ($existingAttachments): ?array {
+                        $attachmentId = trim((string) ($attachment['id'] ?? ''));
+                        $existingAttachment = $existingAttachments
+                            ->first(fn (array $candidate): bool => filled($attachmentId)
+                                && $attachmentId === (string) ($candidate['id'] ?? ''))
+                            ?? $existingAttachments->get($attachmentIndex, []);
+                        $existingPath = data_get($existingAttachment, 'path');
+
+                        if (filter_var($attachment['_remove'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                            if (filled($existingPath)) {
+                                Storage::disk('local')->delete((string) $existingPath);
+                            }
+
+                            return null;
+                        }
+
+                        $file = $attachment['file'] ?? null;
+
+                        if ($file instanceof UploadedFile) {
+                            $path = $file->store('application-annex/ministry-interior-personal-details', 'local');
+
+                            if (filled($existingPath) && $existingPath !== $path) {
+                                Storage::disk('local')->delete((string) $existingPath);
+                            }
+
+                            return [
+                                'id' => filled($attachmentId) ? $attachmentId : (string) Str::uuid(),
+                                'document_type' => $this->nullableTrimmedString($attachment['document_type'] ?? null),
+                                'path' => $path,
+                                'name' => $file->getClientOriginalName(),
+                                'mime_type' => $file->getClientMimeType(),
+                                'size' => $file->getSize(),
+                                'uploaded_at' => now()->toDateTimeString(),
+                            ];
+                        }
+
+                        if (! filled(data_get($existingAttachment, 'path'))) {
+                            return null;
+                        }
+
+                        return [
+                            ...$existingAttachment,
+                            'id' => data_get($existingAttachment, 'id') ?: (filled($attachmentId) ? $attachmentId : (string) Str::uuid()),
+                            'document_type' => $this->nullableTrimmedString(
+                                $attachment['document_type'] ?? data_get($existingAttachment, 'document_type'),
+                            ),
+                        ];
+                    })
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                unset($row['attachments']);
+                $row['current_full_name'] = MinistryInteriorPersonalDetailsData::displayName($row);
+                $row['attachments'] = $attachments;
+
+                return $row;
+            })
+            ->all();
+
+        return MinistryInteriorPersonalDetailsData::normalizeForStorage($normalizedRows);
     }
 
     /**

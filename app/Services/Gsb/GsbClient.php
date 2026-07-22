@@ -247,7 +247,7 @@ class GsbClient
             $headers['X-IBM-Client-Secret'] = $clientSecret;
         }
 
-        $bearer = trim((string) config('services.gsb.bearer'));
+        $bearer = trim((string) ($serviceConfig['bearer'] ?? config('services.gsb.bearer')));
         $basicUser = trim((string) config('services.gsb.basic_user'));
         $basicPass = trim((string) config('services.gsb.basic_pass'));
 
@@ -301,6 +301,7 @@ class GsbClient
     private function url(string $service, array $pathParameters = []): string
     {
         $config = $this->serviceConfig($service);
+
         return $this->urlFromPath($service, (string) ($config['path'] ?? ''), $pathParameters);
     }
 

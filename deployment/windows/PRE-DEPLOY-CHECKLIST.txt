@@ -23,6 +23,13 @@ Before running the deployment:
    GSB_MIT_SERVICES_ENABLED=true
    GSB_MIT_SERVICES_PATH=/porg-g2g/g2g/api/Registry/getIndividualRegistry
    GSB_MIT_SERVICES_METHOD=POST
+   GSB_CSPD_MASKED_ENABLED=true
+   GSB_CSPD_MASKED_PATH=/porg-g2g/g2g/masked/api/person-info
+   GSB_CSPD_MASKED_METHOD=GET
+   GSB_CSPD_MASKED_PSD_PATH=/porg-g2g/g2g/masked/api/psd
+   GSB_PSD_BASIC_INFO_ENABLED=true
+   GSB_PSD_BASIC_INFO_PATH=/porg-g2g/g2g/token/psd
+   GSB_PSD_BASIC_INFO_METHOD=POST
    GSB_SIGNFLOW_V2_ENABLED=true
    GSB_SIGNFLOW_V2_PATH=/porg-g2g/g2g/signflow/v2
    GSB_SIGNFLOW_V2_METHOD=POST
@@ -38,6 +45,14 @@ Before running the deployment:
    SANAD_SCOPE=openid
 
 4. Keep the real GSB_CLIENT_ID and GSB_CLIENT_SECRET values already stored in .env.
+   Add the OAuth bearer supplied for PSD BASIC INFO Token as:
+
+   GSB_PSD_BASIC_INFO_BEARER=<provider bearer token>
+
+   Keep GSB_CSPD_TOKEN_ENABLED=false for the Personal Details Form. That token
+   product returns the identity represented by its bearer and does not accept the
+   form's arbitrary national number as an input.
+
    Store SANAD_CLIENT_ID and SANAD_CLIENT_SECRET separately when the SignFlow
    product subscription uses different IBM credentials.
 5. Confirm C: has enough free space for the new release and one full application backup.
@@ -46,8 +61,8 @@ Before running the deployment:
 Deployment command example:
 
   Set-ExecutionPolicy -Scope Process Bypass
-  C:\Deploy\rfc-offline-release-20260721-v1\Deploy-RfcRelease.ps1 `
-    -ArchivePath C:\Deploy\rfc-offline-release-20260721-v1\rfc-app.tar.gz
+  C:\Deploy\rfc-offline-release-20260722-v1\Deploy-RfcRelease.ps1 `
+    -ArchivePath C:\Deploy\rfc-offline-release-20260722-v1\rfc-app.tar.gz
 
 The script preserves .env and storage, applies migrations, refreshes permissions and
 reference lookups without changing existing Super Admin/RFC passwords, swaps the

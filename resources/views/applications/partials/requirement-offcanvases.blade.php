@@ -475,6 +475,7 @@
 	                                <td class="d-none" data-cast-crew-passport-cell>
 	                                    <div class="{{ $castCrewShowsPassportImage ? '' : 'd-none' }}" data-cast-crew-passport-image>
 	                                        <input type="file" class="form-control" name="cast_crew[{{ $index }}][passport_image]" accept="image/jpeg,image/png,.jpg,.jpeg,.png" @disabled(! $castCrewShowsPassportImage)>
+	                                        <small class="form-text text-muted d-block mt-1">{{ __('app.applications.annex_fields.passport_image_note') }}</small>
 	                                        @foreach (['path', 'name', 'mime_type', 'size', 'uploaded_at'] as $passportField)
 	                                            <input type="hidden" name="cast_crew[{{ $index }}][passport_image_{{ $passportField }}]" value="{{ $row['passport_image_'.$passportField] ?? '' }}" @disabled(! $castCrewShowsPassportImage)>
 	                                        @endforeach
@@ -742,6 +743,7 @@
                                     <td><input type="text" class="form-control" name="equipment_travelers[{{ $index }}][departure_flight_number]" value="{{ $row['departure_flight_number'] ?? '' }}"></td>
                                     <td>
                                         <input type="file" class="form-control" name="equipment_travelers[{{ $index }}][passport_image]" accept="image/jpeg,image/png,.jpg,.jpeg,.png">
+                                        <small class="form-text text-muted d-block mt-1">{{ __('app.applications.annex_fields.passport_image_note') }}</small>
                                         @foreach (['passport_image_path', 'passport_image_name', 'passport_image_mime_type', 'passport_image_size', 'passport_image_uploaded_at'] as $passportField)
                                             <input type="hidden" name="equipment_travelers[{{ $index }}][{{ $passportField }}]" value="{{ $row[$passportField] ?? '' }}">
                                         @endforeach
@@ -1280,11 +1282,13 @@
             (function () {
                 const validationMessage = @js(__('app.applications.requirement_validation_summary'));
                 const requiredMinistryFields = [
-                    'current_nationality', 'current_full_name', 'original_nationality', 'original_full_name',
-                    'gender', 'passport_number', 'passport_type', 'passport_issue_place', 'passport_issue_date',
-                    'passport_expiry_date', 'birth_place', 'birth_date', 'education_qualification', 'profession',
-                    'workplace', 'mother_full_name', 'mother_nationality', 'visit_residence_reason',
-                    'country_of_arrival', 'country_of_residence', 'confirmed'
+                    'nationality_category', 'current_nationality', 'first_name', 'father_name',
+                    'grandfather_name', 'family_name', 'gender', 'marital_status', 'passport_number',
+                    'passport_type', 'passport_issue_place', 'passport_issue_date', 'passport_expiry_date',
+                    'birth_place', 'birth_date', 'education_qualification', 'mother_full_name',
+                    'mother_nationality', 'country_of_arrival', 'country_of_residence',
+                    'jordan_governorate', 'jordan_residence_address', 'entry_method',
+                    'departure_document', 'departure_method', 'confirmed'
                 ];
 
                 function controlHasValue(control) {
@@ -1337,6 +1341,27 @@
 
                         requiredMinistryFields.forEach(function (field) {
                             setControlRequired(namedRowControl(row, field), started);
+                        });
+
+                        const nonJordanian = namedRowControl(row, 'nationality_category')?.value !== 'jordanian';
+                        ['residence_expiry_date', 'schengen_us_visa', 'previous_jordan_residence', 'investment_card', 'free_zones_card']
+                            .forEach(function (field) {
+                                setControlRequired(namedRowControl(row, field), started && nonJordanian);
+                            });
+
+                        const married = namedRowControl(row, 'marital_status')?.value === 'married';
+                        ['spouse_nationality', 'spouse_full_name', 'spouse_birth_date', 'spouse_mother_full_name']
+                            .forEach(function (field) {
+                                setControlRequired(namedRowControl(row, field), started && married);
+                            });
+
+                        row.querySelectorAll('[data-ministry-attachment-row]:not([hidden])').forEach(function (attachment) {
+                            const attachmentStarted = controlsHaveData(attachment) || attachment.dataset.stored === 'true';
+                            setControlRequired(namedRowControl(attachment, 'document_type'), attachmentStarted);
+                            setControlRequired(
+                                namedRowControl(attachment, 'file'),
+                                attachmentStarted && attachment.dataset.stored !== 'true'
+                            );
                         });
                     });
                 }

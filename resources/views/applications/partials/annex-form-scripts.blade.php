@@ -74,6 +74,7 @@
                     familyName: @js(__('app.applications.annex_fields.family_name')),
                     nationalId: @js(__('app.applications.annex_fields.national_id')),
                     passportNumber: @js(__('app.applications.annex_fields.passport_number')),
+                    passportImageNote: @js(__('app.applications.annex_fields.passport_image_note')),
                     nationalIdDigits: @js(__('app.applications.cast_crew_national_id_digits')),
                 };
 
@@ -855,6 +856,7 @@
             function applicationCastCrewPassportImageInputHtml(index) {
                 return '<div class="d-none" data-cast-crew-passport-image>'
                     + '<input type="file" class="form-control" name="cast_crew[' + index + '][passport_image]" accept="image/jpeg,image/png,.jpg,.jpeg,.png" disabled>'
+                    + '<small class="form-text text-muted d-block mt-1">' + applicationEscapeHtml(applicationCastCrewLabels.passportImageNote) + '</small>'
                     + '</div>';
             }
 
@@ -1016,7 +1018,7 @@
                         + '<td><input type="text" class="form-control" name="equipment_travelers[' + index + '][arrival_flight_number]"></td>'
                         + '<td><input type="date" class="form-control" name="equipment_travelers[' + index + '][departure_date]"></td>'
                         + '<td><input type="text" class="form-control" name="equipment_travelers[' + index + '][departure_flight_number]"></td>'
-                        + '<td><input type="file" class="form-control" name="equipment_travelers[' + index + '][passport_image]" accept="image/jpeg,image/png,.jpg,.jpeg,.png"></td>'
+                        + '<td><input type="file" class="form-control" name="equipment_travelers[' + index + '][passport_image]" accept="image/jpeg,image/png,.jpg,.jpeg,.png"><small class="form-text text-muted d-block mt-1">' + applicationEscapeHtml(applicationCastCrewLabels.passportImageNote) + '</small></td>'
                         + deleteCell;
                 } else if (fieldName === 'imported_equipment_shipping' || fieldName === 'imported_equipment_traveler') {
                     const rowKey = (fieldName === 'imported_equipment_traveler' ? 'traveler_' : 'shipping_') + index;
