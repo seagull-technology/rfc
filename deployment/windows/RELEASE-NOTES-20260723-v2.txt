@@ -1,0 +1,34 @@
+RFC e-Permit staging release 20260723-v2
+=========================================
+
+This complete offline release is built from the current main branch and includes
+all previously committed application, UAT, workflow, and government-integration
+work.
+
+Registration usability:
+
+- Makes government-verified student and company fields visibly locked and
+  read-only after a successful lookup.
+- Adds a clear Arabic/English notice explaining why verified fields cannot be
+  edited.
+- Restores the student date-of-birth calendar by loading the Flatpickr runtime
+  and stylesheet in the authentication layout.
+- Keeps direct date typing available in day/month/year format and supports
+  opening the calendar from the field or calendar button.
+
+Environment operations:
+
+- Replaces the Windows production environment example with one authoritative,
+  sanitized list of current keys.
+- Removes duplicated and legacy MOHE configuration from the deployment
+  checklist.
+- Documents safe production defaults for debugging, sessions, OTP fallback,
+  SANAD activation, and government API products.
+
+Deployment notes:
+
+- No new database migration is required by this release.
+- The deployment script preserves the government server .env, uploaded storage,
+  database data, and existing Super Admin/RFC credentials.
+- The server .env is not included in the archive and must be reconciled manually
+  against deployment\windows\.env.production.example.

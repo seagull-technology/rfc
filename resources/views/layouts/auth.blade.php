@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="{{ asset('fonts/Phosphor-Duotone.css') }}">
     <link rel="stylesheet" href="{{ asset('css/libs.min.css') }}">
     <link rel="stylesheet" href="{{ asset('css/select2.min.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/flatpickr.min.css') }}">
     <link rel="stylesheet" href="{{ asset('css/streamit.min.css') }}?v=5.4.0">
     <link rel="stylesheet" href="{{ asset('css/custom.min.css') }}?v=5.4.0">
     <link rel="stylesheet" href="{{ asset('css/dashboard-custom.min.css') }}?v=5.4.0">
@@ -65,6 +66,7 @@
             window.setTimeout(releaseLoader, 1800);
         })();
     </script>
+    <script src="{{ asset('js/flatpickr.min.js') }}?v=5.4.0"></script>
     <script src="{{ asset('js/libs.min.js') }}"></script>
     <script src="{{ asset('js/slider-tabs.js') }}"></script>
     <script src="{{ asset('js/lodash.min.js') }}"></script>

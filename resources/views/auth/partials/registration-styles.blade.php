@@ -249,6 +249,42 @@
         outline: none;
     }
 
+    .registration-verified-notice {
+        align-items: center;
+        background: rgba(16, 185, 129, .12);
+        border: 1px solid rgba(167, 243, 208, .38);
+        border-inline-start: .3rem solid #34d399;
+        border-radius: .4rem;
+        color: #d1fae5;
+        display: flex;
+        font-size: .875rem;
+        font-weight: 700;
+        gap: .55rem;
+        margin-bottom: 1rem;
+        padding: .75rem .875rem;
+    }
+
+    .registration-verified-notice i {
+        flex: 0 0 auto;
+        font-size: 1.15rem;
+    }
+
+    .registration-form-panel [data-student-lookup-field]:disabled,
+    .registration-form-panel [data-company-lookup-field]:disabled {
+        background-color: rgba(7, 12, 18, .8) !important;
+        border-color: rgba(167, 243, 208, .5) !important;
+        border-style: dashed !important;
+        box-shadow: inset 0 0 0 1px rgba(52, 211, 153, .12);
+        color: rgba(255, 255, 255, .82) !important;
+        cursor: not-allowed;
+        opacity: 1;
+        -webkit-text-fill-color: rgba(255, 255, 255, .82);
+    }
+
+    .registration-form-panel select[data-student-lookup-field]:disabled {
+        background-image: none !important;
+    }
+
     .registration-password-control .form-control {
         padding-inline-end: 3rem;
     }

@@ -190,6 +190,7 @@ return [
         'birth_date' => 'Date of birth',
         'birth_date_placeholder' => 'Example: 03/10/1998',
         'open_date_picker' => 'Open calendar',
+        'verified_fields_locked' => 'These details were retrieved from the government record and are locked for editing.',
         'gender' => 'Gender',
         'gender_options' => [
             'male' => 'Male',

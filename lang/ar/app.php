@@ -190,6 +190,7 @@ return [
         'birth_date' => 'تاريخ الميلاد',
         'birth_date_placeholder' => 'مثال: 03/10/1998',
         'open_date_picker' => 'فتح التقويم',
+        'verified_fields_locked' => 'تم جلب هذه البيانات من السجل الحكومي وهي مقفلة وغير قابلة للتعديل.',
         'gender' => 'الجنس',
         'gender_options' => [
             'male' => 'ذكر',

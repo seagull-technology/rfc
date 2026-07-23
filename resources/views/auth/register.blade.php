@@ -108,6 +108,10 @@
                                                     </div>
 
                                                     <div class="col-12 student-lookup-fields" data-student-lookup-fields @unless($studentLookupCompleted) hidden @endunless>
+                                                        <div class="registration-verified-notice" role="status">
+                                                            <i class="ph ph-lock-key"></i>
+                                                            <span>{{ __('app.auth.verified_fields_locked') }}</span>
+                                                        </div>
                                                         <div class="row">
                                                             <div class="col-md-6">
                                                                 <div class="mb-3">
@@ -283,6 +287,10 @@
                                                             </div>
 
                                                             <div class="col-12 company-lookup-fields" data-company-lookup-fields @unless($companyLookupCompleted) hidden @endunless>
+                                                                <div class="registration-verified-notice" role="status">
+                                                                    <i class="ph ph-lock-key"></i>
+                                                                    <span>{{ __('app.auth.verified_fields_locked') }}</span>
+                                                                </div>
                                                                 <div class="row">
                                                                     <div class="col-md-6">
                                                                         <div class="mb-3">
@@ -620,6 +628,24 @@
                     return;
                 }
 
+                const initializePicker = function () {
+                    if (input._flatpickr) {
+                        return input._flatpickr;
+                    }
+
+                    if (typeof window.flatpickr !== 'function') {
+                        return null;
+                    }
+
+                    return window.flatpickr(input, {
+                        allowInput: true,
+                        clickOpens: true,
+                        dateFormat: 'd/m/Y',
+                        disableMobile: true,
+                        maxDate: input.dataset.studentBirthDateMax,
+                    });
+                };
+
                 input.addEventListener('input', function () {
                     const digits = input.value.replace(/\D+/g, '').slice(0, 8);
                     const parts = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean);
@@ -630,23 +656,24 @@
                     }
                 });
 
-                if (typeof window.flatpickr === 'function') {
-                    window.flatpickr(input, {
-                        allowInput: true,
-                        dateFormat: 'd/m/Y',
-                        disableMobile: true,
-                        maxDate: input.dataset.studentBirthDateMax,
-                    });
-                }
+                initializePicker();
+                window.addEventListener('load', initializePicker, { once: true });
 
-                openButton?.addEventListener('click', function () {
-                    if (input._flatpickr) {
-                        input._flatpickr.open();
+                openButton?.addEventListener('click', function (event) {
+                    event.preventDefault();
+
+                    const picker = initializePicker();
+
+                    if (picker) {
+                        picker.open();
                         return;
                     }
 
                     input.focus();
                 });
+
+                input.addEventListener('pointerdown', initializePicker);
+                input.addEventListener('focus', initializePicker);
             };
 
             setupStudentBirthDateInput();

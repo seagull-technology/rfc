@@ -358,9 +358,22 @@ class AuthFlowTest extends TestCase
             ->assertSeeText('Student address')
             ->assertSee('id="student-address"', false)
             ->assertSee('data-student-birth-date', false)
+            ->assertSee('data-student-birth-date-open', false)
+            ->assertSeeText('These details were retrieved from the government record and are locked for editing.')
+            ->assertSee('data-student-lookup-field="full_name" disabled', false)
             ->assertSeeText('Company address')
             ->assertSee('id="company-address"', false)
+            ->assertSee('data-company-lookup-field="entity_name" disabled', false)
             ->assertSee('autocomplete="street-address"', false);
+
+        $content = $response->getContent();
+
+        $this->assertStringContainsString('const initializePicker = function () {', $content);
+        $this->assertStringContainsString("window.addEventListener('load', initializePicker, { once: true });", $content);
+        $this->assertStringContainsString('const picker = initializePicker();', $content);
+        $this->assertStringContainsString("input.addEventListener('pointerdown', initializePicker);", $content);
+        $this->assertStringContainsString('js/flatpickr.min.js', $content);
+        $this->assertStringContainsString('css/flatpickr.min.css', $content);
     }
 
     public function test_company_registration_page_accepts_one_to_ten_digit_national_ids(): void
