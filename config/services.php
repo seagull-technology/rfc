@@ -42,6 +42,7 @@ return [
         'force_ip' => env('GSB_FORCE_IP', ''),
         'timeout' => (int) env('GSB_TIMEOUT', 25),
         'cache_minutes' => (int) env('GSB_CACHE_MINUTES', 10),
+        'crew_verification_minutes' => (int) env('GSB_CREW_VERIFICATION_MINUTES', 120),
         'client_id' => env('GSB_CLIENT_ID'),
         'client_secret' => env('GSB_CLIENT_SECRET'),
         'basic_user' => env('GSB_BASIC_USER', ''),

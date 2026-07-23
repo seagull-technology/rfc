@@ -74,9 +74,28 @@
                     familyName: @js(__('app.applications.annex_fields.family_name')),
                     nationalId: @js(__('app.applications.annex_fields.national_id')),
                     passportNumber: @js(__('app.applications.annex_fields.passport_number')),
+                    individualNumber: @js(__('app.applications.annex_fields.individual_number')),
                     passportImageNote: @js(__('app.applications.annex_fields.passport_image_note')),
                     nationalIdDigits: @js(__('app.applications.cast_crew_national_id_digits')),
+                    foreignOptionalHelp: @js(__('app.applications.cast_crew_verification.foreign_optional_help')),
+                    verifyIdentity: @js(__('app.applications.cast_crew_verification.verify_identity')),
+                    verifyIdentifierFirst: @js(__('app.applications.cast_crew_verification.verify_identifier_first')),
+                    invalidNationalId: @js(__('app.applications.cast_crew_verification.invalid_national_id')),
+                    invalidIndividualNumber: @js(__('app.applications.cast_crew_verification.invalid_individual_number')),
+                    unavailable: @js(__('app.applications.cast_crew_verification.unavailable')),
+                    loading: @js(__('app.applications.cast_crew_verification.loading')),
+                    bulkComplete: @js(__('app.applications.cast_crew_verification.bulk_complete')),
+                    source: @js(__('app.applications.cast_crew_verification.source', ['source' => '__SOURCE__'])),
+                    sources: @json(__('app.applications.cast_crew_verification.sources')),
+                    verifiedAt: @js(__('app.applications.cast_crew_verification.verified_at', ['date' => '__DATE__'])),
+                    statuses: {
+                        verified: @js(__('app.applications.cast_crew_verification.statuses.verified')),
+                        pending: @js(__('app.applications.cast_crew_verification.statuses.pending')),
+                        manual: @js(__('app.applications.cast_crew_verification.statuses.manual')),
+                        unverified: @js(__('app.applications.cast_crew_verification.statuses.unverified')),
+                    },
                 };
+                const applicationCastCrewVerificationUrl = @js(route('applications.crew.identity.lookup'));
 
                 function refreshProductionTermsForeignApplicant() {
                     const source = document.querySelector('[name="international_producer_name"]');
@@ -840,12 +859,12 @@
             function applicationCastCrewNameInputsHtml(index) {
                 return '<input type="hidden" name="cast_crew[' + index + '][name]" data-cast-crew-name-output>'
                     + '<div class="row g-2 cast-crew-jordanian-name d-none" data-cast-crew-jordanian-name>'
-                    + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][first_name]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.firstName) + '" data-cast-crew-name-part disabled></div>'
-                    + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][second_name]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.secondName) + '" data-cast-crew-name-part disabled></div>'
-                    + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][third_name]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.thirdName) + '" data-cast-crew-name-part disabled></div>'
-                    + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][family_name]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.familyName) + '" data-cast-crew-name-part disabled></div>'
+                    + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][first_name]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.firstName) + '" data-cast-crew-name-part data-cast-crew-api-field disabled></div>'
+                    + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][second_name]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.secondName) + '" data-cast-crew-name-part data-cast-crew-api-field disabled></div>'
+                    + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][third_name]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.thirdName) + '" data-cast-crew-name-part data-cast-crew-api-field disabled></div>'
+                    + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][family_name]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.familyName) + '" data-cast-crew-name-part data-cast-crew-api-field disabled></div>'
                     + '</div>'
-                    + '<input type="text" class="form-control" data-cast-crew-full-name-input required>';
+                    + '<input type="text" class="form-control" data-cast-crew-full-name-input data-cast-crew-api-field required>';
             }
 
             function applicationCastCrewIdentityInputHtml(index) {
@@ -857,6 +876,26 @@
                 return '<div class="d-none" data-cast-crew-passport-image>'
                     + '<input type="file" class="form-control" name="cast_crew[' + index + '][passport_image]" accept="image/jpeg,image/png,.jpg,.jpeg,.png" disabled>'
                     + '<small class="form-text text-muted d-block mt-1">' + applicationEscapeHtml(applicationCastCrewLabels.passportImageNote) + '</small>'
+                    + '</div>';
+            }
+
+            function applicationCastCrewIndividualNumberInputHtml(index) {
+                return '<div data-cast-crew-individual-number-wrap>'
+                    + '<input type="text" class="form-control" name="cast_crew[' + index + '][individual_number]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.individualNumber) + '" inputmode="numeric" maxlength="20" pattern="\\d{1,20}" data-cast-crew-individual-number>'
+                    + '<small class="form-text text-muted d-block mt-1">' + applicationEscapeHtml(applicationCastCrewLabels.foreignOptionalHelp) + '</small>'
+                    + '</div>';
+            }
+
+            function applicationCastCrewVerificationHtml(index) {
+                return '<input type="hidden" name="cast_crew[' + index + '][verification_token]" data-cast-crew-verification-token>'
+                    + '<input type="hidden" name="cast_crew[' + index + '][identity_verification_status]" value="unverified" data-cast-crew-verification-status>'
+                    + '<input type="hidden" name="cast_crew[' + index + '][identity_verification_source]" data-cast-crew-verification-source>'
+                    + '<input type="hidden" name="cast_crew[' + index + '][identity_verified_at]" data-cast-crew-verified-at>'
+                    + '<input type="hidden" name="cast_crew[' + index + '][identity_verification_category]" value="foreign" data-cast-crew-verification-category>'
+                    + '<div class="cast-crew-verification-panel">'
+                    + '<span class="badge bg-light text-dark border" data-cast-crew-verification-badge>' + applicationEscapeHtml(applicationCastCrewLabels.statuses.unverified) + '</span>'
+                    + '<button type="button" class="btn btn-sm btn-outline-primary" data-cast-crew-verify><i class="ph ph-shield-check me-1"></i>' + applicationEscapeHtml(applicationCastCrewLabels.verifyIdentity) + '</button>'
+                    + '<p class="cast-crew-verification-message d-none" data-cast-crew-verification-message></p>'
                     + '</div>';
             }
 
@@ -884,6 +923,265 @@
                 });
             }
 
+            function applicationCastCrewCategory(row) {
+                return applicationIsCastCrewJordanian(row) ? 'jordanian' : 'foreign';
+            }
+
+            function applicationCastCrewIdentifier(row) {
+                const selector = applicationIsCastCrewJordanian(row)
+                    ? '[data-cast-crew-identity]'
+                    : '[data-cast-crew-individual-number]';
+
+                return String(row?.querySelector(selector)?.value || '').replace(/\D/g, '');
+            }
+
+            function applicationCastCrewSetApiFieldsLocked(row, locked) {
+                row.querySelectorAll('[data-cast-crew-api-field]').forEach(function (field) {
+                    field.classList.toggle('cast-crew-api-locked', locked);
+                    field.setAttribute('aria-readonly', locked ? 'true' : 'false');
+
+                    if (field.tagName === 'SELECT') {
+                        field.style.pointerEvents = locked ? 'none' : '';
+                        field.tabIndex = locked ? -1 : 0;
+                    } else {
+                        field.readOnly = locked;
+                    }
+                });
+            }
+
+            function applicationCastCrewStatusClasses(status) {
+                if (status === 'verified') {
+                    return ['bg-success'];
+                }
+
+                if (status === 'pending') {
+                    return ['bg-warning', 'text-dark'];
+                }
+
+                if (status === 'manual') {
+                    return ['bg-secondary'];
+                }
+
+                return ['bg-light', 'text-dark', 'border'];
+            }
+
+            function applicationCastCrewStatusMessage(source, verifiedAt, fallbackMessage) {
+                const lines = [];
+
+                if (fallbackMessage) {
+                    lines.push(applicationEscapeHtml(fallbackMessage));
+                }
+
+                if (source) {
+                    const sourceLabel = applicationCastCrewLabels.sources[source] || source;
+                    lines.push(applicationEscapeHtml(applicationCastCrewLabels.source.replace('__SOURCE__', sourceLabel)));
+                }
+
+                if (verifiedAt) {
+                    lines.push(applicationEscapeHtml(applicationCastCrewLabels.verifiedAt.replace('__DATE__', verifiedAt)));
+                }
+
+                return lines.join('<br>');
+            }
+
+            function setApplicationCastCrewVerification(row, status, options) {
+                const settings = options || {};
+                const source = String(settings.source || '');
+                const verifiedAt = String(settings.verifiedAt || '');
+                const proof = String(settings.proof || '');
+                const category = applicationCastCrewCategory(row);
+                const identifier = applicationCastCrewIdentifier(row);
+                const badge = row.querySelector('[data-cast-crew-verification-badge]');
+                const message = row.querySelector('[data-cast-crew-verification-message]');
+                const button = row.querySelector('[data-cast-crew-verify]');
+
+                row.querySelector('[data-cast-crew-verification-status]').value = status;
+                row.querySelector('[data-cast-crew-verification-source]').value = source;
+                row.querySelector('[data-cast-crew-verified-at]').value = verifiedAt;
+                row.querySelector('[data-cast-crew-verification-token]').value = proof;
+                row.querySelector('[data-cast-crew-verification-category]').value = category;
+
+                if (badge) {
+                    badge.className = 'badge ' + applicationCastCrewStatusClasses(status).join(' ');
+                    badge.textContent = applicationCastCrewLabels.statuses[status] || applicationCastCrewLabels.statuses.unverified;
+                }
+
+                if (message) {
+                    const messageHtml = applicationCastCrewStatusMessage(source, verifiedAt, settings.message || '');
+                    message.innerHTML = messageHtml;
+                    message.classList.toggle('d-none', messageHtml === '');
+                    message.classList.toggle('text-danger', Boolean(settings.error));
+                    message.classList.toggle('text-muted', !settings.error);
+                }
+
+                if (button) {
+                    button.disabled = !identifier;
+                }
+
+                if (status === 'verified' || status === 'pending') {
+                    row.dataset.castCrewVerifiedIdentifier = identifier;
+                    row.dataset.castCrewVerifiedCategory = category;
+                } else {
+                    delete row.dataset.castCrewVerifiedIdentifier;
+                    delete row.dataset.castCrewVerifiedCategory;
+                }
+
+                applicationCastCrewSetApiFieldsLocked(row, status === 'verified');
+            }
+
+            function applicationCastCrewInvalidateVerification(row) {
+                const status = row.querySelector('[data-cast-crew-verification-status]')?.value || 'unverified';
+                const category = applicationCastCrewCategory(row);
+                const identifier = applicationCastCrewIdentifier(row);
+                const unchanged = row.dataset.castCrewVerifiedCategory === category
+                    && row.dataset.castCrewVerifiedIdentifier === identifier;
+
+                if ((status === 'verified' || status === 'pending') && unchanged) {
+                    return;
+                }
+
+                const manual = category === 'foreign' && identifier === '';
+                setApplicationCastCrewVerification(row, manual ? 'manual' : 'unverified');
+            }
+
+            function applicationCastCrewFillGovernmentData(row, data) {
+                const identity = data || {};
+                const fullName = String(identity.full_name || '').trim();
+                const parts = fullName.split(/\s+/u).filter(Boolean);
+                const values = [
+                    identity.first_name || parts[0] || '',
+                    identity.father_name || parts[1] || '',
+                    identity.grandfather_name || parts[2] || '',
+                    identity.family_name || parts.slice(3).join(' ') || '',
+                ];
+
+                if (applicationIsCastCrewJordanian(row)) {
+                    row.querySelectorAll('[data-cast-crew-name-part]').forEach(function (field, index) {
+                        field.value = values[index] || '';
+                    });
+                } else if (row.querySelector('[data-cast-crew-full-name-input]')) {
+                    row.querySelector('[data-cast-crew-full-name-input]').value = fullName;
+                }
+
+                if (identity.gender && row.querySelector('[data-cast-crew-gender]')) {
+                    row.querySelector('[data-cast-crew-gender]').value = identity.gender;
+                }
+
+                if (identity.birth_date && row.querySelector('[data-cast-crew-birth-date]')) {
+                    row.querySelector('[data-cast-crew-birth-date]').value = identity.birth_date;
+                }
+
+                updateApplicationCastCrewMode(row);
+            }
+
+            async function verifyApplicationCastCrewRow(row) {
+                const category = applicationCastCrewCategory(row);
+                const identifier = applicationCastCrewIdentifier(row);
+                const button = row.querySelector('[data-cast-crew-verify]');
+
+                if (!identifier) {
+                    setApplicationCastCrewVerification(row, category === 'foreign' ? 'manual' : 'unverified', {
+                        message: applicationCastCrewLabels.verifyIdentifierFirst,
+                        error: true,
+                    });
+                    return false;
+                }
+
+                if (category === 'jordanian' && !/^\d{10}$/.test(identifier)) {
+                    setApplicationCastCrewVerification(row, 'unverified', {
+                        message: applicationCastCrewLabels.invalidNationalId,
+                        error: true,
+                    });
+                    return false;
+                }
+
+                if (category === 'foreign' && !/^\d{1,20}$/.test(identifier)) {
+                    setApplicationCastCrewVerification(row, 'unverified', {
+                        message: applicationCastCrewLabels.invalidIndividualNumber,
+                        error: true,
+                    });
+                    return false;
+                }
+
+                if (button) {
+                    button.disabled = true;
+                    button.dataset.originalHtml = button.innerHTML;
+                    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>' + applicationEscapeHtml(applicationCastCrewLabels.loading);
+                }
+
+                try {
+                    const response = await fetch(applicationCastCrewVerificationUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                        },
+                        body: JSON.stringify({
+                            nationality_category: category,
+                            identifier: identifier,
+                        }),
+                    });
+                    const payload = await response.json().catch(function () {
+                        return {};
+                    });
+
+                    if (!response.ok || !payload.ok) {
+                        setApplicationCastCrewVerification(row, 'unverified', {
+                            message: payload.message || applicationCastCrewLabels.unavailable,
+                            error: true,
+                        });
+                        return false;
+                    }
+
+                    if (payload.status === 'verified') {
+                        applicationCastCrewFillGovernmentData(row, payload.data || {});
+                    }
+
+                    setApplicationCastCrewVerification(row, payload.status || 'unverified', {
+                        source: payload.source,
+                        verifiedAt: payload.verified_at,
+                        proof: payload.proof,
+                        message: payload.message,
+                    });
+
+                    return true;
+                } catch (error) {
+                    setApplicationCastCrewVerification(row, 'unverified', {
+                        message: applicationCastCrewLabels.unavailable,
+                        error: true,
+                    });
+                    return false;
+                } finally {
+                    if (button) {
+                        button.innerHTML = button.dataset.originalHtml || applicationEscapeHtml(applicationCastCrewLabels.verifyIdentity);
+                        button.disabled = !applicationCastCrewIdentifier(row);
+                    }
+                }
+            }
+
+            async function verifyAllApplicationCastCrewRows(button) {
+                const table = document.getElementById('castCrewRequestTable');
+                const status = document.querySelector('[data-cast-crew-bulk-status]');
+                const rows = Array.from(table?.querySelectorAll('tbody tr') || []).filter(function (row) {
+                    return applicationCastCrewIdentifier(row) !== '';
+                });
+
+                button.disabled = true;
+                status?.classList.add('d-none');
+
+                for (const row of rows) {
+                    await verifyApplicationCastCrewRow(row);
+                }
+
+                if (status) {
+                    status.textContent = applicationCastCrewLabels.bulkComplete;
+                    status.classList.remove('d-none');
+                }
+
+                button.disabled = false;
+            }
+
             function updateApplicationCastCrewMode(row) {
                 if (!row) {
                     return;
@@ -894,6 +1192,8 @@
                 const fullName = row.querySelector('[data-cast-crew-full-name-input]');
                 const nameOutput = row.querySelector('[data-cast-crew-name-output]');
                 const identity = row.querySelector('[data-cast-crew-identity]');
+                const individualNumberWrap = row.querySelector('[data-cast-crew-individual-number-wrap]');
+                const individualNumber = row.querySelector('[data-cast-crew-individual-number]');
                 const passportImage = row.querySelector('[data-cast-crew-passport-image]');
                 const isJordanian = applicationIsCastCrewJordanian(row);
                 const hasNationality = String(nationality?.value || '').trim() !== '';
@@ -947,6 +1247,37 @@
                     });
                 }
 
+                if (individualNumberWrap) {
+                    individualNumberWrap.classList.toggle('d-none', isJordanian);
+                }
+
+                if (individualNumber) {
+                    individualNumber.disabled = isJordanian;
+
+                    if (isJordanian) {
+                        individualNumber.value = '';
+                    } else {
+                        individualNumber.value = String(individualNumber.value || '').replace(/\D/g, '').slice(0, 20);
+                    }
+                }
+
+                const verificationStatus = row.querySelector('[data-cast-crew-verification-status]')?.value || 'unverified';
+                const verificationIdentifier = applicationCastCrewIdentifier(row);
+
+                if ((verificationStatus === 'verified' || verificationStatus === 'pending')
+                    && !row.dataset.castCrewVerifiedIdentifier) {
+                    row.dataset.castCrewVerifiedIdentifier = verificationIdentifier;
+                    row.dataset.castCrewVerifiedCategory = applicationCastCrewCategory(row);
+                }
+
+                const verifyButton = row.querySelector('[data-cast-crew-verify]');
+
+                if (verifyButton) {
+                    verifyButton.disabled = !verificationIdentifier;
+                }
+
+                applicationCastCrewSetApiFieldsLocked(row, verificationStatus === 'verified');
+
                 refreshApplicationCastCrewPassportColumn(row.closest('table'));
             }
 
@@ -980,17 +1311,20 @@
                 const deleteCell = '<td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeApplicationAnnexRow(this, \'#' + tableId + '\')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>';
 
                 if (fieldName === 'cast_crew') {
-	                    row.innerHTML = '<td class="row-number"></td>'
-	                        + '<td><select class="form-select" name="cast_crew[' + index + '][nationality]" data-cast-crew-nationality required>' + applicationNationalityOptionsHtml + '</select></td>'
-	                        + '<td class="cast-crew-name-cell">' + applicationCastCrewNameInputsHtml(index) + '</td>'
-	                        + '<td><input type="text" class="form-control" name="cast_crew[' + index + '][role]" required></td>'
-	                        + '<td><select class="form-select" name="cast_crew[' + index + '][gender]" required>' + applicationGenderOptionsHtml + '</select></td>'
-	                        + '<td><input type="date" class="form-control" name="cast_crew[' + index + '][birth_date]" max="' + applicationCrewBirthDateMax + '" required></td>'
-	                        + '<td>' + applicationCastCrewIdentityInputHtml(index) + '</td>'
-	                        + '<td class="d-none" data-cast-crew-passport-cell>' + applicationCastCrewPassportImageInputHtml(index) + '</td>'
+                    const rowKey = 'new_' + Date.now() + '_' + index;
+                    row.innerHTML = '<td class="row-number"></td>'
+                        + '<td><select class="form-select" name="cast_crew[' + rowKey + '][nationality]" data-cast-crew-nationality required>' + applicationNationalityOptionsHtml + '</select></td>'
+                        + '<td class="cast-crew-name-cell">' + applicationCastCrewNameInputsHtml(rowKey) + '</td>'
+                        + '<td><input type="text" class="form-control" name="cast_crew[' + rowKey + '][role]" required></td>'
+                        + '<td><select class="form-select" name="cast_crew[' + rowKey + '][gender]" data-cast-crew-gender data-cast-crew-api-field required>' + applicationGenderOptionsHtml + '</select></td>'
+                        + '<td><input type="date" class="form-control" name="cast_crew[' + rowKey + '][birth_date]" max="' + applicationCrewBirthDateMax + '" data-cast-crew-birth-date data-cast-crew-api-field required></td>'
+                        + '<td>' + applicationCastCrewIdentityInputHtml(rowKey) + '</td>'
+                        + '<td>' + applicationCastCrewIndividualNumberInputHtml(rowKey) + '</td>'
+                        + '<td class="d-none" data-cast-crew-passport-cell>' + applicationCastCrewPassportImageInputHtml(rowKey) + '</td>'
+                        + '<td>' + applicationCastCrewVerificationHtml(rowKey) + '</td>'
                         + deleteCell;
-	                } else if (fieldName === 'filming_locations') {
-	                    row.innerHTML = filmingLocationCardHtml(tableId, index);
+                } else if (fieldName === 'filming_locations') {
+                    row.innerHTML = filmingLocationCardHtml(tableId, index);
                 } else if (fieldName === 'imported_equipment') {
                     const rowKey = 'new_' + Date.now() + '_' + index;
                     row.innerHTML = '<td class="row-number"></td>'
@@ -1102,7 +1436,9 @@
                 }
 
                 if (event.target.matches('[data-cast-crew-nationality]')) {
-                    updateApplicationCastCrewMode(event.target.closest('tr'));
+                    const row = event.target.closest('tr');
+                    updateApplicationCastCrewMode(row);
+                    applicationCastCrewInvalidateVerification(row);
                 }
             });
 
@@ -1123,8 +1459,29 @@
                     updateFilmingLocationSupportRequirementNotes(event.target.closest('[data-location-support-requirement-row]'));
                 }
 
-                if (event.target.matches('[data-cast-crew-name-part], [data-cast-crew-full-name-input], [data-cast-crew-identity]')) {
+                if (event.target.matches('[data-cast-crew-name-part], [data-cast-crew-full-name-input]')) {
                     updateApplicationCastCrewMode(event.target.closest('tr'));
+                }
+
+                if (event.target.matches('[data-cast-crew-identity], [data-cast-crew-individual-number]')) {
+                    const row = event.target.closest('tr');
+                    updateApplicationCastCrewMode(row);
+                    applicationCastCrewInvalidateVerification(row);
+                }
+            });
+
+            document.addEventListener('click', function (event) {
+                const verifyButton = event.target.closest('[data-cast-crew-verify]');
+
+                if (verifyButton) {
+                    verifyApplicationCastCrewRow(verifyButton.closest('tr'));
+                    return;
+                }
+
+                const verifyAllButton = event.target.closest('[data-cast-crew-verify-all]');
+
+                if (verifyAllButton) {
+                    verifyAllApplicationCastCrewRows(verifyAllButton);
                 }
             });
 

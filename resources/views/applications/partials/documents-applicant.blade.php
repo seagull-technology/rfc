@@ -593,12 +593,29 @@
 	                        <th>{{ __('app.applications.annex_fields.gender') }}</th>
 	                        <th>{{ __('app.applications.annex_fields.birth_date') }}</th>
 	                        <th>{{ __('app.applications.annex_fields.identity_number') }}</th>
+	                        <th>{{ __('app.applications.annex_fields.individual_number') }}</th>
 	                        <th>{{ __('app.applications.annex_fields.passport_image') }}</th>
+	                        <th>{{ __('app.applications.cast_crew_verification.verification') }}</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse ($castCrewRows as $row)
-                        <tr>
+	                    @forelse ($castCrewRows as $row)
+	                        @php
+	                            $crewVerificationStatus = in_array(data_get($row, 'identity_verification_status'), ['verified', 'pending', 'manual', 'unverified'], true)
+	                                ? data_get($row, 'identity_verification_status')
+	                                : 'unverified';
+	                            $crewVerificationBadge = match ($crewVerificationStatus) {
+	                                'verified' => 'success',
+	                                'pending' => 'warning text-dark',
+	                                'manual' => 'secondary',
+	                                default => 'light text-dark border',
+	                            };
+	                            $crewVerificationSource = data_get($row, 'identity_verification_source');
+	                            $crewVerificationSourceLabel = $crewVerificationSource
+	                                ? __('app.applications.cast_crew_verification.sources.'.$crewVerificationSource)
+	                                : null;
+	                        @endphp
+	                        <tr>
                             <td>{{ $loop->iteration }}</td>
                             <td>{{ $fallback(data_get($row, 'name')) }}</td>
 	                            <td>{{ $fallback(data_get($row, 'role')) }}</td>
@@ -606,10 +623,20 @@
 	                            <td>{{ $genderLabel(data_get($row, 'gender')) }}</td>
 	                            <td>{{ $fallback(data_get($row, 'birth_date')) }}</td>
 	                            <td>{{ $fallback(data_get($row, 'identity_number')) }}</td>
+	                            <td>{{ $fallback(data_get($row, 'individual_number')) }}</td>
 	                            <td>{{ $fallback(data_get($row, 'passport_image_name')) }}</td>
-                        </tr>
-                    @empty
-	                        <tr><td colspan="8">{{ __('app.documents.not_filled') }}</td></tr>
+	                            <td>
+	                                <span class="badge bg-{{ $crewVerificationBadge }}">{{ __('app.applications.cast_crew_verification.statuses.'.$crewVerificationStatus) }}</span>
+	                                @if ($crewVerificationSourceLabel)
+	                                    <small class="d-block text-muted mt-1">{{ __('app.applications.cast_crew_verification.source', ['source' => $crewVerificationSourceLabel]) }}</small>
+	                                @endif
+	                                @if (filled(data_get($row, 'identity_verified_at')))
+	                                    <small class="d-block text-muted">{{ __('app.applications.cast_crew_verification.verified_at', ['date' => data_get($row, 'identity_verified_at')]) }}</small>
+	                                @endif
+	                            </td>
+	                        </tr>
+	                    @empty
+	                        <tr><td colspan="10">{{ __('app.documents.not_filled') }}</td></tr>
                     @endforelse
                 </tbody>
             </table>

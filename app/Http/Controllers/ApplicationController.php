@@ -20,6 +20,7 @@ use App\Notifications\ForeignProducerInvitationNotification;
 use App\Notifications\InboxMessageNotification;
 use App\Rules\SupportRequirementNotesRequired;
 use App\Services\ApprovalRoutingService;
+use App\Services\Gsb\CrewIdentityVerificationService;
 use App\Support\ApplicantRequestOverview;
 use App\Support\JordanBusinessDays;
 use App\Support\LocationSupportRequirements;
@@ -58,6 +59,7 @@ class ApplicationController extends Controller
 
     public function __construct(
         private readonly ApprovalRoutingService $approvalRoutingService,
+        private readonly CrewIdentityVerificationService $crewIdentityVerificationService,
     ) {}
 
     public function index(Request $request): View
@@ -343,7 +345,7 @@ class ApplicationController extends Controller
             $submission = $record->annexSubmissions()->create([
                 'submitted_by_user_id' => $user->getKey(),
                 'status' => ApplicationAnnexSubmission::STATUS_SUBMITTED,
-                'payload' => $this->annexMetadata($validated, (array) data_get($metadata, 'annex', [])),
+                'payload' => $this->annexMetadata($validated, (array) data_get($metadata, 'annex', []), (int) $user->getKey()),
                 'previous_payload' => (array) data_get($metadata, 'annex', []),
                 'submitted_at' => $submittedAt,
             ]);
@@ -1663,7 +1665,19 @@ class ApplicationController extends Controller
         $request = Request::create('/', 'POST', $payload);
         $request->attributes->set('allow_legacy_location_support_requirements', true);
 
-        Validator::make($payload, $this->applicationValidationRules($request, $application->entity, $application->submittedBy))->validate();
+        $validator = Validator::make(
+            $payload,
+            $this->applicationValidationRules($request, $application->entity, $application->submittedBy),
+        );
+
+        $validator->after(function ($validator) use ($payload): void {
+            $this->addCastCrewSubmissionValidationErrors(
+                $validator,
+                (array) ($payload['cast_crew'] ?? []),
+            );
+        });
+
+        $validator->validate();
     }
 
     /**
@@ -1821,6 +1835,12 @@ class ApplicationController extends Controller
             'cast_crew.*.passport_image_mime_type' => ['nullable', 'string', 'max:255'],
             'cast_crew.*.passport_image_size' => ['nullable', 'integer', 'min:0'],
             'cast_crew.*.passport_image_uploaded_at' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.individual_number' => ['nullable', 'string', 'max:20', 'regex:/^\d{1,20}$/'],
+            'cast_crew.*.verification_token' => ['nullable', 'string', 'max:10000'],
+            'cast_crew.*.identity_verification_status' => ['nullable', Rule::in(['verified', 'pending', 'manual', 'unverified'])],
+            'cast_crew.*.identity_verification_source' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.identity_verified_at' => ['nullable', 'date'],
+            'cast_crew.*.identity_verification_category' => ['nullable', Rule::in(['jordanian', 'foreign'])],
             'filming_locations' => ['nullable', 'array'],
             'filming_locations.*.location_key' => ['nullable', 'string', 'max:100'],
             'filming_locations.*.governorate' => ['nullable', 'string', Rule::in($governorateCodes)],
@@ -1995,7 +2015,7 @@ class ApplicationController extends Controller
             ? ['required', 'accepted']
             : ['nullable', 'boolean'];
 
-        return $request->validate([
+        $rules = [
             'production_terms_version' => ['required', 'string', Rule::in([self::PRODUCTION_TERMS_VERSION])],
             'production_terms_accepted' => ['accepted'],
             'production_terms_local_applicant_name' => ['required', 'string', 'max:255'],
@@ -2030,6 +2050,12 @@ class ApplicationController extends Controller
             'cast_crew.*.passport_image_mime_type' => ['nullable', 'string', 'max:255'],
             'cast_crew.*.passport_image_size' => ['nullable', 'integer', 'min:0'],
             'cast_crew.*.passport_image_uploaded_at' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.individual_number' => ['nullable', 'string', 'max:20', 'regex:/^\d{1,20}$/'],
+            'cast_crew.*.verification_token' => ['nullable', 'string', 'max:10000'],
+            'cast_crew.*.identity_verification_status' => ['nullable', Rule::in(['verified', 'pending', 'manual', 'unverified'])],
+            'cast_crew.*.identity_verification_source' => ['nullable', 'string', 'max:255'],
+            'cast_crew.*.identity_verified_at' => ['nullable', 'date'],
+            'cast_crew.*.identity_verification_category' => ['nullable', Rule::in(['jordanian', 'foreign'])],
             'filming_locations' => ['nullable', 'array'],
             'filming_locations.*.location_key' => ['nullable', 'string', 'max:100'],
             'filming_locations.*.governorate' => ['nullable', 'string', Rule::in($governorateCodes)],
@@ -2147,7 +2173,19 @@ class ApplicationController extends Controller
             'governmental_scenes.*.filming_date' => ['nullable', 'date'],
             'governmental_scenes_confirmed' => ['nullable', 'boolean'],
             ...$this->projectNeedsConditionalValidationRules($request, $equipmentCategoryCodes, $equipmentEntryPointCodes, $airportCodes),
-        ]);
+        ];
+
+        $validator = Validator::make($request->all(), $rules);
+        $validator->after(function ($validator) use ($request, $application): void {
+            $this->addCastCrewSubmissionValidationErrors(
+                $validator,
+                (array) $request->input('cast_crew', []),
+                $request->user()?->getKey(),
+                (array) data_get($application->metadata, 'annex.cast_crew', []),
+            );
+        });
+
+        return $validator->validate();
     }
 
     /**
@@ -2347,7 +2385,7 @@ class ApplicationController extends Controller
             $required = Rule::requiredIf($rowStarted);
             $hasStoredAttachment = filled($row['attachment_path'] ?? null)
                 || filled($row['attachment_name'] ?? null)
-                || ($row['attachment'] ?? null) instanceof \Illuminate\Http\UploadedFile;
+                || ($row['attachment'] ?? null) instanceof UploadedFile;
 
             $rules += [
                 $prefix.'.shipping_company_name' => [$required, 'nullable', 'string', 'max:255'],
@@ -2371,7 +2409,7 @@ class ApplicationController extends Controller
             $prefix = 'equipment_travelers.'.$index;
             $hasStoredPassport = filled($row['passport_image_path'] ?? null)
                 || filled($row['passport_image_name'] ?? null)
-                || ($row['passport_image'] ?? null) instanceof \Illuminate\Http\UploadedFile;
+                || ($row['passport_image'] ?? null) instanceof UploadedFile;
 
             $rules += [
                 $prefix.'.traveler_name' => [$required, 'nullable', 'string', 'max:255'],
@@ -2475,7 +2513,7 @@ class ApplicationController extends Controller
     private function conditionalFormRowHasData(array $row, array $ignoredFields = []): bool
     {
         foreach (Arr::except($row, $ignoredFields) as $value) {
-            if ($value instanceof \Illuminate\Http\UploadedFile || filled($value)) {
+            if ($value instanceof UploadedFile || filled($value)) {
                 return true;
             }
         }
@@ -2850,7 +2888,7 @@ class ApplicationController extends Controller
                     'required_approvals' => [],
                     'supporting_notes' => ($validated['supporting_notes'] ?? null) ?: null,
                 ],
-                'annex' => $this->annexMetadata($validated, $existingAnnex),
+                'annex' => $this->annexMetadata($validated, $existingAnnex, $user?->getKey()),
             ],
         ];
     }
@@ -2859,7 +2897,7 @@ class ApplicationController extends Controller
      * @param  array<string, mixed>  $validated
      * @return array<string, mixed>
      */
-    private function annexMetadata(array $validated, array $existingAnnex = []): array
+    private function annexMetadata(array $validated, array $existingAnnex = [], ?int $verificationUserId = null): array
     {
         $filmingLocations = $this->filmingLocationRows((array) ($validated['filming_locations'] ?? []));
         $locationSupportRequirements = array_key_exists('location_support_requirements', $validated)
@@ -2919,6 +2957,7 @@ class ApplicationController extends Controller
             'cast_crew' => $this->castCrewRows(
                 (array) ($validated['cast_crew'] ?? []),
                 (array) data_get($existingAnnex, 'cast_crew', []),
+                $verificationUserId,
             ),
             'filming_locations' => $filmingLocations,
             'location_support_requirements' => $locationSupportRequirements,
@@ -3422,26 +3461,87 @@ class ApplicationController extends Controller
      * @param  array<int|string, array<string, mixed>>  $existingRows
      * @return array<int, array<string, mixed>>
      */
-    private function castCrewRows(array $rows, array $existingRows = []): array
+    private function castCrewRows(array $rows, array $existingRows = [], ?int $verificationUserId = null): array
     {
-        $existingValues = array_values($existingRows);
-        $position = 0;
-
         return collect($rows)
-            ->map(function (array $row, int|string $key) use ($existingRows, $existingValues, &$position): array {
-                $existingRow = (array) ($existingRows[$key] ?? $existingValues[$position] ?? []);
-                $nameParts = collect(['first_name', 'second_name', 'third_name', 'family_name'])
-                    ->map(fn (string $key): string => trim((string) ($row[$key] ?? '')))
-                    ->filter()
-                    ->values()
-                    ->all();
+            ->filter(fn ($row): bool => is_array($row) && $this->castCrewRowHasMeaningfulData($row))
+            ->map(function (array $row) use ($existingRows, $verificationUserId): array {
+                $existingRow = $this->matchingExistingCastCrewRow($row, $existingRows);
+                $nationality = $this->nullableTrimmedString($row['nationality'] ?? null);
+                $category = $this->crewNationalityCategory($nationality);
+                $isJordanian = $category === 'jordanian';
+                $identityNumber = $this->nullableTrimmedString($row['identity_number'] ?? null);
+                $individualNumber = $this->nullableTrimmedString($row['individual_number'] ?? null);
+                $identifier = $isJordanian ? $identityNumber : $individualNumber;
+                $sameIdentity = $existingRow !== [];
+                $proof = $verificationUserId
+                    ? $this->crewIdentityVerificationService->consumeProof(
+                        $this->nullableTrimmedString($row['verification_token'] ?? null),
+                        $category,
+                        (string) $identifier,
+                        $verificationUserId,
+                    )
+                    : null;
+                $existingStatus = (string) ($existingRow['identity_verification_status'] ?? '');
+                $canPreserveExistingVerification = $sameIdentity && in_array($existingStatus, [
+                    CrewIdentityVerificationService::STATUS_VERIFIED,
+                    CrewIdentityVerificationService::STATUS_PENDING,
+                ], true);
+                $status = (string) ($proof['status'] ?? ($canPreserveExistingVerification
+                    ? $existingStatus
+                    : (! $isJordanian && blank($individualNumber)
+                        ? CrewIdentityVerificationService::STATUS_MANUAL
+                        : CrewIdentityVerificationService::STATUS_UNVERIFIED)));
+                $source = $this->nullableTrimmedString(
+                    $proof['source'] ?? ($canPreserveExistingVerification ? ($existingRow['identity_verification_source'] ?? null) : null),
+                );
+                $verifiedAt = $this->nullableTrimmedString(
+                    $proof['verified_at'] ?? ($canPreserveExistingVerification ? ($existingRow['identity_verified_at'] ?? null) : null),
+                );
+                $verifiedIdentity = [];
 
-                if (blank($row['name'] ?? null) && $nameParts !== []) {
-                    $row['name'] = implode(' ', $nameParts);
+                if ($status === CrewIdentityVerificationService::STATUS_VERIFIED) {
+                    $verifiedIdentity = (array) ($proof['identity'] ?? []);
+
+                    if ($verifiedIdentity === [] && $canPreserveExistingVerification) {
+                        $verifiedIdentity = [
+                            'full_name' => $existingRow['name'] ?? null,
+                            'first_name' => $existingRow['first_name'] ?? null,
+                            'father_name' => $existingRow['second_name'] ?? null,
+                            'grandfather_name' => $existingRow['third_name'] ?? null,
+                            'family_name' => $existingRow['family_name'] ?? null,
+                            'gender' => $existingRow['gender'] ?? null,
+                            'birth_date' => $existingRow['birth_date'] ?? null,
+                        ];
+                    }
                 }
 
-                $nationality = $this->nullableTrimmedString($row['nationality'] ?? null);
-                $isJordanian = in_array(mb_strtolower((string) $nationality), ['jordanian', 'أردني', 'اردني'], true);
+                $verifiedFullName = $this->nullableTrimmedString($verifiedIdentity['full_name'] ?? null);
+                $apiNameParts = filled($verifiedFullName)
+                    ? (preg_split('/\s+/u', $verifiedFullName, 4) ?: [])
+                    : [];
+                $useVerifiedIdentity = $status === CrewIdentityVerificationService::STATUS_VERIFIED;
+                $firstName = $this->nullableTrimmedString($useVerifiedIdentity
+                    ? (($verifiedIdentity['first_name'] ?? null) ?: ($apiNameParts[0] ?? null))
+                    : ($row['first_name'] ?? null));
+                $secondName = $this->nullableTrimmedString($useVerifiedIdentity
+                    ? (($verifiedIdentity['father_name'] ?? null) ?: ($apiNameParts[1] ?? null))
+                    : ($row['second_name'] ?? null));
+                $thirdName = $this->nullableTrimmedString($useVerifiedIdentity
+                    ? (($verifiedIdentity['grandfather_name'] ?? null) ?: ($apiNameParts[2] ?? null))
+                    : ($row['third_name'] ?? null));
+                $familyName = $this->nullableTrimmedString($useVerifiedIdentity
+                    ? (($verifiedIdentity['family_name'] ?? null) ?: ($apiNameParts[3] ?? null))
+                    : ($row['family_name'] ?? null));
+                $nameParts = collect([$firstName, $secondName, $thirdName, $familyName])->filter()->values()->all();
+                $name = $this->nullableTrimmedString($useVerifiedIdentity
+                    ? $verifiedFullName
+                    : ($row['name'] ?? null));
+
+                if (blank($name) && $nameParts !== []) {
+                    $name = implode(' ', $nameParts);
+                }
+
                 $passportMetadata = [];
 
                 if (! $isJordanian && filled($nationality)) {
@@ -3458,34 +3558,221 @@ class ApplicationController extends Controller
                         ];
                     } else {
                         $passportMetadata = [
-                            'passport_image_path' => $this->nullableTrimmedString($row['passport_image_path'] ?? data_get($existingRow, 'passport_image_path')),
-                            'passport_image_name' => $this->nullableTrimmedString($row['passport_image_name'] ?? data_get($existingRow, 'passport_image_name')),
-                            'passport_image_mime_type' => $this->nullableTrimmedString($row['passport_image_mime_type'] ?? data_get($existingRow, 'passport_image_mime_type')),
-                            'passport_image_size' => $row['passport_image_size'] ?? data_get($existingRow, 'passport_image_size'),
-                            'passport_image_uploaded_at' => $this->nullableTrimmedString($row['passport_image_uploaded_at'] ?? data_get($existingRow, 'passport_image_uploaded_at')),
+                            'passport_image_path' => $this->nullableTrimmedString(data_get($existingRow, 'passport_image_path')),
+                            'passport_image_name' => $this->nullableTrimmedString(data_get($existingRow, 'passport_image_name')),
+                            'passport_image_mime_type' => $this->nullableTrimmedString(data_get($existingRow, 'passport_image_mime_type')),
+                            'passport_image_size' => data_get($existingRow, 'passport_image_size'),
+                            'passport_image_uploaded_at' => $this->nullableTrimmedString(data_get($existingRow, 'passport_image_uploaded_at')),
                         ];
                     }
                 }
 
-                $position++;
-
                 return [
-                    'name' => $this->nullableTrimmedString($row['name'] ?? null),
-                    'first_name' => $this->nullableTrimmedString($row['first_name'] ?? null),
-                    'second_name' => $this->nullableTrimmedString($row['second_name'] ?? null),
-                    'third_name' => $this->nullableTrimmedString($row['third_name'] ?? null),
-                    'family_name' => $this->nullableTrimmedString($row['family_name'] ?? null),
+                    'name' => $name,
+                    'first_name' => $firstName,
+                    'second_name' => $secondName,
+                    'third_name' => $thirdName,
+                    'family_name' => $familyName,
                     'role' => $this->nullableTrimmedString($row['role'] ?? null),
                     'nationality' => $nationality,
-                    'gender' => $this->nullableTrimmedString($row['gender'] ?? null),
-                    'birth_date' => $row['birth_date'] ?? null,
-                    'identity_number' => $this->nullableTrimmedString($row['identity_number'] ?? null),
+                    'gender' => $this->nullableTrimmedString($verifiedIdentity['gender'] ?? $row['gender'] ?? null),
+                    'birth_date' => $verifiedIdentity['birth_date'] ?? $row['birth_date'] ?? null,
+                    'identity_number' => $identityNumber,
+                    'individual_number' => $individualNumber,
+                    'identity_verification_status' => $status,
+                    'identity_verification_source' => $source,
+                    'identity_verified_at' => $verifiedAt,
+                    'identity_verification_category' => $category,
                     ...$passportMetadata,
                 ];
             })
-            ->filter(fn (array $row): bool => collect($row)->contains(fn ($value): bool => filled($value)))
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<int|string, array<string, mixed>>  $rows
+     * @param  array<int|string, array<string, mixed>>  $existingRows
+     */
+    private function addCastCrewSubmissionValidationErrors(
+        mixed $validator,
+        array $rows,
+        ?int $verificationUserId = null,
+        array $existingRows = [],
+    ): void {
+        $labels = [
+            'name' => 'person_name',
+            'first_name' => 'first_name',
+            'second_name' => 'second_name',
+            'third_name' => 'third_name',
+            'family_name' => 'family_name',
+            'role' => 'role',
+            'nationality' => 'nationality',
+            'gender' => 'gender',
+            'birth_date' => 'birth_date',
+            'identity_number' => 'identity_number',
+            'passport_image' => 'passport_image',
+        ];
+
+        foreach ($rows as $index => $row) {
+            if (! is_array($row) || ! $this->castCrewRowHasMeaningfulData($row)) {
+                continue;
+            }
+
+            $addRequiredError = function (string $field) use ($validator, $index, $labels): void {
+                $validator->errors()->add(
+                    "cast_crew.$index.$field",
+                    __('validation.required', [
+                        'attribute' => __("app.applications.annex_fields.{$labels[$field]}"),
+                    ]),
+                );
+            };
+
+            foreach (['nationality', 'role', 'gender', 'birth_date'] as $requiredField) {
+                if (blank($row[$requiredField] ?? null)) {
+                    $addRequiredError($requiredField);
+                }
+            }
+
+            if (blank($row['nationality'] ?? null)) {
+                continue;
+            }
+
+            $category = $this->crewNationalityCategory($row['nationality']);
+            $isJordanian = $category === 'jordanian';
+            $existingRow = $this->matchingExistingCastCrewRow($row, $existingRows);
+
+            if ($isJordanian) {
+                foreach (['first_name', 'second_name', 'third_name', 'family_name', 'identity_number'] as $requiredField) {
+                    if (blank($row[$requiredField] ?? null)) {
+                        $addRequiredError($requiredField);
+                    }
+                }
+            } else {
+                foreach (['name', 'identity_number'] as $requiredField) {
+                    if (blank($row[$requiredField] ?? null)) {
+                        $addRequiredError($requiredField);
+                    }
+                }
+
+                $hasNewPassport = ($row['passport_image'] ?? null) instanceof UploadedFile;
+                $hasStoredPassport = $verificationUserId === null
+                    ? filled($row['passport_image_path'] ?? null)
+                    : filled(data_get($existingRow, 'passport_image_path'));
+
+                if (! $hasNewPassport && ! $hasStoredPassport) {
+                    $addRequiredError('passport_image');
+                }
+            }
+
+            $requiresGovernmentVerification = $isJordanian || filled($row['individual_number'] ?? null);
+
+            if (! $requiresGovernmentVerification) {
+                continue;
+            }
+
+            $acceptableStatuses = [
+                CrewIdentityVerificationService::STATUS_VERIFIED,
+                CrewIdentityVerificationService::STATUS_PENDING,
+            ];
+            $acceptable = in_array(
+                (string) ($row['identity_verification_status'] ?? CrewIdentityVerificationService::STATUS_UNVERIFIED),
+                $acceptableStatuses,
+                true,
+            );
+
+            if ($verificationUserId !== null) {
+                $identifier = $isJordanian
+                    ? $this->nullableTrimmedString($row['identity_number'] ?? null)
+                    : $this->nullableTrimmedString($row['individual_number'] ?? null);
+                $proof = $this->crewIdentityVerificationService->consumeProof(
+                    $this->nullableTrimmedString($row['verification_token'] ?? null),
+                    $category,
+                    (string) $identifier,
+                    $verificationUserId,
+                );
+                $proofIsAcceptable = in_array((string) ($proof['status'] ?? ''), $acceptableStatuses, true);
+                $existingIsAcceptable = $existingRow !== [] && in_array(
+                    (string) ($existingRow['identity_verification_status'] ?? ''),
+                    $acceptableStatuses,
+                    true,
+                );
+                $acceptable = $proofIsAcceptable || $existingIsAcceptable;
+            }
+
+            if (! $acceptable) {
+                $field = $isJordanian ? 'identity_number' : 'individual_number';
+                $validator->errors()->add(
+                    "cast_crew.$index.$field",
+                    __('app.applications.cast_crew_verification.final_verification_required'),
+                );
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<int|string, array<string, mixed>>  $existingRows
+     * @return array<string, mixed>
+     */
+    private function matchingExistingCastCrewRow(array $row, array $existingRows): array
+    {
+        $identityKey = $this->castCrewIdentityMatchKey($row);
+
+        if ($identityKey === null) {
+            return [];
+        }
+
+        foreach ($existingRows as $existingRow) {
+            if (is_array($existingRow) && $this->castCrewIdentityMatchKey($existingRow) === $identityKey) {
+                return $existingRow;
+            }
+        }
+
+        return [];
+    }
+
+    /** @param array<string, mixed> $row */
+    private function castCrewIdentityMatchKey(array $row): ?string
+    {
+        if (blank($row['nationality'] ?? null)) {
+            return null;
+        }
+
+        $category = $this->crewNationalityCategory($row['nationality']);
+
+        if ($category === 'jordanian') {
+            $identifier = $this->nullableTrimmedString($row['identity_number'] ?? null);
+
+            return filled($identifier) ? "jordanian:national:$identifier" : null;
+        }
+
+        $individualNumber = $this->nullableTrimmedString($row['individual_number'] ?? null);
+
+        if (filled($individualNumber)) {
+            return "foreign:individual:$individualNumber";
+        }
+
+        $passportNumber = $this->nullableTrimmedString($row['identity_number'] ?? null);
+
+        return filled($passportNumber) ? "foreign:passport:$passportNumber" : null;
+    }
+
+    /** @param array<string, mixed> $row */
+    private function castCrewRowHasMeaningfulData(array $row): bool
+    {
+        return collect([
+            'name', 'first_name', 'second_name', 'third_name', 'family_name', 'role',
+            'nationality', 'gender', 'birth_date', 'identity_number', 'individual_number',
+            'passport_image', 'passport_image_path',
+        ])->contains(fn (string $key): bool => filled($row[$key] ?? null));
+    }
+
+    private function crewNationalityCategory(mixed $nationality): string
+    {
+        return in_array(mb_strtolower(trim((string) $nationality)), ['jordanian', 'أردني', 'اردني'], true)
+            ? 'jordanian'
+            : 'foreign';
     }
 
     /**

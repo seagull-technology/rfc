@@ -1,0 +1,32 @@
+RFC e-Permit staging release 20260723-v1
+=========================================
+
+This is a complete staging release built from the current main branch. It includes
+all previously committed application and UAT work plus the crew identity integration
+described below.
+
+Crew identity verification:
+
+- Adds authenticated CSPD lookup for Jordanian cast and crew using the 10-digit
+  national number.
+- Adds PSD lookup for non-Jordanian cast and crew when an individual number is
+  available, while retaining the passport/manual path when it is not.
+- Auto-fills authoritative identity data returned by government services and shows
+  a localized verification status in the application, annex, RFC, and print views.
+- Requires complete Jordanian four-part names, identity details, role, gender, and
+  date of birth before final submission.
+- Requires non-Jordanian full name, passport number, and passport image before final
+  submission.
+- Applies the same completeness and identity-proof rules to annex updates.
+- Preserves passport files by verified identity rather than row position and rejects
+  submitted hidden file metadata that does not belong to the person.
+
+Deployment notes:
+
+- No new database migration is required by this release.
+- The deployment script preserves the government server .env, uploaded storage,
+  database data, and existing Super Admin/RFC credentials.
+- Existing CSPD and PSD settings remain in use. The optional
+  GSB_CREW_VERIFICATION_MINUTES value defaults to 120 minutes.
+- The complete automated suite passed before packaging: 252 tests and 2,847
+  assertions.

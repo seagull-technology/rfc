@@ -1,22 +1,9 @@
 <?php
 
-use App\Http\Controllers\Auth\LoginController;
-use App\Http\Controllers\Auth\LogoutController;
-use App\Http\Controllers\Auth\CompanyLookupController;
-use App\Http\Controllers\Auth\OrganizationLookupController;
-use App\Http\Controllers\Auth\OtpController;
-use App\Http\Controllers\Auth\ForgotPasswordController;
-use App\Http\Controllers\Auth\RegisterController;
-use App\Http\Controllers\Auth\ResetPasswordController;
-use App\Http\Controllers\Auth\SanadLoginController;
-use App\Http\Controllers\Auth\StudentLookupController;
-use App\Http\Controllers\ApplicationController;
-use App\Http\Controllers\ApplicationAnnexAttachmentController;
-use App\Http\Controllers\ApplicationPersonalDetailsLookupController;
 use App\Http\Controllers\Admin\AdminDashboardController;
-use App\Http\Controllers\Admin\AuthorityEscalationController;
-use App\Http\Controllers\Admin\ApprovalRoutingRuleController;
 use App\Http\Controllers\Admin\ApplicationManagementController;
+use App\Http\Controllers\Admin\ApprovalRoutingRuleController;
+use App\Http\Controllers\Admin\AuthorityEscalationController;
 use App\Http\Controllers\Admin\ContactCenterController as AdminContactCenterController;
 use App\Http\Controllers\Admin\EntityManagementController;
 use App\Http\Controllers\Admin\FilmingLocationLookupController;
@@ -31,6 +18,20 @@ use App\Http\Controllers\Admin\ReportsController;
 use App\Http\Controllers\Admin\ScoutingRequestManagementController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\WorkAndReleaseLookupController;
+use App\Http\Controllers\ApplicationAnnexAttachmentController;
+use App\Http\Controllers\ApplicationController;
+use App\Http\Controllers\ApplicationCrewIdentityLookupController;
+use App\Http\Controllers\ApplicationPersonalDetailsLookupController;
+use App\Http\Controllers\Auth\CompanyLookupController;
+use App\Http\Controllers\Auth\ForgotPasswordController;
+use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\LogoutController;
+use App\Http\Controllers\Auth\OrganizationLookupController;
+use App\Http\Controllers\Auth\OtpController;
+use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Controllers\Auth\ResetPasswordController;
+use App\Http\Controllers\Auth\SanadLoginController;
+use App\Http\Controllers\Auth\StudentLookupController;
 use App\Http\Controllers\Authority\ApplicationInboxController;
 use App\Http\Controllers\CompanyEmployeeController;
 use App\Http\Controllers\ContactCenterController;
@@ -122,6 +123,9 @@ Route::group([
         Route::post('/applications/personal-details/lookup', ApplicationPersonalDetailsLookupController::class)
             ->middleware('throttle:20,1')
             ->name('applications.personal-details.lookup');
+        Route::post('/applications/crew/identity-lookup', ApplicationCrewIdentityLookupController::class)
+            ->middleware('throttle:120,1')
+            ->name('applications.crew.identity.lookup');
         Route::get('/applications/{application}/annex/personal-details/{person}/attachments/{attachment}', ApplicationAnnexAttachmentController::class)
             ->name('applications.annex.personal-details.attachments.download');
         Route::get('/applications/create', [ApplicationController::class, 'create'])->name('applications.create');

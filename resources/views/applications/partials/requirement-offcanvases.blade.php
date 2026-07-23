@@ -207,7 +207,7 @@
         }
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable {
-            min-width: 1480px;
+            min-width: 2050px;
         }
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(1),
@@ -251,8 +251,51 @@
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(8),
         .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(8) {
+            min-width: 18rem;
+            width: 18rem;
+        }
+
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(9),
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(9) {
             min-width: 7rem;
             width: 7rem;
+        }
+
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(10),
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(10) {
+            min-width: 18rem;
+            width: 18rem;
+            white-space: normal;
+        }
+
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(11),
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(11) {
+            min-width: 7rem;
+            width: 7rem;
+        }
+
+        .cast-crew-verification-panel {
+            align-items: flex-start;
+            display: flex;
+            flex-direction: column;
+            gap: .55rem;
+        }
+
+        .cast-crew-verification-panel .badge {
+            font-size: .75rem;
+            line-height: 1.35;
+            white-space: normal;
+        }
+
+        .cast-crew-verification-message {
+            font-size: .75rem;
+            line-height: 1.5;
+            margin: 0;
+        }
+
+        .cast-crew-api-locked {
+            background-color: #eef1f5 !important;
+            cursor: not-allowed;
         }
 
         .offcanvas.application-annex-offcanvas #airportPeopleTable {
@@ -403,9 +446,13 @@
                 <i class="ph ph-info fa-xl me-2 lh-lg"></i>
                 <span>{{ __('app.applications.cast_crew_instruction') }}</span>
             </p>
-            <div class="d-flex justify-content-end py-3">
+            <div class="d-flex flex-wrap justify-content-end gap-2 py-3">
+                <button type="button" class="btn btn-outline-primary" data-cast-crew-verify-all>
+                    <i class="ph ph-shield-check me-2"></i>{{ __('app.applications.cast_crew_verification.verify_all') }}
+                </button>
                 <button type="button" class="btn btn-success" onclick="addApplicationAnnexRow('castCrewRequestTable', 'cast_crew')"><i class="fa-solid fa-plus me-2"></i>{{ __('app.add') }}</button>
             </div>
+            <div class="alert alert-info d-none" role="status" data-cast-crew-bulk-status></div>
             <div class="table-responsive">
                 <table class="table align-middle" id="castCrewRequestTable">
                     <thead class="table-light">
@@ -417,7 +464,9 @@
 	                            <th>{{ __('app.applications.annex_fields.gender') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.birth_date') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.identity_number') }}</th>
+	                            <th>{{ __('app.applications.annex_fields.individual_number') }}</th>
 	                            <th class="d-none" data-cast-crew-passport-heading>{{ __('app.applications.annex_fields.passport_image') }}</th>
+	                            <th>{{ __('app.applications.cast_crew_verification.verification') }}</th>
 	                            <th>{{ __('app.applications.actions') }}</th>
                         </tr>
                     </thead>
@@ -434,6 +483,21 @@
                                 $castCrewSecondName = $row['second_name'] ?? ($castCrewNameParts[1] ?? '');
                                 $castCrewThirdName = $row['third_name'] ?? ($castCrewNameParts[2] ?? '');
                                 $castCrewFamilyName = $row['family_name'] ?? ($castCrewNameParts[3] ?? '');
+                                $storedCastCrewVerificationStatus = $row['identity_verification_status'] ?? 'unverified';
+                                $castCrewVerificationStatus = in_array($storedCastCrewVerificationStatus, ['verified', 'pending', 'manual', 'unverified'], true)
+                                    ? $storedCastCrewVerificationStatus
+                                    : 'unverified';
+                                $castCrewVerificationBadge = match ($castCrewVerificationStatus) {
+                                    'verified' => 'success',
+                                    'pending' => 'warning text-dark',
+                                    'manual' => 'secondary',
+                                    default => 'light text-dark border',
+                                };
+                                $castCrewVerificationSource = $row['identity_verification_source'] ?? '';
+                                $castCrewVerificationSourceLabel = filled($castCrewVerificationSource)
+                                    ? __('app.applications.cast_crew_verification.sources.'.$castCrewVerificationSource)
+                                    : '';
+                                $castCrewVerifiedAt = $row['identity_verified_at'] ?? '';
                             @endphp
                             <tr>
                                 <td class="row-number">{{ $loop->iteration }}</td>
@@ -451,26 +515,32 @@
                                 <td class="cast-crew-name-cell">
                                     <input type="hidden" name="cast_crew[{{ $index }}][name]" value="{{ $row['name'] ?? '' }}" data-cast-crew-name-output>
                                     <div class="row g-2 cast-crew-jordanian-name {{ $castCrewIsJordanian ? '' : 'd-none' }}" data-cast-crew-jordanian-name>
-                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][first_name]" value="{{ $castCrewFirstName }}" placeholder="{{ __('app.applications.annex_fields.first_name') }}" data-cast-crew-name-part @required($castCrewIsJordanian) @disabled(! $castCrewIsJordanian)></div>
-                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][second_name]" value="{{ $castCrewSecondName }}" placeholder="{{ __('app.applications.annex_fields.second_name') }}" data-cast-crew-name-part @required($castCrewIsJordanian) @disabled(! $castCrewIsJordanian)></div>
-                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][third_name]" value="{{ $castCrewThirdName }}" placeholder="{{ __('app.applications.annex_fields.third_name') }}" data-cast-crew-name-part @required($castCrewIsJordanian) @disabled(! $castCrewIsJordanian)></div>
-                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][family_name]" value="{{ $castCrewFamilyName }}" placeholder="{{ __('app.applications.annex_fields.family_name') }}" data-cast-crew-name-part @required($castCrewIsJordanian) @disabled(! $castCrewIsJordanian)></div>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][first_name]" value="{{ $castCrewFirstName }}" placeholder="{{ __('app.applications.annex_fields.first_name') }}" data-cast-crew-name-part data-cast-crew-api-field @required($castCrewIsJordanian) @disabled(! $castCrewIsJordanian)></div>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][second_name]" value="{{ $castCrewSecondName }}" placeholder="{{ __('app.applications.annex_fields.second_name') }}" data-cast-crew-name-part data-cast-crew-api-field @required($castCrewIsJordanian) @disabled(! $castCrewIsJordanian)></div>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][third_name]" value="{{ $castCrewThirdName }}" placeholder="{{ __('app.applications.annex_fields.third_name') }}" data-cast-crew-name-part data-cast-crew-api-field @required($castCrewIsJordanian) @disabled(! $castCrewIsJordanian)></div>
+                                        <div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[{{ $index }}][family_name]" value="{{ $castCrewFamilyName }}" placeholder="{{ __('app.applications.annex_fields.family_name') }}" data-cast-crew-name-part data-cast-crew-api-field @required($castCrewIsJordanian) @disabled(! $castCrewIsJordanian)></div>
                                     </div>
-                                    <input type="text" class="form-control {{ $castCrewIsJordanian ? 'd-none' : '' }}" value="{{ $row['name'] ?? '' }}" data-cast-crew-full-name-input @required(! $castCrewIsJordanian)>
+                                    <input type="text" class="form-control {{ $castCrewIsJordanian ? 'd-none' : '' }}" value="{{ $row['name'] ?? '' }}" data-cast-crew-full-name-input data-cast-crew-api-field @required(! $castCrewIsJordanian)>
                                 </td>
                                 <td><input type="text" class="form-control" name="cast_crew[{{ $index }}][role]" value="{{ $row['role'] ?? '' }}" required></td>
 	                                <td>
-	                                    <select class="form-select" name="cast_crew[{{ $index }}][gender]" required>
+	                                    <select class="form-select" name="cast_crew[{{ $index }}][gender]" data-cast-crew-gender data-cast-crew-api-field required>
 	                                        <option value="">{{ __('app.admin.select_placeholder') }}</option>
 	                                        @foreach (['male', 'female'] as $gender)
 	                                            <option value="{{ $gender }}" @selected(($row['gender'] ?? '') === $gender)>{{ __('app.auth.gender_options.'.$gender) }}</option>
 	                                        @endforeach
 	                                    </select>
 	                                </td>
-	                                <td><input type="date" class="form-control" name="cast_crew[{{ $index }}][birth_date]" value="{{ $row['birth_date'] ?? '' }}" max="{{ $maxCrewBirthDate }}" required></td>
+	                                <td><input type="date" class="form-control" name="cast_crew[{{ $index }}][birth_date]" value="{{ $row['birth_date'] ?? '' }}" max="{{ $maxCrewBirthDate }}" data-cast-crew-birth-date data-cast-crew-api-field required></td>
 	                                <td>
 	                                    <input type="text" class="form-control" name="cast_crew[{{ $index }}][identity_number]" value="{{ $row['identity_number'] ?? '' }}" placeholder="{{ $castCrewIsJordanian ? __('app.applications.annex_fields.national_id') : __('app.applications.annex_fields.passport_number') }}" inputmode="{{ $castCrewIsJordanian ? 'numeric' : 'text' }}" required @if ($castCrewIsJordanian) minlength="10" maxlength="10" pattern="\d{10}" @endif data-cast-crew-identity>
 	                                    <div class="invalid-feedback" data-cast-crew-identity-feedback>{{ __('app.applications.cast_crew_national_id_digits') }}</div>
+	                                </td>
+	                                <td>
+	                                    <div class="{{ $castCrewIsJordanian ? 'd-none' : '' }}" data-cast-crew-individual-number-wrap>
+	                                        <input type="text" class="form-control" name="cast_crew[{{ $index }}][individual_number]" value="{{ $row['individual_number'] ?? '' }}" inputmode="numeric" maxlength="20" pattern="\d{1,20}" data-cast-crew-individual-number @disabled($castCrewIsJordanian)>
+	                                        <small class="form-text text-muted d-block mt-1">{{ __('app.applications.cast_crew_verification.foreign_optional_help') }}</small>
+	                                    </div>
 	                                </td>
 	                                <td class="d-none" data-cast-crew-passport-cell>
 	                                    <div class="{{ $castCrewShowsPassportImage ? '' : 'd-none' }}" data-cast-crew-passport-image>
@@ -484,6 +554,23 @@
 	                                        @endif
 	                                    </div>
 	                                </td>
+                                <td>
+                                    <input type="hidden" name="cast_crew[{{ $index }}][verification_token]" value="" data-cast-crew-verification-token>
+                                    <input type="hidden" name="cast_crew[{{ $index }}][identity_verification_status]" value="{{ $castCrewVerificationStatus }}" data-cast-crew-verification-status>
+                                    <input type="hidden" name="cast_crew[{{ $index }}][identity_verification_source]" value="{{ $castCrewVerificationSource }}" data-cast-crew-verification-source>
+                                    <input type="hidden" name="cast_crew[{{ $index }}][identity_verified_at]" value="{{ $castCrewVerifiedAt }}" data-cast-crew-verified-at>
+                                    <input type="hidden" name="cast_crew[{{ $index }}][identity_verification_category]" value="{{ $castCrewIsJordanian ? 'jordanian' : 'foreign' }}" data-cast-crew-verification-category>
+                                    <div class="cast-crew-verification-panel">
+                                        <span class="badge bg-{{ $castCrewVerificationBadge }}" data-cast-crew-verification-badge>{{ __('app.applications.cast_crew_verification.statuses.'.$castCrewVerificationStatus) }}</span>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" data-cast-crew-verify>
+                                            <i class="ph ph-shield-check me-1"></i>{{ __('app.applications.cast_crew_verification.verify_identity') }}
+                                        </button>
+                                        <p class="cast-crew-verification-message {{ filled($castCrewVerificationSource) || filled($castCrewVerifiedAt) ? 'text-muted' : 'd-none' }}" data-cast-crew-verification-message>
+                                            @if (filled($castCrewVerificationSource)){{ __('app.applications.cast_crew_verification.source', ['source' => $castCrewVerificationSourceLabel]) }}@endif
+                                            @if (filled($castCrewVerifiedAt))<br>{{ __('app.applications.cast_crew_verification.verified_at', ['date' => $castCrewVerifiedAt]) }}@endif
+                                        </p>
+                                    </div>
+                                </td>
                                 <td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeApplicationAnnexRow(this, '#castCrewRequestTable')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>
                             </tr>
                         @endforeach

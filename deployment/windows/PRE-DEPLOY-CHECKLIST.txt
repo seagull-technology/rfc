@@ -13,6 +13,7 @@ Before running the deployment:
    GSB_ENABLED=true
    GSB_ENVIRONMENT=stg
    GSB_BASE_URL=https://api-gateway.stg.gsb.gov.jo:9443
+   GSB_CREW_VERIFICATION_MINUTES=120
    GSB_MOHE_SANAD_ENABLED=true
    GSB_MOHE_UNDERGRADUATE_ENABLED=true
    GSB_MOHE_UNDERGRADUATE_PATH=/porg-g2g/g2g/api/LastSemester

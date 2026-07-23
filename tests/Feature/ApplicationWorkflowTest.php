@@ -22,6 +22,8 @@ use App\Notifications\RegistrationApprovedNotification;
 use App\Services\ApplicationAuthorityApprovalSyncService;
 use App\Services\AuthorityApprovalNotificationService;
 use App\Services\AuthorityEscalationService;
+use App\Services\Gsb\CrewIdentityVerificationService;
+use App\Services\Gsb\IndividualPersonalInfoLookupService;
 use App\Support\MinistryInteriorPersonalDetails;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -35,6 +37,7 @@ use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Mockery;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
@@ -415,6 +418,133 @@ class ApplicationWorkflowTest extends TestCase
                 'cast_crew.0.third_name',
                 'cast_crew.0.family_name',
             ]);
+    }
+
+    public function test_final_submission_requires_complete_foreign_cast_crew_passport_data(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'cast_crew' => [[
+                    'name' => 'Foreign Actor',
+                    'role' => 'Actor',
+                    'nationality' => 'egyptian',
+                    'gender' => 'male',
+                    'birth_date' => '1990-03-15',
+                    'identity_number' => 'P1234567',
+                ]],
+            ]))
+            ->assertRedirect();
+
+        $application = Application::query()->firstOrFail();
+
+        $this
+            ->actingAs($user)
+            ->from(route('applications.show', $application))
+            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasErrors('cast_crew.0.passport_image');
+
+        $this->assertSame('draft', $application->fresh()->status);
+    }
+
+    public function test_cast_crew_passports_follow_identity_and_ignore_forged_hidden_file_metadata(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+        Storage::fake('local');
+
+        [$user] = $this->createApplicantContext();
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'cast_crew' => [
+                    [
+                        'name' => 'Foreign Actor A',
+                        'role' => 'Actor',
+                        'nationality' => 'egyptian',
+                        'gender' => 'male',
+                        'birth_date' => '1990-03-15',
+                        'identity_number' => 'PASS-A',
+                        'passport_image' => UploadedFile::fake()->image('passport-a.png', 800, 600),
+                    ],
+                    [
+                        'name' => 'Foreign Actor B',
+                        'role' => 'Actor',
+                        'nationality' => 'syrian',
+                        'gender' => 'female',
+                        'birth_date' => '1992-07-21',
+                        'identity_number' => 'PASS-B',
+                        'passport_image' => UploadedFile::fake()->image('passport-b.png', 800, 600),
+                    ],
+                ],
+            ]))
+            ->assertRedirect();
+
+        $application = Application::query()->firstOrFail();
+        $actorAPath = data_get($application->metadata, 'annex.cast_crew.0.passport_image_path');
+        $actorBPath = data_get($application->metadata, 'annex.cast_crew.1.passport_image_path');
+
+        Storage::disk('local')->assertExists($actorAPath);
+        Storage::disk('local')->assertExists($actorBPath);
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.update', $application), $this->applicationPayload([
+                'project_name' => 'Crew Identity Matching Check',
+                'cast_crew' => [
+                    [
+                        'name' => 'Foreign Actor B',
+                        'role' => 'Actor',
+                        'nationality' => 'syrian',
+                        'gender' => 'female',
+                        'birth_date' => '1992-07-21',
+                        'identity_number' => 'PASS-B',
+                        'passport_image_path' => $actorBPath,
+                    ],
+                    [
+                        'name' => 'Foreign Actor A',
+                        'role' => 'Actor',
+                        'nationality' => 'egyptian',
+                        'gender' => 'male',
+                        'birth_date' => '1990-03-15',
+                        'identity_number' => 'PASS-A',
+                        'passport_image_path' => $actorAPath,
+                    ],
+                    [
+                        'name' => 'Foreign Actor C',
+                        'role' => 'Actor',
+                        'nationality' => 'lebanese',
+                        'gender' => 'male',
+                        'birth_date' => '1994-01-11',
+                        'identity_number' => 'PASS-C',
+                        'passport_image_path' => $actorAPath,
+                        'passport_image_name' => 'forged-passport.png',
+                        'passport_image_mime_type' => 'image/png',
+                        'passport_image_size' => 1234,
+                        'passport_image_uploaded_at' => now()->toDateTimeString(),
+                    ],
+                ],
+            ]))
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasNoErrors();
+
+        $application->refresh();
+        $crew = data_get($application->metadata, 'annex.cast_crew', []);
+
+        $this->assertSame('PASS-B', data_get($crew, '0.identity_number'));
+        $this->assertSame($actorBPath, data_get($crew, '0.passport_image_path'));
+        $this->assertSame('PASS-A', data_get($crew, '1.identity_number'));
+        $this->assertSame($actorAPath, data_get($crew, '1.passport_image_path'));
+        $this->assertSame('PASS-C', data_get($crew, '2.identity_number'));
+        $this->assertNull(data_get($crew, '2.passport_image_path'));
+        $this->assertNull(data_get($crew, '2.passport_image_name'));
     }
 
     public function test_jordanian_airport_person_identity_must_be_ten_digits(): void
@@ -2268,6 +2398,16 @@ class ApplicationWorkflowTest extends TestCase
         [$authorityUser] = $this->createAuthorityContext();
 
         $workContentSummary = $this->arabicWorkContentSummary();
+        $crewLookup = Mockery::mock(IndividualPersonalInfoLookupService::class);
+        $crewLookup->shouldReceive('lookup')
+            ->once()
+            ->with('1234567890', 'jordanian')
+            ->andReturn(['ok' => false, 'error' => 'HTTP_ERROR']);
+        $crewVerification = (new CrewIdentityVerificationService($crewLookup))->lookup(
+            '1234567890',
+            'jordanian',
+            $applicant->getKey(),
+        );
 
         $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
             'project_nationalities' => ['international'],
@@ -2302,7 +2442,7 @@ class ApplicationWorkflowTest extends TestCase
                 'application/pdf',
             ),
             'cast_crew' => [
-                ['name' => 'Jordanian Lead Test Actor', 'first_name' => 'Jordanian', 'second_name' => 'Lead', 'third_name' => 'Test', 'family_name' => 'Actor', 'role' => 'Actor', 'nationality' => 'jordanian', 'gender' => 'male', 'birth_date' => '1990-03-15', 'identity_number' => '1234567890', 'passport_image' => UploadedFile::fake()->image('ignored-jordanian-passport.png', 800, 600)->size(200)],
+                ['name' => 'Jordanian Lead Test Actor', 'first_name' => 'Jordanian', 'second_name' => 'Lead', 'third_name' => 'Test', 'family_name' => 'Actor', 'role' => 'Actor', 'nationality' => 'jordanian', 'gender' => 'male', 'birth_date' => '1990-03-15', 'identity_number' => '1234567890', 'identity_verification_status' => $crewVerification['status'], 'identity_verification_source' => $crewVerification['source'], 'identity_verified_at' => $crewVerification['verified_at'], 'identity_verification_category' => 'jordanian', 'verification_token' => $crewVerification['proof'], 'passport_image' => UploadedFile::fake()->image('ignored-jordanian-passport.png', 800, 600)->size(200)],
                 ['name' => 'International Supporting Actor', 'role' => 'Supporting actor', 'nationality' => 'egyptian', 'gender' => 'female', 'birth_date' => '1992-07-21', 'identity_number' => 'P9876543', 'passport_image' => UploadedFile::fake()->image('international-actor-passport.png', 800, 600)->size(280)],
             ],
             'filming_locations' => [
@@ -2577,12 +2717,38 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/<button[^>]*data-annex-add-button[^>]*disabled/s', $showResponse->getContent());
 
         $updatedWorkContentSummary = $this->arabicWorkContentSummary(520);
+        $crewLookup = Mockery::mock(IndividualPersonalInfoLookupService::class);
+        $crewLookup->shouldReceive('lookup')
+            ->once()
+            ->with('1234567890', 'jordanian')
+            ->andReturn(['ok' => false, 'error' => 'HTTP_ERROR']);
+        $crewVerification = (new CrewIdentityVerificationService($crewLookup))->lookup(
+            '1234567890',
+            'jordanian',
+            $applicant->getKey(),
+        );
 
         $response = $this->actingAs($applicant)->post(route('applications.annex.update', $application), [
             'work_content_summary_synopsis' => $updatedWorkContentSummary,
             'work_content_summary_confirmed' => '1',
             'cast_crew' => [
-                ['name' => 'New Annex Test Actor', 'first_name' => 'New', 'second_name' => 'Annex', 'third_name' => 'Test', 'family_name' => 'Actor', 'role' => 'Lead', 'nationality' => 'jordanian', 'gender' => 'female', 'birth_date' => '1995-08-20', 'identity_number' => '1234567890'],
+                [
+                    'name' => 'New Annex Test Actor',
+                    'first_name' => 'New',
+                    'second_name' => 'Annex',
+                    'third_name' => 'Test',
+                    'family_name' => 'Actor',
+                    'role' => 'Lead',
+                    'nationality' => 'jordanian',
+                    'gender' => 'female',
+                    'birth_date' => '1995-08-20',
+                    'identity_number' => '1234567890',
+                    'identity_verification_status' => $crewVerification['status'],
+                    'identity_verification_source' => $crewVerification['source'],
+                    'identity_verified_at' => $crewVerification['verified_at'],
+                    'identity_verification_category' => 'jordanian',
+                    'verification_token' => $crewVerification['proof'],
+                ],
             ],
             'safety_guidelines_acknowledged' => '1',
             'airport_filming_airport_name' => 'Queen Alia International Airport',

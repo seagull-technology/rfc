@@ -64,7 +64,10 @@
     $selectedReleaseMethods = $selectedReleaseMethods ?: (in_array($defaultReleaseMethod, $releaseMethodOptionCodes, true) ? [$defaultReleaseMethod] : []);
     $schedulePhases = old('schedule_phases', data_get($scheduleMeta, 'phases', []));
     $budgetItems = old('budget_items', data_get($budgetMeta, 'items', []));
-    $castCrewRows = old('cast_crew', data_get($annex, 'cast_crew', [['name' => '', 'role' => '', 'nationality' => '', 'gender' => '', 'birth_date' => '', 'identity_number' => '']]));
+    $castCrewRows = old('cast_crew', data_get($annex, 'cast_crew', [[
+        'name' => '', 'role' => '', 'nationality' => '', 'gender' => '', 'birth_date' => '',
+        'identity_number' => '', 'individual_number' => '', 'identity_verification_status' => 'unverified',
+    ]]));
     $maxCrewBirthDate = now()->subDay()->toDateString();
     $minimumFilmingLocationStartDate = \App\Support\JordanBusinessDays::today()->toDateString();
     $filmingLocationRows = old('filming_locations', data_get($annex, 'filming_locations', [['governorate' => '', 'location_name' => '', 'address' => '', 'nature' => '', 'location_type' => '', 'start_date' => '', 'end_date' => '']]));
