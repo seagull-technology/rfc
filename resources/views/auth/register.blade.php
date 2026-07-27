@@ -2,6 +2,7 @@
 
 @push('styles')
     @include('auth.partials.registration-styles')
+    @include('auth.partials.auth-visual-styles')
 @endpush
 
 @php
@@ -16,11 +17,11 @@
 
 @section('content')
     <div class="wrapper">
-        <section class="sign-in-page registration-auth-page" style="background-image: url('{{ asset('images/loginBg.jpeg') }}')">
+        <section class="sign-in-page registration-auth-page auth-visual-page" style="background-image: url('{{ asset('images/rfc-auth-background.jpg') }}')">
             <div class="container">
                 <div class="justify-content-center align-items-center height-self-center row">
                     <div class="align-self-center col-12">
-                        <div class="sign-user_card registration-card registration-card-wide">
+                        <div class="sign-user_card registration-card registration-card-wide auth-visual-card">
                             <div class="registration-brand-hero">
                                 <a class="registration-logo-link registration-logo-badge" href="{{ route('login') }}">
                                     <img class="img-fluid logo registration-logo" src="{{ asset('images/logo.svg') }}" alt="#">
