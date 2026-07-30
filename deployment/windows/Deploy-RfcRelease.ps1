@@ -72,19 +72,33 @@ function Assert-SessionCookieConfiguration {
 }
 
 function Start-RfcSite {
-    if ($appPoolName) {
-        $poolState = (Get-WebAppPoolState -Name $appPoolName).Value
+    $lastError = $null
 
-        if ($poolState -ne "Started") {
-            Start-WebAppPool -Name $appPoolName
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        try {
+            if ($appPoolName) {
+                $poolState = (Get-WebAppPoolState -Name $appPoolName).Value
+
+                if ($poolState -ne "Started") {
+                    Start-WebAppPool -Name $appPoolName
+                }
+            }
+
+            $siteState = (Get-WebsiteState -Name $SiteName).Value
+
+            if ($siteState -ne "Started") {
+                Start-Website -Name $SiteName
+            }
+
+            return
+        }
+        catch {
+            $lastError = $_
+            Start-Sleep -Seconds 2
         }
     }
 
-    $siteState = (Get-WebsiteState -Name $SiteName).Value
-
-    if ($siteState -ne "Started") {
-        Start-Website -Name $SiteName
-    }
+    throw "IIS could not be started after waiting for service control to settle: $($lastError.Exception.Message)"
 }
 
 function Stop-RfcSite {
@@ -95,6 +109,44 @@ function Stop-RfcSite {
     if ($appPoolName -and (Get-WebAppPoolState -Name $appPoolName).Value -eq "Started") {
         Stop-WebAppPool -Name $appPoolName
     }
+
+    for ($attempt = 1; $attempt -le 15; $attempt++) {
+        $siteStopped = (Get-WebsiteState -Name $SiteName).Value -eq "Stopped"
+        $poolStopped = -not $appPoolName -or (Get-WebAppPoolState -Name $appPoolName).Value -eq "Stopped"
+
+        if ($siteStopped -and $poolStopped) {
+            return
+        }
+
+        Start-Sleep -Seconds 2
+    }
+
+    throw "IIS did not fully stop within 30 seconds."
+}
+
+function Rename-DirectoryWithRetry {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Source,
+
+        [Parameter(Mandatory = $true)]
+        [string] $Destination
+    )
+
+    $lastError = $null
+
+    for ($attempt = 1; $attempt -le 15; $attempt++) {
+        try {
+            Rename-Item $Source $Destination
+            return
+        }
+        catch {
+            $lastError = $_
+            Start-Sleep -Seconds 2
+        }
+    }
+
+    throw "Could not rename '$Source' after 30 seconds. Close shells, editors, and Explorer windows using this directory. Last error: $($lastError.Exception.Message)"
 }
 
 function Close-AppExplorerWindows {
@@ -195,8 +247,8 @@ try {
     Write-Host "== Swap application release =="
     Close-AppExplorerWindows
     Stop-RfcSite
-    Rename-Item $AppPath $backupPath
-    Rename-Item $stagePath $AppPath
+    Rename-DirectoryWithRetry $AppPath $backupPath
+    Rename-DirectoryWithRetry $stagePath $AppPath
     $swapped = $true
 
     Write-Host "== Rebuild production caches =="
