@@ -181,11 +181,15 @@ Set these values in the real server `.env`:
 ```env
 APP_URL=https://filmjordan.jo
 ASSET_URL=https://filmjordan.jo
-TRUSTED_PROXIES=*
+TRUSTED_PROXIES=
 SESSION_SECURE_COOKIE=true
 SESSION_DOMAIN=null
 SANAD_REDIRECT_URI=https://filmjordan.jo/ar/sign-in/sanad/callback
 ```
+
+Leave `TRUSTED_PROXIES` empty for direct IIS/NAT traffic. If IT confirms that
+another server terminates HTTPS and forwards requests to IIS, set its exact
+internal IP or CIDR.
 
 After editing `.env`:
 
