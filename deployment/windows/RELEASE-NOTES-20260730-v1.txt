@@ -1,0 +1,35 @@
+RFC e-Permit staging release 20260730-v1
+=========================================
+
+This complete offline release is built from the current main branch and
+contains all application, UAT, workflow, integration, and interface work
+committed through this release.
+
+Government gateway URL compatibility:
+
+- Replaces the public /login URL with /sign-in.
+- Replaces the public /admin prefix with /control-panel.
+- Replaces administration /users URLs with /accounts.
+- Replaces company /users URLs with /team.
+- Keeps existing Laravel route names, authorization rules, controllers, and
+  stored permissions unchanged.
+- Adds an automated regression test that prevents restricted URL segments from
+  returning to public route paths.
+
+Domain and authentication:
+
+- Uses https://filmjordan.jo in the Windows production environment example.
+- Uses the secure SANAD callback at
+  https://filmjordan.jo/ar/sign-in/sanad/callback.
+- Enables secure session cookies for HTTPS staging.
+- Includes the latest shared authentication background and readability styling
+  across sign-in, registration, OTP, password, and account-status screens.
+
+Deployment notes:
+
+- The deployment script preserves the government server .env, uploaded storage,
+  database data, and existing seeded account credentials.
+- The real server .env is not included in the archive.
+- Before deployment, update APP_URL, SESSION_SECURE_COOKIE, and
+  SANAD_REDIRECT_URI as documented in PRE-DEPLOY-CHECKLIST.txt.
+- The deployment smoke test uses /ar/sign-in.
