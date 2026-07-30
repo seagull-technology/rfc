@@ -137,6 +137,65 @@ iisreset
 
 `public/web.config` is already included in the release package for Laravel route rewriting.
 
+## Government HTTPS Certificate
+
+The public URL must remain `https://filmjordan.jo`. Do not use
+`https://10.0.41.97` in the browser because the certificate is issued for the
+domain, not the private IP.
+
+Copy the supplied certificate files to `C:\Deploy\certs`, then run PowerShell as
+Administrator:
+
+```powershell
+Import-Certificate `
+  -FilePath C:\Deploy\certs\DigiCertCA.crt `
+  -CertStoreLocation Cert:\LocalMachine\CA
+
+certreq.exe -accept C:\Deploy\certs\filmjordan_jo.crt
+
+Get-ChildItem Cert:\LocalMachine\My |
+  Where-Object { $_.Subject -match "filmjordan" } |
+  Select-Object Subject, Thumbprint, HasPrivateKey, NotAfter
+```
+
+If `HasPrivateKey` is `False`, the certificate cannot be used by IIS for HTTPS.
+Ask IT for a password-protected `.pfx` containing the domain certificate,
+intermediate chain, and private key, or export that PFX from the machine where
+the CSR was generated.
+
+When `HasPrivateKey` is `True`, use IIS Manager:
+
+1. Open **Sites > RFC > Bindings**.
+2. Add an `https` binding on port `443`.
+3. Use IP address `10.0.41.97` or **All Unassigned**.
+4. Set host name to `filmjordan.jo`.
+5. Enable SNI when other HTTPS sites share port 443.
+6. Select the `filmjordan.jo` certificate.
+
+The network team must forward public `193.188.85.20:443` to
+`10.0.41.97:443`. Keep port 80 available until HTTPS is verified, then redirect
+HTTP traffic to HTTPS.
+
+Set these values in the real server `.env`:
+
+```env
+APP_URL=https://filmjordan.jo
+ASSET_URL=https://filmjordan.jo
+TRUSTED_PROXIES=*
+SESSION_SECURE_COOKIE=true
+SESSION_DOMAIN=null
+SANAD_REDIRECT_URI=https://filmjordan.jo/ar/sign-in/sanad/callback
+```
+
+After editing `.env`:
+
+```powershell
+Set-Location C:\inetpub\rfc
+C:\php\php.exe artisan optimize:clear
+C:\php\php.exe artisan config:cache
+iisreset
+```
+
 ## Scheduler
 
 Create a Windows scheduled task that runs every minute:

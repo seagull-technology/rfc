@@ -1,0 +1,26 @@
+RFC e-Permit HTTPS proxy hotfix 20260730-v3
+================================================
+
+This complete offline release contains all application, UAT, workflow,
+integration, and interface work committed through this release.
+
+Government HTTPS compatibility:
+
+- Trusts configured government proxy forwarding headers.
+- Forces generated routes and forms to HTTPS when APP_URL uses HTTPS.
+- Reads ASSET_URL from application configuration so styles, scripts, images,
+  forms, and browser API requests use the same secure public origin.
+- Documents the required IIS certificate/private-key check and HTTPS binding.
+- Keeps secure session cookies enabled for the published staging domain.
+
+Required server environment:
+
+  APP_URL=https://filmjordan.jo
+  ASSET_URL=https://filmjordan.jo
+  TRUSTED_PROXIES=*
+  SESSION_SECURE_COOKIE=true
+  SESSION_DOMAIN=null
+  SANAD_REDIRECT_URI=https://filmjordan.jo/ar/sign-in/sanad/callback
+
+Replace TRUSTED_PROXIES=* with the government proxy IP/CIDR when IT provides it.
+The deployment script preserves the real server .env and uploaded storage.

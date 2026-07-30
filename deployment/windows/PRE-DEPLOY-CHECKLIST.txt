@@ -15,7 +15,11 @@ Before running the deployment:
 
    APP_ENV=production
    APP_DEBUG=false
+   APP_URL=https://filmjordan.jo
+   ASSET_URL=https://filmjordan.jo
    APP_TIMEZONE=Asia/Amman
+   TRUSTED_PROXIES=*
+   SESSION_SECURE_COOKIE=true
    GSB_ENABLED=true
    GSB_ENVIRONMENT=stg
    GSB_BASE_URL=https://api-gateway.stg.gsb.gov.jo:9443
@@ -62,8 +66,20 @@ Before running the deployment:
 
    Store SANAD_CLIENT_ID and SANAD_CLIENT_SECRET separately when the SignFlow
    product subscription uses different IBM credentials.
-5. Confirm APP_URL and SANAD_REDIRECT_URI use the final HTTPS public host. Until
-   HTTPS is active, set SESSION_SECURE_COOKIE=false; switch it to true with HTTPS.
+5. Confirm APP_URL, ASSET_URL, and SANAD_REDIRECT_URI use the final HTTPS public
+   host. TRUSTED_PROXIES=* is acceptable only while the origin server is reachable
+   exclusively through the government reverse proxy/NAT. Replace * with the
+   proxy's internal IP or CIDR when IT provides it.
+
+   The IIS site needs an HTTPS binding with a certificate that includes its
+   private key. A .crt file alone is not sufficient unless the matching CSR and
+   private key were generated on this Windows server. Verify:
+
+     Get-ChildItem Cert:\LocalMachine\My |
+       Where-Object { $_.Subject -match "filmjordan" } |
+       Select-Object Subject, Thumbprint, HasPrivateKey, NotAfter
+
+   HasPrivateKey must be True before creating the IIS HTTPS binding.
 6. Confirm C: has enough free space for the new release and one full application backup.
 7. Run PowerShell as Administrator.
 

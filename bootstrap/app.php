@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\SetPermissionsEntityContext;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -22,6 +23,20 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $trustedProxies = trim((string) env('TRUSTED_PROXIES'));
+
+        if ($trustedProxies !== '') {
+            $middleware->trustProxies(
+                at: in_array($trustedProxies, ['*', '**'], true)
+                    ? $trustedProxies
+                    : array_map('trim', explode(',', $trustedProxies)),
+                headers: Request::HEADER_X_FORWARDED_FOR
+                    | Request::HEADER_X_FORWARDED_HOST
+                    | Request::HEADER_X_FORWARDED_PORT
+                    | Request::HEADER_X_FORWARDED_PROTO,
+            );
+        }
+
         $middleware->alias([
             'localize' => LaravelLocalizationRoutes::class,
             'localizationRedirect' => LaravelLocalizationRedirectFilter::class,
@@ -34,15 +49,15 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->web(append: [
-            \App\Http\Middleware\SetPermissionsEntityContext::class,
+            SetPermissionsEntityContext::class,
         ]);
 
         $middleware->api(append: [
-            \App\Http\Middleware\SetPermissionsEntityContext::class,
+            SetPermissionsEntityContext::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        $exceptions->respond(function (Response $response, \Throwable $exception, Request $request): Response {
+        $exceptions->respond(function (Response $response, Throwable $exception, Request $request): Response {
             if ($request->expectsJson()) {
                 return $response;
             }
