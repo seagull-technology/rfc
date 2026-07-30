@@ -1,7 +1,6 @@
 @extends('layouts.auth', ['title' => __('app.auth.login_title')])
 
 @push('styles')
-    @include('auth.partials.auth-visual-styles')
     <style>
         .login-locale-switcher {
             display: flex;
@@ -76,7 +75,7 @@
 
 @section('content')
     <div class="wrapper">
-        <section class="sign-in-page auth-visual-page" style="background-image: url('{{ asset('images/rfc-auth-background.jpg') }}')">
+        <section class="sign-in-page auth-visual-page">
             <div class="container">
                 <div class="justify-content-center align-items-center height-self-center row">
                     <div class="align-self-center col-lg-5 col-md-12">

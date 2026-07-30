@@ -18,7 +18,7 @@ class LocalizationTest extends TestCase
     {
         $this->refreshApplicationWithLocale('ar');
 
-        $response = $this->get('/ar/login');
+        $response = $this->get('/ar/sign-in');
         $englishLoginUrl = \Mcamara\LaravelLocalization\Facades\LaravelLocalization::getLocalizedURL('en', route('login', [], false), [], true);
         $arabicLoginUrl = \Mcamara\LaravelLocalization\Facades\LaravelLocalization::getLocalizedURL('ar', route('login', [], false), [], true);
 
@@ -90,7 +90,7 @@ class LocalizationTest extends TestCase
         $dashboardResponse = $this
             ->withSession(['current_entity_id' => $entity->getKey()])
             ->actingAs($user)
-            ->get('/ar/admin');
+            ->get('/ar/control-panel');
 
         $dashboardResponse->assertOk();
         $dashboardResponse->assertSee('الهيئة الملكية الأردنية للأفلام');

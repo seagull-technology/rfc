@@ -48,7 +48,7 @@ Before running the deployment:
    callback URL. Then set:
 
    SANAD_AUTHORIZATION_URL=<provider URL>
-   SANAD_REDIRECT_URI=https://<public host>/ar/login/sanad/callback
+   SANAD_REDIRECT_URI=https://<public host>/ar/sign-in/sanad/callback
    SANAD_SCOPE=openid
 
 4. Keep the real GSB_CLIENT_ID and GSB_CLIENT_SECRET values already stored in .env.
@@ -75,6 +75,6 @@ Deployment command example:
 
 The script preserves .env and storage, applies migrations, refreshes permissions and
 reference lookups without changing existing Super Admin/RFC passwords, swaps the
-application, rebuilds caches, and checks http://localhost/ar/login.
+application, rebuilds caches, and checks http://localhost/ar/sign-in.
 
 Do not delete the generated C:\inetpub\rfc-backup-* directory until UAT is complete.

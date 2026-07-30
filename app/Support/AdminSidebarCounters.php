@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Application as FilmApplication;
 use App\Models\ScoutingRequest;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 
 class AdminSidebarCounters
 {
@@ -21,12 +22,26 @@ class AdminSidebarCounters
             ];
         }
 
+        $ttl = now()->addSeconds((int) config('cache.sidebar_ttl', 30));
+
         return [
-            'applications' => self::applicationResponseCount(),
-            'scouting_requests' => self::scoutingResponseCount(),
-            'contact_center' => $user->unreadNotifications
-                ->filter(fn ($notification) => NotificationPresenter::isInbox($notification))
-                ->count(),
+            'applications' => Cache::remember(
+                'admin-sidebar:application-responses:v1',
+                $ttl,
+                fn (): int => self::applicationResponseCount(),
+            ),
+            'scouting_requests' => Cache::remember(
+                'admin-sidebar:scouting-responses:v1',
+                $ttl,
+                fn (): int => self::scoutingResponseCount(),
+            ),
+            'contact_center' => Cache::remember(
+                'admin-sidebar:contact-center:v1:'.$user->getKey(),
+                $ttl,
+                fn (): int => $user->unreadNotifications()
+                    ->whereIn('data->type_key', NotificationPresenter::inboxTypeKeys())
+                    ->count(),
+            ),
         ];
     }
 

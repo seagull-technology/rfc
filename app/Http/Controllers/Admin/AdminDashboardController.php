@@ -17,6 +17,7 @@ use App\Support\AdminApplicantResponseState;
 use App\Support\AdminWorkflowState;
 use App\Support\CsvExport;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -24,8 +25,7 @@ class AdminDashboardController extends Controller
 {
     public function __construct(
         private readonly ProductionAnalyticsService $productionAnalytics,
-    ) {
-    }
+    ) {}
 
     public function __invoke(Request $request): View
     {
@@ -35,7 +35,7 @@ class AdminDashboardController extends Controller
         return view('admin.dashboard', [
             'admin' => $admin,
             'entity' => $entity,
-            ...$this->buildDashboardData($request),
+            ...$this->cachedDashboardData($request),
         ]);
     }
 
@@ -334,5 +334,30 @@ class AdminDashboardController extends Controller
                 'workflow_needs_admin_review' => $applicationWorkflowCounts->get('needs_admin_review', 0) + $scoutingWorkflowCounts->get('needs_admin_review', 0),
             ],
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function cachedDashboardData(Request $request): array
+    {
+        $filters = $this->productionAnalytics->filtersFromRequest($request);
+        ksort($filters);
+
+        $cacheContext = [
+            'locale' => app()->getLocale(),
+            'year' => $request->integer('year') ?: now()->year,
+            'filters' => $filters,
+        ];
+        $cacheKey = 'admin-dashboard:v1:'.hash(
+            'sha256',
+            json_encode($cacheContext, JSON_THROW_ON_ERROR),
+        );
+
+        return Cache::remember(
+            $cacheKey,
+            now()->addSeconds((int) config('cache.dashboard_ttl', 30)),
+            fn (): array => $this->buildDashboardData($request),
+        );
     }
 }

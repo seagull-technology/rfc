@@ -111,7 +111,7 @@ C:\php\php.exe artisan view:cache
 
 Keep route cache disabled for now. The portal uses localized `/ar` and `/en`
 routes through `mcamara/laravel-localization`; caching routes can expose the
-non-prefixed route table and make `/ar/login` return 404.
+non-prefixed route table and make `/ar/sign-in` return 404.
 
 ## Permissions
 
@@ -186,7 +186,7 @@ C:\php\php.exe artisan config:cache
 Then open:
 
 ```text
-/ar/admin/integrations
+/ar/control-panel/integrations
 ```
 
 Use that page to test configured integrations safely.

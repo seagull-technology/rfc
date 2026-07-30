@@ -1164,6 +1164,27 @@
             passportImageNote: @js(__('app.applications.annex_fields.passport_image_note')),
             nationalIdDigits: @js(__('app.applications.cast_crew_national_id_digits')),
         };
+        const applicationCastCrewVerificationUrl = @js(route('applications.crew.identity.lookup'));
+        const applicationCastCrewLabels = {
+            individualNumber: @js(__('app.applications.annex_fields.individual_number')),
+            foreignOptionalHelp: @js(__('app.applications.cast_crew_verification.foreign_optional_help')),
+            verifyIdentity: @js(__('app.applications.cast_crew_verification.verify_identity')),
+            verifyIdentifierFirst: @js(__('app.applications.cast_crew_verification.verify_identifier_first')),
+            invalidNationalId: @js(__('app.applications.cast_crew_verification.invalid_national_id')),
+            invalidIndividualNumber: @js(__('app.applications.cast_crew_verification.invalid_individual_number')),
+            unavailable: @js(__('app.applications.cast_crew_verification.unavailable')),
+            loading: @js(__('app.applications.cast_crew_verification.loading')),
+            bulkComplete: @js(__('app.applications.cast_crew_verification.bulk_complete')),
+            source: @js(__('app.applications.cast_crew_verification.source', ['source' => '__SOURCE__'])),
+            sources: @json(__('app.applications.cast_crew_verification.sources')),
+            verifiedAt: @js(__('app.applications.cast_crew_verification.verified_at', ['date' => '__DATE__'])),
+            statuses: {
+                verified: @js(__('app.applications.cast_crew_verification.statuses.verified')),
+                pending: @js(__('app.applications.cast_crew_verification.statuses.pending')),
+                manual: @js(__('app.applications.cast_crew_verification.statuses.manual')),
+                unverified: @js(__('app.applications.cast_crew_verification.statuses.unverified')),
+            },
+        };
 
         function applicationLookupOptionsHtml(options, selectedValue) {
             const selected = String(selectedValue || '');
@@ -1624,12 +1645,12 @@
 
             return '<input type="hidden" name="cast_crew[' + index + '][name]" data-cast-crew-name-output>'
                 + '<div class="row g-2 cast-crew-jordanian-name d-none" data-cast-crew-jordanian-name>'
-                + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][first_name]" placeholder="' + firstName + '" data-cast-crew-name-part></div>'
-                + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][second_name]" placeholder="' + secondName + '" data-cast-crew-name-part></div>'
-                + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][third_name]" placeholder="' + thirdName + '" data-cast-crew-name-part></div>'
-                + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][family_name]" placeholder="' + familyName + '" data-cast-crew-name-part></div>'
+                + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][first_name]" placeholder="' + firstName + '" data-cast-crew-name-part data-cast-crew-api-field></div>'
+                + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][second_name]" placeholder="' + secondName + '" data-cast-crew-name-part data-cast-crew-api-field></div>'
+                + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][third_name]" placeholder="' + thirdName + '" data-cast-crew-name-part data-cast-crew-api-field></div>'
+                + '<div class="col-md-6 col-xl-3"><input type="text" class="form-control" name="cast_crew[' + index + '][family_name]" placeholder="' + familyName + '" data-cast-crew-name-part data-cast-crew-api-field></div>'
                 + '</div>'
-                + '<input type="text" class="form-control" data-cast-crew-full-name-input required>';
+                + '<input type="text" class="form-control" data-cast-crew-full-name-input data-cast-crew-api-field required>';
         }
 
         function isCastCrewJordanian(row) {
@@ -1643,6 +1664,26 @@
 
             return '<input type="text" class="form-control" name="cast_crew[' + index + '][identity_number]" placeholder="' + passportNumber + '" data-cast-crew-identity>'
                 + '<div class="invalid-feedback" data-cast-crew-identity-feedback>' + applicationEscapeHtml(applicationRepeatableMessages.nationalIdDigits) + '</div>';
+        }
+
+        function castCrewIndividualNumberInputHtml(index) {
+            return '<div class="d-none" data-cast-crew-individual-number-wrap>'
+                + '<input type="text" class="form-control" name="cast_crew[' + index + '][individual_number]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.individualNumber) + '" inputmode="numeric" maxlength="20" pattern="\\d{1,20}" data-cast-crew-individual-number disabled>'
+                + '<small class="form-text text-muted d-block mt-1">' + applicationEscapeHtml(applicationCastCrewLabels.foreignOptionalHelp) + '</small>'
+                + '</div>';
+        }
+
+        function castCrewVerificationHtml(index) {
+            return '<input type="hidden" name="cast_crew[' + index + '][verification_token]" data-cast-crew-verification-token>'
+                + '<input type="hidden" name="cast_crew[' + index + '][identity_verification_status]" value="unverified" data-cast-crew-verification-status>'
+                + '<input type="hidden" name="cast_crew[' + index + '][identity_verification_source]" data-cast-crew-verification-source>'
+                + '<input type="hidden" name="cast_crew[' + index + '][identity_verified_at]" data-cast-crew-verified-at>'
+                + '<input type="hidden" name="cast_crew[' + index + '][identity_verification_category]" value="foreign" data-cast-crew-verification-category>'
+                + '<div class="cast-crew-verification-panel d-none" data-cast-crew-verification-panel>'
+                + '<span class="badge bg-light text-dark border" data-cast-crew-verification-badge>' + applicationEscapeHtml(applicationCastCrewLabels.statuses.unverified) + '</span>'
+                + '<button type="button" class="btn btn-sm btn-outline-primary" data-cast-crew-verify><i class="ph ph-shield-check me-1"></i>' + applicationEscapeHtml(applicationCastCrewLabels.verifyIdentity) + '</button>'
+                + '<p class="cast-crew-verification-message d-none" data-cast-crew-verification-message></p>'
+                + '</div>';
         }
 
         function castCrewPassportImageInputHtml(index) {
@@ -1668,6 +1709,317 @@
             table.querySelectorAll('[data-cast-crew-passport-cell]').forEach(function (cell) {
                 cell.classList.toggle('d-none', !hasForeignMember);
             });
+        }
+
+        function castCrewCategory(row) {
+            return isCastCrewJordanian(row) ? 'jordanian' : 'foreign';
+        }
+
+        function castCrewIdentifier(row) {
+            const selector = isCastCrewJordanian(row)
+                ? '[data-cast-crew-identity]'
+                : '[data-cast-crew-individual-number]';
+
+            return String(row?.querySelector(selector)?.value || '').replace(/\D/g, '');
+        }
+
+        function castCrewHasPrimaryIdentity(row) {
+            return String(row?.querySelector('[data-cast-crew-identity]')?.value || '').trim() !== '';
+        }
+
+        function castCrewVerificationReady(row) {
+            const identifier = castCrewIdentifier(row);
+
+            if (isCastCrewJordanian(row)) {
+                return /^\d{10}$/.test(identifier);
+            }
+
+            return castCrewHasPrimaryIdentity(row) && identifier !== '';
+        }
+
+        function refreshCastCrewIdentityColumns(table) {
+            if (!table) {
+                return;
+            }
+
+            const rows = Array.from(table.querySelectorAll('tbody tr'));
+            const showIndividualColumn = rows.some(function (row) {
+                return !isCastCrewJordanian(row) && castCrewHasPrimaryIdentity(row);
+            });
+            const showVerificationColumn = rows.some(castCrewVerificationReady);
+
+            table.querySelector('[data-cast-crew-individual-heading]')?.classList.toggle('d-none', !showIndividualColumn);
+            table.querySelectorAll('[data-cast-crew-individual-cell]').forEach(function (cell) {
+                cell.classList.toggle('d-none', !showIndividualColumn);
+            });
+            table.querySelector('[data-cast-crew-verification-heading]')?.classList.toggle('d-none', !showVerificationColumn);
+            table.querySelectorAll('[data-cast-crew-verification-cell]').forEach(function (cell) {
+                cell.classList.toggle('d-none', !showVerificationColumn);
+            });
+        }
+
+        function castCrewSetApiFieldsLocked(row, locked) {
+            row.querySelectorAll('[data-cast-crew-api-field]').forEach(function (field) {
+                field.classList.toggle('cast-crew-api-locked', locked);
+                field.setAttribute('aria-readonly', locked ? 'true' : 'false');
+
+                if (field.tagName === 'SELECT') {
+                    field.style.pointerEvents = locked ? 'none' : '';
+                    field.tabIndex = locked ? -1 : 0;
+                } else {
+                    field.readOnly = locked;
+                }
+            });
+        }
+
+        function castCrewStatusClasses(status) {
+            if (status === 'verified') {
+                return ['bg-success'];
+            }
+
+            if (status === 'pending') {
+                return ['bg-warning', 'text-dark'];
+            }
+
+            if (status === 'manual') {
+                return ['bg-secondary'];
+            }
+
+            return ['bg-light', 'text-dark', 'border'];
+        }
+
+        function castCrewStatusMessage(source, verifiedAt, fallbackMessage) {
+            const lines = [];
+
+            if (fallbackMessage) {
+                lines.push(applicationEscapeHtml(fallbackMessage));
+            }
+
+            if (source) {
+                const sourceLabel = applicationCastCrewLabels.sources[source] || source;
+                lines.push(applicationEscapeHtml(applicationCastCrewLabels.source.replace('__SOURCE__', sourceLabel)));
+            }
+
+            if (verifiedAt) {
+                lines.push(applicationEscapeHtml(applicationCastCrewLabels.verifiedAt.replace('__DATE__', verifiedAt)));
+            }
+
+            return lines.join('<br>');
+        }
+
+        function setCastCrewVerification(row, status, options) {
+            const settings = options || {};
+            const source = String(settings.source || '');
+            const verifiedAt = String(settings.verifiedAt || '');
+            const proof = String(settings.proof || '');
+            const category = castCrewCategory(row);
+            const identifier = castCrewIdentifier(row);
+            const badge = row.querySelector('[data-cast-crew-verification-badge]');
+            const message = row.querySelector('[data-cast-crew-verification-message]');
+            const button = row.querySelector('[data-cast-crew-verify]');
+            const statusField = row.querySelector('[data-cast-crew-verification-status]');
+            const sourceField = row.querySelector('[data-cast-crew-verification-source]');
+            const verifiedAtField = row.querySelector('[data-cast-crew-verified-at]');
+            const tokenField = row.querySelector('[data-cast-crew-verification-token]');
+            const categoryField = row.querySelector('[data-cast-crew-verification-category]');
+
+            if (statusField) {
+                statusField.value = status;
+            }
+
+            if (sourceField) {
+                sourceField.value = source;
+            }
+
+            if (verifiedAtField) {
+                verifiedAtField.value = verifiedAt;
+            }
+
+            if (tokenField) {
+                tokenField.value = proof;
+            }
+
+            if (categoryField) {
+                categoryField.value = category;
+            }
+
+            if (badge) {
+                badge.className = 'badge ' + castCrewStatusClasses(status).join(' ');
+                badge.textContent = applicationCastCrewLabels.statuses[status] || applicationCastCrewLabels.statuses.unverified;
+            }
+
+            if (message) {
+                const messageHtml = castCrewStatusMessage(source, verifiedAt, settings.message || '');
+                message.innerHTML = messageHtml;
+                message.classList.toggle('d-none', messageHtml === '');
+                message.classList.toggle('text-danger', Boolean(settings.error));
+                message.classList.toggle('text-muted', !settings.error);
+            }
+
+            if (button) {
+                button.disabled = !castCrewVerificationReady(row);
+            }
+
+            if (status === 'verified' || status === 'pending') {
+                row.dataset.castCrewVerifiedIdentifier = identifier;
+                row.dataset.castCrewVerifiedCategory = category;
+            } else {
+                delete row.dataset.castCrewVerifiedIdentifier;
+                delete row.dataset.castCrewVerifiedCategory;
+            }
+
+            castCrewSetApiFieldsLocked(row, status === 'verified');
+        }
+
+        function invalidateCastCrewVerification(row) {
+            const status = row.querySelector('[data-cast-crew-verification-status]')?.value || 'unverified';
+            const category = castCrewCategory(row);
+            const identifier = castCrewIdentifier(row);
+            const unchanged = row.dataset.castCrewVerifiedCategory === category
+                && row.dataset.castCrewVerifiedIdentifier === identifier;
+
+            if ((status === 'verified' || status === 'pending') && unchanged) {
+                return;
+            }
+
+            const manual = category === 'foreign' && identifier === '';
+            setCastCrewVerification(row, manual ? 'manual' : 'unverified');
+        }
+
+        function fillCastCrewGovernmentData(row, data) {
+            const identity = data || {};
+            const fullName = String(identity.full_name || '').trim();
+            const parts = fullName.split(/\s+/u).filter(Boolean);
+            const values = [
+                identity.first_name || parts[0] || '',
+                identity.father_name || parts[1] || '',
+                identity.grandfather_name || parts[2] || '',
+                identity.family_name || parts.slice(3).join(' ') || '',
+            ];
+
+            if (isCastCrewJordanian(row)) {
+                row.querySelectorAll('[data-cast-crew-name-part]').forEach(function (field, index) {
+                    field.value = values[index] || '';
+                });
+            } else if (row.querySelector('[data-cast-crew-full-name-input]')) {
+                row.querySelector('[data-cast-crew-full-name-input]').value = fullName;
+            }
+
+            if (identity.gender && row.querySelector('[data-cast-crew-gender]')) {
+                row.querySelector('[data-cast-crew-gender]').value = identity.gender;
+            }
+
+            if (identity.birth_date && row.querySelector('[data-cast-crew-birth-date]')) {
+                row.querySelector('[data-cast-crew-birth-date]').value = identity.birth_date;
+            }
+
+            updateCastCrewNameMode(row);
+        }
+
+        async function verifyCastCrewRow(row) {
+            const category = castCrewCategory(row);
+            const identifier = castCrewIdentifier(row);
+            const button = row.querySelector('[data-cast-crew-verify]');
+
+            if (!castCrewVerificationReady(row)) {
+                setCastCrewVerification(row, category === 'foreign' ? 'manual' : 'unverified', {
+                    message: applicationCastCrewLabels.verifyIdentifierFirst,
+                    error: true,
+                });
+                return false;
+            }
+
+            if (category === 'jordanian' && !/^\d{10}$/.test(identifier)) {
+                setCastCrewVerification(row, 'unverified', {
+                    message: applicationCastCrewLabels.invalidNationalId,
+                    error: true,
+                });
+                return false;
+            }
+
+            if (category === 'foreign' && !/^\d{1,20}$/.test(identifier)) {
+                setCastCrewVerification(row, 'unverified', {
+                    message: applicationCastCrewLabels.invalidIndividualNumber,
+                    error: true,
+                });
+                return false;
+            }
+
+            if (button) {
+                button.disabled = true;
+                button.dataset.originalHtml = button.innerHTML;
+                button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>' + applicationEscapeHtml(applicationCastCrewLabels.loading);
+            }
+
+            try {
+                const response = await fetch(applicationCastCrewVerificationUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                    },
+                    body: JSON.stringify({
+                        nationality_category: category,
+                        identifier: identifier,
+                    }),
+                });
+                const payload = await response.json().catch(function () {
+                    return {};
+                });
+
+                if (!response.ok || !payload.ok) {
+                    setCastCrewVerification(row, 'unverified', {
+                        message: payload.message || applicationCastCrewLabels.unavailable,
+                        error: true,
+                    });
+                    return false;
+                }
+
+                if (payload.status === 'verified') {
+                    fillCastCrewGovernmentData(row, payload.data || {});
+                }
+
+                setCastCrewVerification(row, payload.status || 'unverified', {
+                    source: payload.source,
+                    verifiedAt: payload.verified_at,
+                    proof: payload.proof,
+                    message: payload.message,
+                });
+
+                return true;
+            } catch (error) {
+                setCastCrewVerification(row, 'unverified', {
+                    message: applicationCastCrewLabels.unavailable,
+                    error: true,
+                });
+                return false;
+            } finally {
+                if (button) {
+                    button.innerHTML = button.dataset.originalHtml || applicationEscapeHtml(applicationCastCrewLabels.verifyIdentity);
+                    button.disabled = !castCrewVerificationReady(row);
+                }
+            }
+        }
+
+        async function verifyAllCastCrewRows(button) {
+            const table = document.getElementById('castCrewRequestTable');
+            const status = document.querySelector('[data-cast-crew-bulk-status]');
+            const rows = Array.from(table?.querySelectorAll('tbody tr') || []).filter(castCrewVerificationReady);
+
+            button.disabled = true;
+            status?.classList.add('d-none');
+
+            for (const row of rows) {
+                await verifyCastCrewRow(row);
+            }
+
+            if (status) {
+                status.textContent = applicationCastCrewLabels.bulkComplete;
+                status.classList.remove('d-none');
+            }
+
+            button.disabled = false;
         }
 
         function updateCastCrewPassportImageMode(row) {
@@ -1777,6 +2129,43 @@
 
             updateCastCrewIdentityMode(row);
             updateCastCrewPassportImageMode(row);
+
+            const individualNumberWrap = row.querySelector('[data-cast-crew-individual-number-wrap]');
+            const individualNumber = row.querySelector('[data-cast-crew-individual-number]');
+            const verificationPanel = row.querySelector('[data-cast-crew-verification-panel]');
+            const showIndividualNumber = hasNationality && !isJordanian && castCrewHasPrimaryIdentity(row);
+            const verificationStatus = row.querySelector('[data-cast-crew-verification-status]')?.value || 'unverified';
+
+            individualNumberWrap?.classList.toggle('d-none', !showIndividualNumber);
+
+            if (individualNumber) {
+                individualNumber.disabled = !showIndividualNumber;
+                individualNumber.value = String(individualNumber.value || '').replace(/\D/g, '').slice(0, 20);
+
+                if (isJordanian) {
+                    individualNumber.value = '';
+                }
+            }
+
+            const verificationReady = castCrewVerificationReady(row);
+            const verificationIdentifier = castCrewIdentifier(row);
+
+            verificationPanel?.classList.toggle('d-none', !verificationReady);
+
+            if ((verificationStatus === 'verified' || verificationStatus === 'pending')
+                && !row.dataset.castCrewVerifiedIdentifier) {
+                row.dataset.castCrewVerifiedIdentifier = verificationIdentifier;
+                row.dataset.castCrewVerifiedCategory = castCrewCategory(row);
+            }
+
+            const verifyButton = row.querySelector('[data-cast-crew-verify]');
+
+            if (verifyButton) {
+                verifyButton.disabled = !verificationReady;
+            }
+
+            castCrewSetApiFieldsLocked(row, verificationStatus === 'verified');
+            refreshCastCrewIdentityColumns(row.closest('table'));
         }
 
         function refreshCastCrewNameModes(root) {
@@ -2065,6 +2454,7 @@
             button.closest('tr').remove();
             renumberApplicationAnnexRows(selector);
             refreshCastCrewPassportColumn(document.querySelector(selector));
+            refreshCastCrewIdentityColumns(document.querySelector(selector));
             refreshSpecialLocationRequirementSelects();
             refreshEquipmentTravelerSelects();
             refreshFilmingLocationDateConstraints(document);
@@ -2097,17 +2487,20 @@
             const deleteCell = '<td><button type="button" class="btn btn-sm btn-icon btn-danger-subtle rounded" onclick="removeApplicationAnnexRow(this, \'#' + tableId + '\')"><i class="ph-fill ph ph-trash-simple fs-6"></i></button></td>';
 
             if (fieldName === 'cast_crew') {
-	                row.innerHTML = '<td class="row-number"></td>'
-	                    + '<td><select class="form-select" name="cast_crew[' + index + '][nationality]" data-cast-crew-nationality required>' + applicationNationalityOptionsHtml + '</select></td>'
-	                    + '<td class="cast-crew-name-cell">' + castCrewJordanianNameInputsHtml(index) + '</td>'
-	                    + '<td><input type="text" class="form-control" name="cast_crew[' + index + '][role]" required></td>'
-	                    + '<td><select class="form-select" name="cast_crew[' + index + '][gender]" required>' + applicationGenderOptionsHtml + '</select></td>'
-	                    + '<td><input type="date" class="form-control" name="cast_crew[' + index + '][birth_date]" max="' + applicationCrewBirthDateMax + '" required></td>'
-	                    + '<td>' + castCrewIdentityInputHtml(index) + '</td>'
-	                    + '<td class="d-none" data-cast-crew-passport-cell>' + castCrewPassportImageInputHtml(index) + '</td>'
+                const rowKey = 'new_' + Date.now() + '_' + index;
+                row.innerHTML = '<td class="row-number"></td>'
+                    + '<td><select class="form-select" name="cast_crew[' + rowKey + '][nationality]" data-cast-crew-nationality required>' + applicationNationalityOptionsHtml + '</select></td>'
+                    + '<td>' + castCrewIdentityInputHtml(rowKey) + '</td>'
+                    + '<td class="d-none" data-cast-crew-individual-cell>' + castCrewIndividualNumberInputHtml(rowKey) + '</td>'
+                    + '<td class="d-none" data-cast-crew-verification-cell>' + castCrewVerificationHtml(rowKey) + '</td>'
+                    + '<td class="cast-crew-name-cell">' + castCrewJordanianNameInputsHtml(rowKey) + '</td>'
+                    + '<td><input type="text" class="form-control" name="cast_crew[' + rowKey + '][role]" required></td>'
+                    + '<td><select class="form-select" name="cast_crew[' + rowKey + '][gender]" data-cast-crew-gender data-cast-crew-api-field required>' + applicationGenderOptionsHtml + '</select></td>'
+                    + '<td><input type="date" class="form-control" name="cast_crew[' + rowKey + '][birth_date]" max="' + applicationCrewBirthDateMax + '" data-cast-crew-birth-date data-cast-crew-api-field required></td>'
+                    + '<td class="d-none" data-cast-crew-passport-cell>' + castCrewPassportImageInputHtml(rowKey) + '</td>'
                     + deleteCell;
-	            } else if (fieldName === 'filming_locations') {
-	                row.innerHTML = filmingLocationCardHtml(tableId, index);
+            } else if (fieldName === 'filming_locations') {
+                row.innerHTML = filmingLocationCardHtml(tableId, index);
             } else if (fieldName === 'public_security_support' || fieldName === 'military_support') {
                 row.innerHTML = supportScheduleRowHtml(fieldName, index, deleteCell);
             } else if (fieldName === 'imported_equipment') {
@@ -2735,12 +3128,18 @@
                         refreshApplicationWorkSummaryRules(requestForm);
                     }
 
-                    if (event.target.matches('[data-cast-crew-nationality], [data-cast-crew-name-part], [data-cast-crew-full-name-input], [data-cast-crew-identity]')) {
+                    if (event.target.matches('[data-cast-crew-nationality], [data-cast-crew-name-part], [data-cast-crew-full-name-input], [data-cast-crew-identity], [data-cast-crew-individual-number]')) {
                         if (event.target.matches('[data-cast-crew-identity]') && eventName === 'input') {
                             event.target.dataset.validationTouched = 'true';
                         }
 
-                        updateCastCrewNameMode(event.target.closest('tr'));
+                        const row = event.target.closest('tr');
+
+                        updateCastCrewNameMode(row);
+
+                        if (event.target.matches('[data-cast-crew-nationality], [data-cast-crew-identity], [data-cast-crew-individual-number]')) {
+                            invalidateCastCrewVerification(row);
+                        }
                     }
 
                     if (event.target.matches('[data-airport-person-nationality], [data-airport-person-name-part], [data-airport-person-full-name-input], [data-airport-person-identity]')) {
@@ -2754,6 +3153,21 @@
                     updateRequirementStatuses();
                     updateEquipmentTotals();
                 });
+            });
+
+            requestForm.addEventListener('click', function (event) {
+                const verifyButton = event.target.closest('[data-cast-crew-verify]');
+
+                if (verifyButton) {
+                    verifyCastCrewRow(verifyButton.closest('tr'));
+                    return;
+                }
+
+                const verifyAllButton = event.target.closest('[data-cast-crew-verify-all]');
+
+                if (verifyAllButton) {
+                    verifyAllCastCrewRows(verifyAllButton);
+                }
             });
 
             if (window.jQuery) {

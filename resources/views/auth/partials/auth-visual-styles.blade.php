@@ -1,11 +1,13 @@
 <style>
     .auth-visual-page {
         background-color: #111315;
+        background-image: url('{{ asset('images/rfc-auth-background.jpg') }}');
         background-position: center;
         background-repeat: no-repeat;
         background-size: cover;
         isolation: isolate;
         overflow-x: hidden;
+        position: relative;
     }
 
     .auth-visual-page::before {
@@ -45,6 +47,11 @@
         .registration-subtitle,
         .registration-tabs .nav-link
     ) {
+        text-shadow: 0 2px 5px rgba(0, 0, 0, .92);
+    }
+
+    .auth-visual-card p {
+        color: rgba(255, 255, 255, .78);
         text-shadow: 0 2px 5px rgba(0, 0, 0, .92);
     }
 

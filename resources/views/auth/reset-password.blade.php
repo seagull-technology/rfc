@@ -2,11 +2,11 @@
 
 @section('content')
     <div class="wrapper">
-        <section class="sign-in-page" style="background-image: url('{{ asset('images/loginBg.jpeg') }}')">
+        <section class="sign-in-page auth-visual-page">
             <div class="container">
                 <div class="justify-content-center align-items-center height-self-center row">
                     <div class="align-self-center col-lg-5 col-md-12">
-                        <div class="sign-user_card">
+                        <div class="sign-user_card auth-visual-card">
                             <a href="{{ route('login') }}">
                                 <img class="img-fluid logo" src="{{ asset('images/logo.svg') }}" alt="#">
                             </a>

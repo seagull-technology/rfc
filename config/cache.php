@@ -17,6 +17,10 @@ return [
 
     'default' => env('CACHE_STORE', 'database'),
 
+    'dashboard_ttl' => max(1, (int) env('DASHBOARD_CACHE_TTL', 30)),
+
+    'sidebar_ttl' => max(1, (int) env('SIDEBAR_CACHE_TTL', 30)),
+
     /*
     |--------------------------------------------------------------------------
     | Cache Stores

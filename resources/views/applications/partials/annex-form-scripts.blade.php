@@ -850,6 +850,7 @@
                 button.closest('tr').remove();
                 renumberApplicationAnnexRows(selector);
                 refreshApplicationCastCrewPassportColumn(document.querySelector(selector));
+                refreshApplicationCastCrewIdentityColumns(document.querySelector(selector));
                 refreshSpecialLocationRequirementSelects();
                 refreshEquipmentTravelerSelects();
                 refreshFilmingLocationDateConstraints(document);
@@ -880,8 +881,8 @@
             }
 
             function applicationCastCrewIndividualNumberInputHtml(index) {
-                return '<div data-cast-crew-individual-number-wrap>'
-                    + '<input type="text" class="form-control" name="cast_crew[' + index + '][individual_number]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.individualNumber) + '" inputmode="numeric" maxlength="20" pattern="\\d{1,20}" data-cast-crew-individual-number>'
+                return '<div class="d-none" data-cast-crew-individual-number-wrap>'
+                    + '<input type="text" class="form-control" name="cast_crew[' + index + '][individual_number]" placeholder="' + applicationEscapeHtml(applicationCastCrewLabels.individualNumber) + '" inputmode="numeric" maxlength="20" pattern="\\d{1,20}" data-cast-crew-individual-number disabled>'
                     + '<small class="form-text text-muted d-block mt-1">' + applicationEscapeHtml(applicationCastCrewLabels.foreignOptionalHelp) + '</small>'
                     + '</div>';
             }
@@ -892,7 +893,7 @@
                     + '<input type="hidden" name="cast_crew[' + index + '][identity_verification_source]" data-cast-crew-verification-source>'
                     + '<input type="hidden" name="cast_crew[' + index + '][identity_verified_at]" data-cast-crew-verified-at>'
                     + '<input type="hidden" name="cast_crew[' + index + '][identity_verification_category]" value="foreign" data-cast-crew-verification-category>'
-                    + '<div class="cast-crew-verification-panel">'
+                    + '<div class="cast-crew-verification-panel d-none" data-cast-crew-verification-panel>'
                     + '<span class="badge bg-light text-dark border" data-cast-crew-verification-badge>' + applicationEscapeHtml(applicationCastCrewLabels.statuses.unverified) + '</span>'
                     + '<button type="button" class="btn btn-sm btn-outline-primary" data-cast-crew-verify><i class="ph ph-shield-check me-1"></i>' + applicationEscapeHtml(applicationCastCrewLabels.verifyIdentity) + '</button>'
                     + '<p class="cast-crew-verification-message d-none" data-cast-crew-verification-message></p>'
@@ -933,6 +934,41 @@
                     : '[data-cast-crew-individual-number]';
 
                 return String(row?.querySelector(selector)?.value || '').replace(/\D/g, '');
+            }
+
+            function applicationCastCrewHasPrimaryIdentity(row) {
+                return String(row?.querySelector('[data-cast-crew-identity]')?.value || '').trim() !== '';
+            }
+
+            function applicationCastCrewVerificationReady(row) {
+                const identifier = applicationCastCrewIdentifier(row);
+
+                if (applicationIsCastCrewJordanian(row)) {
+                    return /^\d{10}$/.test(identifier);
+                }
+
+                return applicationCastCrewHasPrimaryIdentity(row) && identifier !== '';
+            }
+
+            function refreshApplicationCastCrewIdentityColumns(table) {
+                if (!table) {
+                    return;
+                }
+
+                const rows = Array.from(table.querySelectorAll('tbody tr'));
+                const showIndividualColumn = rows.some(function (row) {
+                    return !applicationIsCastCrewJordanian(row) && applicationCastCrewHasPrimaryIdentity(row);
+                });
+                const showVerificationColumn = rows.some(applicationCastCrewVerificationReady);
+
+                table.querySelector('[data-cast-crew-individual-heading]')?.classList.toggle('d-none', !showIndividualColumn);
+                table.querySelectorAll('[data-cast-crew-individual-cell]').forEach(function (cell) {
+                    cell.classList.toggle('d-none', !showIndividualColumn);
+                });
+                table.querySelector('[data-cast-crew-verification-heading]')?.classList.toggle('d-none', !showVerificationColumn);
+                table.querySelectorAll('[data-cast-crew-verification-cell]').forEach(function (cell) {
+                    cell.classList.toggle('d-none', !showVerificationColumn);
+                });
             }
 
             function applicationCastCrewSetApiFieldsLocked(row, locked) {
@@ -1015,7 +1051,7 @@
                 }
 
                 if (button) {
-                    button.disabled = !identifier;
+                    button.disabled = !applicationCastCrewVerificationReady(row);
                 }
 
                 if (status === 'verified' || status === 'pending') {
@@ -1155,7 +1191,7 @@
                 } finally {
                     if (button) {
                         button.innerHTML = button.dataset.originalHtml || applicationEscapeHtml(applicationCastCrewLabels.verifyIdentity);
-                        button.disabled = !applicationCastCrewIdentifier(row);
+                        button.disabled = !applicationCastCrewVerificationReady(row);
                     }
                 }
             }
@@ -1164,7 +1200,7 @@
                 const table = document.getElementById('castCrewRequestTable');
                 const status = document.querySelector('[data-cast-crew-bulk-status]');
                 const rows = Array.from(table?.querySelectorAll('tbody tr') || []).filter(function (row) {
-                    return applicationCastCrewIdentifier(row) !== '';
+                    return applicationCastCrewVerificationReady(row);
                 });
 
                 button.disabled = true;
@@ -1195,6 +1231,7 @@
                 const individualNumberWrap = row.querySelector('[data-cast-crew-individual-number-wrap]');
                 const individualNumber = row.querySelector('[data-cast-crew-individual-number]');
                 const passportImage = row.querySelector('[data-cast-crew-passport-image]');
+                const verificationPanel = row.querySelector('[data-cast-crew-verification-panel]');
                 const isJordanian = applicationIsCastCrewJordanian(row);
                 const hasNationality = String(nationality?.value || '').trim() !== '';
 
@@ -1247,12 +1284,14 @@
                     });
                 }
 
+                const showIndividualNumber = hasNationality && !isJordanian && applicationCastCrewHasPrimaryIdentity(row);
+
                 if (individualNumberWrap) {
-                    individualNumberWrap.classList.toggle('d-none', isJordanian);
+                    individualNumberWrap.classList.toggle('d-none', !showIndividualNumber);
                 }
 
                 if (individualNumber) {
-                    individualNumber.disabled = isJordanian;
+                    individualNumber.disabled = !showIndividualNumber;
 
                     if (isJordanian) {
                         individualNumber.value = '';
@@ -1263,6 +1302,9 @@
 
                 const verificationStatus = row.querySelector('[data-cast-crew-verification-status]')?.value || 'unverified';
                 const verificationIdentifier = applicationCastCrewIdentifier(row);
+                const verificationReady = applicationCastCrewVerificationReady(row);
+
+                verificationPanel?.classList.toggle('d-none', !verificationReady);
 
                 if ((verificationStatus === 'verified' || verificationStatus === 'pending')
                     && !row.dataset.castCrewVerifiedIdentifier) {
@@ -1273,12 +1315,13 @@
                 const verifyButton = row.querySelector('[data-cast-crew-verify]');
 
                 if (verifyButton) {
-                    verifyButton.disabled = !verificationIdentifier;
+                    verifyButton.disabled = !verificationReady;
                 }
 
                 applicationCastCrewSetApiFieldsLocked(row, verificationStatus === 'verified');
 
                 refreshApplicationCastCrewPassportColumn(row.closest('table'));
+                refreshApplicationCastCrewIdentityColumns(row.closest('table'));
             }
 
             function refreshApplicationCastCrewModes(root) {
@@ -1314,14 +1357,14 @@
                     const rowKey = 'new_' + Date.now() + '_' + index;
                     row.innerHTML = '<td class="row-number"></td>'
                         + '<td><select class="form-select" name="cast_crew[' + rowKey + '][nationality]" data-cast-crew-nationality required>' + applicationNationalityOptionsHtml + '</select></td>'
+                        + '<td>' + applicationCastCrewIdentityInputHtml(rowKey) + '</td>'
+                        + '<td class="d-none" data-cast-crew-individual-cell>' + applicationCastCrewIndividualNumberInputHtml(rowKey) + '</td>'
+                        + '<td class="d-none" data-cast-crew-verification-cell>' + applicationCastCrewVerificationHtml(rowKey) + '</td>'
                         + '<td class="cast-crew-name-cell">' + applicationCastCrewNameInputsHtml(rowKey) + '</td>'
                         + '<td><input type="text" class="form-control" name="cast_crew[' + rowKey + '][role]" required></td>'
                         + '<td><select class="form-select" name="cast_crew[' + rowKey + '][gender]" data-cast-crew-gender data-cast-crew-api-field required>' + applicationGenderOptionsHtml + '</select></td>'
                         + '<td><input type="date" class="form-control" name="cast_crew[' + rowKey + '][birth_date]" max="' + applicationCrewBirthDateMax + '" data-cast-crew-birth-date data-cast-crew-api-field required></td>'
-                        + '<td>' + applicationCastCrewIdentityInputHtml(rowKey) + '</td>'
-                        + '<td>' + applicationCastCrewIndividualNumberInputHtml(rowKey) + '</td>'
                         + '<td class="d-none" data-cast-crew-passport-cell>' + applicationCastCrewPassportImageInputHtml(rowKey) + '</td>'
-                        + '<td>' + applicationCastCrewVerificationHtml(rowKey) + '</td>'
                         + deleteCell;
                 } else if (fieldName === 'filming_locations') {
                     row.innerHTML = filmingLocationCardHtml(tableId, index);

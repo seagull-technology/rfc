@@ -42,6 +42,35 @@ function Invoke-PhpArtisan {
     }
 }
 
+function Get-DotEnvValue {
+    param(
+        [string] $EnvPath,
+        [string] $Name
+    )
+
+    $contents = [System.IO.File]::ReadAllText($EnvPath)
+    $pattern = "(?m)^\s*" + [regex]::Escape($Name) + "\s*=\s*(.*)\s*$"
+    $match = [regex]::Match($contents, $pattern)
+
+    if (-not $match.Success) {
+        return $null
+    }
+
+    return $match.Groups[1].Value.Trim().Trim([char] 34).Trim([char] 39)
+}
+
+function Assert-SessionCookieConfiguration {
+    param([string] $EnvPath)
+
+    $appUrl = Get-DotEnvValue $EnvPath "APP_URL"
+    $secureCookie = Get-DotEnvValue $EnvPath "SESSION_SECURE_COOKIE"
+    $secureEnabled = $secureCookie -and @("1", "true", "yes", "on").Contains($secureCookie.ToLowerInvariant())
+
+    if ($appUrl -and $appUrl.StartsWith("http://", [System.StringComparison]::OrdinalIgnoreCase) -and $secureEnabled) {
+        throw "APP_URL uses HTTP while SESSION_SECURE_COOKIE=true. This causes every form submission to fail with HTTP 419. Set SESSION_SECURE_COOKIE=false until HTTPS is enabled."
+    }
+}
+
 function Start-RfcSite {
     if ($appPoolName) {
         $poolState = (Get-WebAppPoolState -Name $appPoolName).Value
@@ -127,6 +156,7 @@ try {
 
     Write-Host "== Preserve environment and storage =="
     Copy-Item (Join-Path $AppPath ".env") (Join-Path $stagePath ".env") -Force
+    Assert-SessionCookieConfiguration (Join-Path $stagePath ".env")
     New-Item -ItemType Directory -Force (Join-Path $stagePath "storage") | Out-Null
     & robocopy.exe (Join-Path $AppPath "storage") (Join-Path $stagePath "storage") /E /COPY:DAT /R:2 /W:2 /NFL /NDL /NP
 
@@ -173,6 +203,9 @@ try {
     Invoke-PhpArtisan $AppPath optimize:clear
     Invoke-PhpArtisan $AppPath storage:link
     Invoke-PhpArtisan $AppPath config:cache
+    # Localized route prefixes are resolved from the request by
+    # mcamara/laravel-localization and must remain uncached.
+    Invoke-PhpArtisan $AppPath route:clear
     Invoke-PhpArtisan $AppPath view:cache
     Invoke-PhpArtisan $AppPath queue:restart
     Invoke-PhpArtisan $AppPath up
@@ -181,7 +214,7 @@ try {
     Start-RfcSite
 
     Write-Host "== Smoke test =="
-    $response = Invoke-WebRequest "http://localhost/ar/login" -UseBasicParsing -TimeoutSec 30
+    $response = Invoke-WebRequest "http://localhost/ar/sign-in" -UseBasicParsing -TimeoutSec 30
 
     if ($response.StatusCode -ne 200) {
         throw "Smoke test returned HTTP $($response.StatusCode)."

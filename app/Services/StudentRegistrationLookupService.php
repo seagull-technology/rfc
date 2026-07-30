@@ -56,16 +56,16 @@ class StudentRegistrationLookupService
         if ($this->cspdPersonalInfoService->isRunnable()) {
             $personLookup = $this->cspdPersonalInfoService->lookup($nationalId);
 
-            if (! ($personLookup['ok'] ?? false)) {
+            if ($personLookup['ok'] ?? false) {
+                $data = $this->mergeFilled($data, (array) ($personLookup['data'] ?? []));
+                $sources[] = (string) data_get($personLookup, 'meta.source', 'gsb_cspd_personal_info_masked');
+            } elseif (! $this->moheUndergraduateStudentsService->isRunnable()) {
                 return [
                     'ok' => false,
                     'error' => $personLookup['error'] ?? 'PERSON_LOOKUP_FAILED',
                     'technical_message' => $personLookup['technical_message'] ?? null,
                 ];
             }
-
-            $data = $this->mergeFilled($data, (array) ($personLookup['data'] ?? []));
-            $sources[] = (string) data_get($personLookup, 'meta.source', 'gsb_cspd_personal_info_masked');
         }
 
         if ($this->moheUndergraduateStudentsService->isRunnable()) {

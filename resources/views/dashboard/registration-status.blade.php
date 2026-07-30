@@ -6,11 +6,11 @@
 
 @section('content')
     <div class="wrapper">
-        <section class="sign-in-page registration-auth-page" style="background-image: url('{{ asset('images/loginBg.jpeg') }}')">
+        <section class="sign-in-page registration-auth-page auth-visual-page">
             <div class="container">
                 <div class="justify-content-center align-items-center height-self-center row">
                     <div class="align-self-center col-12">
-                        <div class="sign-user_card registration-card registration-card-narrow">
+                        <div class="sign-user_card registration-card registration-card-narrow auth-visual-card">
                             <a class="registration-logo-link" href="{{ route('dashboard') }}">
                                 <img class="img-fluid logo registration-logo" src="{{ asset('images/logo.svg') }}" alt="#">
                             </a>

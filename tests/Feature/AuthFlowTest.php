@@ -187,6 +187,71 @@ class AuthFlowTest extends TestCase
             && $request['birthDate'] === '1998-10-03');
     }
 
+    public function test_student_lookup_continues_to_mohe_when_optional_cspd_data_is_unavailable(): void
+    {
+        $this->seed(AccessControlSeeder::class);
+
+        $nationalId = '2000738558';
+        $birthDate = '2003-09-18';
+
+        Cache::forget('gsb:cspd_personal_info_masked:'.hash('sha256', $nationalId));
+        Cache::forget("gsb:mohe_undergraduate:last_semester:{$nationalId}:{$birthDate}");
+
+        config()->set('services.gsb.enabled', true);
+        config()->set('services.gsb.client_id', 'client-id');
+        config()->set('services.gsb.client_secret', 'client-secret');
+        config()->set('services.gsb.services.cspd_personal_info_masked.enabled', true);
+        config()->set('services.gsb.services.cspd_personal_info_masked.base_url', 'https://api-gateway.stg.gsb.gov.jo:9443');
+        config()->set('services.gsb.services.cspd_personal_info_masked.path', '/porg-g2g/g2g/masked/api/person-info');
+        config()->set('services.gsb.services.cspd_personal_info_masked.method', 'GET');
+        config()->set('services.gsb.services.mohe_undergraduate_students.enabled', true);
+        config()->set('services.gsb.services.mohe_undergraduate_students.base_url', 'https://api-gateway.stg.gsb.gov.jo:9443');
+        config()->set('services.gsb.services.mohe_undergraduate_students.path', '/porg-g2g/g2g/api/LastSemester');
+
+        Http::fake([
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/masked/api/person-info*' => Http::response([
+                'code' => 200,
+                'message' => 'Success',
+                'data' => [],
+            ], 200),
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/LastSemester' => Http::response([
+                'code' => 200,
+                'message' => 'Success',
+                'data' => [[
+                    'STUDENT_NAME' => 'طالب جامعي تجريبي',
+                    'BIRTH_DATE' => '18-SEP-03',
+                    'gender_desc' => 'ذكر',
+                    'NATIONALITY' => 'أردني',
+                    'INSTITUTE_NAME' => 'جامعة الزيتونة الأردنية الخاصة',
+                    'major' => 'ذكاء الاعمال',
+                    'STATUS_CODE' => '1',
+                    'student_status' => 'منتظم',
+                ]],
+            ], 200),
+        ]);
+
+        $response = $this->post(route('register.student.lookup'), [
+            'national_id' => $nationalId,
+            'birth_date' => '18/09/2003',
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.full_name', 'طالب جامعي تجريبي')
+            ->assertJsonPath('data.birth_date', $birthDate)
+            ->assertJsonPath('data.university_name', 'جامعة الزيتونة الأردنية الخاصة')
+            ->assertJsonPath('data.major', 'ذكاء الاعمال');
+
+        Http::assertSentCount(2);
+        Http::assertSent(fn ($request): bool => str_starts_with(
+            $request->url(),
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/masked/api/person-info',
+        ));
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/LastSemester'
+            && $request['nationalNo'] === $nationalId
+            && $request['birthDate'] === $birthDate);
+    }
+
     public function test_student_lookup_rejects_mohe_undergraduate_graduate_record(): void
     {
         $this->seed(AccessControlSeeder::class);

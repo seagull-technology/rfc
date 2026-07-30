@@ -34,7 +34,7 @@ class SanadAuthenticationTest extends TestCase
         config()->set('services.sanad.authorization_url', 'https://sanad.example/authorize');
         config()->set('services.sanad.client_id', 'sanad-client');
         config()->set('services.sanad.client_secret', 'sanad-secret');
-        config()->set('services.sanad.redirect_uri', 'https://rfc.example/ar/login/sanad/callback');
+        config()->set('services.sanad.redirect_uri', 'https://rfc.example/ar/sign-in/sanad/callback');
         config()->set('services.sanad.scope', 'openid');
     }
 
@@ -60,7 +60,7 @@ class SanadAuthenticationTest extends TestCase
         $this->assertSame('/authorize', $parts['path'] ?? null);
         $this->assertSame('code', $query['response_type'] ?? null);
         $this->assertSame('sanad-client', $query['client_id'] ?? null);
-        $this->assertSame('https://rfc.example/ar/login/sanad/callback', $query['redirect_uri'] ?? null);
+        $this->assertSame('https://rfc.example/ar/sign-in/sanad/callback', $query['redirect_uri'] ?? null);
         $this->assertSame('openid', $query['scope'] ?? null);
         $this->assertSame('S256', $query['code_challenge_method'] ?? null);
         $this->assertSame($expectedChallenge, $query['code_challenge'] ?? null);
@@ -123,7 +123,7 @@ class SanadAuthenticationTest extends TestCase
                 && $request['client_secret'] === 'sanad-secret'
                 && $request['code'] === 'authorization-code'
                 && $request['verifier'] === 'expected-pkce-verifier'
-                && $request['redirect_uri'] === 'https://rfc.example/ar/login/sanad/callback';
+                && $request['redirect_uri'] === 'https://rfc.example/ar/sign-in/sanad/callback';
         });
 
         Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/signflow/v2/introspect')

@@ -56,12 +56,12 @@ Route::group([
     })->name('home');
 
     Route::middleware('guest')->group(function (): void {
-        Route::get('/login', [LoginController::class, 'create'])->name('login');
-        Route::post('/login', [LoginController::class, 'store'])->name('login.store');
-        Route::get('/login/sanad', [SanadLoginController::class, 'redirectToProvider'])
+        Route::get('/sign-in', [LoginController::class, 'create'])->name('login');
+        Route::post('/sign-in', [LoginController::class, 'store'])->name('login.store');
+        Route::get('/sign-in/sanad', [SanadLoginController::class, 'redirectToProvider'])
             ->middleware('throttle:10,1')
             ->name('sanad.redirect');
-        Route::get('/login/sanad/callback', [SanadLoginController::class, 'callback'])
+        Route::get('/sign-in/sanad/callback', [SanadLoginController::class, 'callback'])
             ->middleware('throttle:20,1')
             ->name('sanad.callback');
         Route::get('/forgot-password', [ForgotPasswordController::class, 'create'])->name('password.request');
@@ -114,10 +114,10 @@ Route::group([
         Route::get('/contact-center', [ContactCenterController::class, 'index'])->name('contact-center.index');
         Route::get('/contact-center/messages/{message}/download', [ContactCenterController::class, 'download'])->name('contact-center.messages.download');
 
-        Route::get('/company/users', [CompanyEmployeeController::class, 'index'])->name('company.employees.index');
-        Route::post('/company/users', [CompanyEmployeeController::class, 'store'])->name('company.employees.store');
-        Route::post('/company/users/{member}/update', [CompanyEmployeeController::class, 'update'])->name('company.employees.update');
-        Route::post('/company/users/{member}/status', [CompanyEmployeeController::class, 'updateStatus'])->name('company.employees.status');
+        Route::get('/company/team', [CompanyEmployeeController::class, 'index'])->name('company.employees.index');
+        Route::post('/company/team', [CompanyEmployeeController::class, 'store'])->name('company.employees.store');
+        Route::post('/company/team/{member}/update', [CompanyEmployeeController::class, 'update'])->name('company.employees.update');
+        Route::post('/company/team/{member}/status', [CompanyEmployeeController::class, 'updateStatus'])->name('company.employees.status');
 
         Route::get('/applications', [ApplicationController::class, 'index'])->name('applications.index');
         Route::post('/applications/personal-details/lookup', ApplicationPersonalDetailsLookupController::class)
@@ -191,7 +191,7 @@ Route::group([
                     ->name('applications.correspondence.download');
             });
 
-        Route::prefix('/admin')
+        Route::prefix('/control-panel')
             ->name('admin.')
             ->middleware('permission:access.admin-panel')
             ->group(function (): void {
@@ -532,37 +532,37 @@ Route::group([
                     ->middleware('permission:settings.manage')
                     ->name('entities.authority-routing.delete');
 
-                Route::get('/users', [UserManagementController::class, 'index'])
+                Route::get('/accounts', [UserManagementController::class, 'index'])
                     ->middleware('permission:users.view')
                     ->name('users.index');
-                Route::get('/users/create', [UserManagementController::class, 'create'])
+                Route::get('/accounts/create', [UserManagementController::class, 'create'])
                     ->middleware('permission:users.manage')
                     ->name('users.create');
-                Route::post('/users', [UserManagementController::class, 'store'])
+                Route::post('/accounts', [UserManagementController::class, 'store'])
                     ->middleware('permission:users.manage')
                     ->name('users.store');
-                Route::get('/users/{user}', [UserManagementController::class, 'show'])
+                Route::get('/accounts/{user}', [UserManagementController::class, 'show'])
                     ->middleware('permission:users.view')
                     ->name('users.show');
-                Route::post('/users/{user}/update', [UserManagementController::class, 'update'])
+                Route::post('/accounts/{user}/update', [UserManagementController::class, 'update'])
                     ->middleware('permission:users.manage')
                     ->name('users.update');
-                Route::post('/users/{user}/password', [UserManagementController::class, 'updatePassword'])
+                Route::post('/accounts/{user}/password', [UserManagementController::class, 'updatePassword'])
                     ->middleware('permission:users.manage')
                     ->name('users.password');
-                Route::post('/users/{user}/status', [UserManagementController::class, 'updateStatus'])
+                Route::post('/accounts/{user}/status', [UserManagementController::class, 'updateStatus'])
                     ->middleware('permission:users.manage')
                     ->name('users.status');
-                Route::post('/users/{user}/delete', [UserManagementController::class, 'destroy'])
+                Route::post('/accounts/{user}/delete', [UserManagementController::class, 'destroy'])
                     ->middleware('permission:users.manage')
                     ->name('users.delete');
-                Route::post('/users/{user}/restore', [UserManagementController::class, 'restore'])
+                Route::post('/accounts/{user}/restore', [UserManagementController::class, 'restore'])
                     ->middleware('permission:users.manage')
                     ->name('users.restore');
-                Route::post('/users/{user}/memberships', [UserManagementController::class, 'storeMembership'])
+                Route::post('/accounts/{user}/memberships', [UserManagementController::class, 'storeMembership'])
                     ->middleware('permission:users.manage')
                     ->name('users.memberships.store');
-                Route::post('/users/{user}/memberships/{entity}/roles/{role}/delete', [UserManagementController::class, 'destroyMembershipRole'])
+                Route::post('/accounts/{user}/memberships/{entity}/roles/{role}/delete', [UserManagementController::class, 'destroyMembershipRole'])
                     ->middleware('permission:users.manage')
                     ->name('users.memberships.roles.delete');
             });

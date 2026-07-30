@@ -144,6 +144,12 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSee('name="location_support_requirements[0][assignments][0][selected]"', false)
             ->assertSee('refreshSharedLocationSupportRequirements', false)
             ->assertSee('data-cast-crew-nationality', false)
+            ->assertSee('data-cast-crew-individual-heading', false)
+            ->assertSee('data-cast-crew-verification-heading', false)
+            ->assertSee('data-cast-crew-individual-cell', false)
+            ->assertSee('data-cast-crew-verification-cell', false)
+            ->assertSee('castCrewVerificationReady', false)
+            ->assertSee('refreshCastCrewIdentityColumns', false)
             ->assertSee('name="cast_crew[lead][first_name]"', false)
             ->assertSee('data-cast-crew-name-output', false)
             ->assertSee('data-cast-crew-identity-feedback', false)
@@ -3015,7 +3021,7 @@ class ApplicationWorkflowTest extends TestCase
 
         $this->assertFalse(Route::has('admin.applications.approvals.update'));
 
-        $updateResponse = $this->actingAs($admin)->post("/en/admin/applications/{$application->getKey()}/approvals/{$approval->getKey()}/update", [
+        $updateResponse = $this->actingAs($admin)->post("/en/control-panel/applications/{$application->getKey()}/approvals/{$approval->getKey()}/update", [
             'status' => 'approved',
             'note' => 'Airport approval issued.',
         ]);
@@ -3049,7 +3055,7 @@ class ApplicationWorkflowTest extends TestCase
             ->get(route('admin.applications.show', $application))
             ->assertOk()
             ->assertSee(route('admin.applications.approvals.attachment.download', [$application, $approval]), false)
-            ->assertDontSee("/admin/applications/{$application->getKey()}/approvals/{$approval->getKey()}/update", false);
+            ->assertDontSee("/control-panel/applications/{$application->getKey()}/approvals/{$approval->getKey()}/update", false);
 
         $this->assertDatabaseHas('applications', [
             'id' => $application->getKey(),
@@ -3928,7 +3934,7 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText('Correct the national number for the second crew member.');
 
         $adminOverrideResponse = $this->actingAs($admin)->post(
-            "/en/admin/applications/{$application->getKey()}/approvals/{$requestingApproval->getKey()}/update",
+            "/en/control-panel/applications/{$application->getKey()}/approvals/{$requestingApproval->getKey()}/update",
             [
                 'status' => 'approved',
                 'note' => 'This shortcut must remain blocked.',

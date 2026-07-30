@@ -2,7 +2,6 @@
 
 @push('styles')
     @include('auth.partials.registration-styles')
-    @include('auth.partials.auth-visual-styles')
 @endpush
 
 @php
@@ -17,7 +16,7 @@
 
 @section('content')
     <div class="wrapper">
-        <section class="sign-in-page registration-auth-page auth-visual-page" style="background-image: url('{{ asset('images/rfc-auth-background.jpg') }}')">
+        <section class="sign-in-page registration-auth-page auth-visual-page">
             <div class="container">
                 <div class="justify-content-center align-items-center height-self-center row">
                     <div class="align-self-center col-12">
