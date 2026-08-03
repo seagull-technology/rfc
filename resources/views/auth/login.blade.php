@@ -1,7 +1,7 @@
 @extends('layouts.auth', ['title' => __('app.auth.login_title')])
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .login-locale-switcher {
             display: flex;
             justify-content: flex-end;
@@ -70,6 +70,38 @@
             font-size: 0.8rem;
             text-align: center;
         }
+
+        .auth-password-recovery {
+            align-items: center;
+            background: rgba(113, 31, 25, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.64);
+            border-radius: 6px;
+            color: #fff;
+            display: flex;
+            font-weight: 700;
+            gap: 8px;
+            justify-content: center;
+            margin: 18px 0;
+            min-height: 48px;
+            padding: 10px 16px;
+            position: relative;
+            text-decoration: none;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+            width: 100%;
+            z-index: 2;
+        }
+
+        .auth-password-recovery:hover,
+        .auth-password-recovery:focus-visible {
+            background: #8b2a23;
+            border-color: #fff;
+            color: #fff;
+        }
+
+        .auth-password-recovery i {
+            font-size: 1.25rem;
+        }
+
     </style>
 @endpush
 
@@ -88,8 +120,8 @@
                                     {{ app()->getLocale() === 'ar' ? __('app.meta.english') : __('app.meta.arabic') }}
                                 </a>
                             </div>
-                            <a href="{{ route('login') }}">
-                                <img class="img-fluid logo" src="{{ asset('images/logo.svg') }}" alt="#">
+                            <a class="auth-brand-logo-badge" href="{{ route('login') }}">
+                                <img class="img-fluid logo auth-brand-logo" src="{{ asset('images/rfc-logo-white.png') }}" alt="{{ config('app.name') }}">
                             </a>
                             <div class="sign-in-page-data">
                                 <div class="sign-in-from w-100 m-auto">
@@ -134,16 +166,17 @@
                                             @enderror
                                         </div>
 
-                                        <div class="forgot-password">
-                                            <a href="{{ route('password.request') }}">{{ __('app.auth.forgot_password') }}</a>
-                                        </div>
-
                                         <div class="submit">
                                             <input type="hidden" name="action" value="streamit_login">
                                             <button type="submit" id="login-submit-button" class="btn btn-danger w-100 custom-sign-btn">
                                                 {{ __('app.auth.login_submit') }}
                                             </button>
                                         </div>
+
+                                        <a href="{{ route('password.request') }}" class="auth-password-recovery">
+                                            <i class="ph ph-key" aria-hidden="true"></i>
+                                            <span>{{ __('app.auth.forgot_password') }}</span>
+                                        </a>
 
                                         <div class="css_prefix-separator">
                                             <span class="or-section">{{ __('app.auth.login_with') }}</span>
@@ -174,8 +207,8 @@
                                         <div class="login-form-bottom">
                                             <div class="d-flex justify-content-center align-items-center gap-2 links my-3">
                                                 {{ __('app.auth.new_user_question') }}
-                                                <a href="{{ route('register') }}" class="st-sub-card setting-dropdown">
-                                                    <h6 class="text-danger m-0">{{ __('app.auth.create_account') }}</h6>
+                                                <a href="{{ route('register') }}" class="st-sub-card setting-dropdown auth-secondary-link">
+                                                    <h6 class="m-0 text-reset">{{ __('app.auth.create_account') }}</h6>
                                                 </a>
                                             </div>
                                         </div>
@@ -191,7 +224,7 @@
 @endsection
 
 @push('scripts')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         document.addEventListener('DOMContentLoaded', function () {
             const toggle = document.getElementById('togglePassword');
             const passwordInput = document.getElementById('password');

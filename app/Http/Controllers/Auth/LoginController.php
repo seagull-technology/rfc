@@ -42,19 +42,19 @@ class LoginController extends Controller
             })
             ->first();
 
-        if ($user?->requiresPasswordSetup()) {
-            return back()
-                ->withInput($request->except('password'))
-                ->withErrors([
-                    'identifier' => __('app.auth.account_activation_required'),
-                ]);
-        }
-
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             return back()
                 ->withInput($request->except('password'))
                 ->withErrors([
                     'identifier' => __('app.auth.invalid_credentials'),
+                ]);
+        }
+
+        if ($user->requiresPasswordSetup()) {
+            return back()
+                ->withInput($request->except('password'))
+                ->withErrors([
+                    'identifier' => __('app.auth.account_activation_required'),
                 ]);
         }
 

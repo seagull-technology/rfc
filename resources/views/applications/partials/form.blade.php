@@ -1035,7 +1035,7 @@
 
 @once
     @push('styles')
-        <style>
+        <style nonce="{{ $cspNonce ?? '' }}">
             .offcanvas.application-annex-offcanvas {
                 --bs-offcanvas-width: 100vw;
                 border: 0 !important;
@@ -1105,8 +1105,8 @@
             ->map(fn ($label, $code): array => ['code' => $code, 'label' => $label])
             ->values();
     @endphp
-    <script src="{{ asset('js/form-wizard.js') }}?v={{ filemtime(public_path('js/form-wizard.js')) }}"></script>
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/form-wizard.js') }}?v={{ filemtime(public_path('js/form-wizard.js')) }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         const applicationNationalityOptionsHtml = @js($applicationNationalityOptionsHtml);
         const applicationGovernorateOptionsHtml = @js($applicationGovernorateOptionsHtml);
         const applicationGenderOptionsHtml = @js($applicationGenderOptionsHtml);

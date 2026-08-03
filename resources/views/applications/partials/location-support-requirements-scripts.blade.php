@@ -1,6 +1,6 @@
 @once
     @push('styles')
-        <style>
+        <style nonce="{{ $cspNonce ?? '' }}">
             .location-support-editor {
                 border-top: 1px solid var(--bs-border-color);
                 padding-top: 1.5rem;
@@ -50,7 +50,7 @@
     @endphp
 
     @push('scripts')
-        <script>
+        <script nonce="{{ $cspNonce ?? '' }}">
             (function () {
                 const requirements = @json($locationSupportRequirementScriptOptions);
                 const messages = {

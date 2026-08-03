@@ -18,6 +18,10 @@ class SanadAuthenticationTest extends TestCase
 
         parent::setUp();
 
+        config()->set('security.outbound_http.allowed_hosts', [
+            'api-gateway.stg.gsb.gov.jo',
+            'sanad.example',
+        ]);
         config()->set('services.gsb.enabled', true);
 
         foreach (['signflow_v2', 'signflow_v2_open'] as $service) {

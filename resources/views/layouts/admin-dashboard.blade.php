@@ -23,7 +23,7 @@
     <title>{{ $title ?? __('app.meta.app_name') }}</title>
     <meta name="description" content="{{ __('app.meta.app_name') }}">
     <link rel="shortcut icon" href="{{ asset('images/favicon.ico') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" integrity="sha512-z3gLpd7yknf1YoNbCzqRKc4qyor8gaKU1qmn+CShxbuBusANI9QpRohGBreCFkKxLhei6S9CQXFEbbKuqLg0DA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="{{ asset('css/all.min.css') }}?v=6.4.2">
     <link rel="stylesheet" href="{{ asset('fonts/phosphor.css') }}">
     <link rel="stylesheet" href="{{ asset('fonts/Phosphor-Bold.css') }}">
     <link rel="stylesheet" href="{{ asset('fonts/Phosphor-Fill.css') }}">
@@ -37,11 +37,8 @@
         <link rel="stylesheet" href="{{ asset('css/rtl.min.css') }}?v=5.4.0">
     @endif
     <link rel="stylesheet" href="{{ asset('css/customizer.min.css') }}?v=5.4.0">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;1,100;1,300&display=swap" rel="stylesheet">
     @include('layouts.partials.dashboard-overflow-guard')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .admin-notification-item .notification-meta {
             margin-top: .35rem;
         }
@@ -332,10 +329,10 @@
                                 </a>
                             </li>
                             <li class="nav-item dropdown">
-                                <a href="#" class="nav-link position-relative" id="notification-drop" data-bs-toggle="dropdown">
+                                <a href="#" class="nav-link position-relative" id="notification-drop" data-bs-toggle="dropdown" data-notification-trigger>
                                     <i class="ph-fill ph-bell fs-4 align-middle"></i>
                                     @if ($layoutNotificationCount > 0)
-                                        <span class="badge bg-danger rounded-pill position-absolute top-0 start-100 translate-middle" style="font-size:.65rem;">{{ $layoutNotificationCount > 99 ? '99+' : $layoutNotificationCount }}</span>
+                                        <span class="badge bg-danger rounded-pill position-absolute top-0 start-100 translate-middle" style="font-size:.65rem;" data-notification-count>{{ $layoutNotificationCount > 99 ? '99+' : $layoutNotificationCount }}</span>
                                     @endif
                                 </a>
                                 <ul class="p-0 sub-drop dropdown-menu dropdown-menu-end" aria-labelledby="notification-drop">
@@ -371,6 +368,11 @@
                                             @empty
                                                 <div class="p-3 text-muted">{{ __('app.admin.dashboard.notifications_empty') }}</div>
                                             @endforelse
+                                        </div>
+                                        <div class="border-top p-2 text-center">
+                                            <a href="{{ route('notifications.index') }}" class="btn btn-link text-decoration-none fw-semibold" data-see-all-notifications>
+                                                {{ __('app.portal.see_all_notifications') }}
+                                            </a>
                                         </div>
                                     </li>
                                 </ul>
@@ -462,13 +464,13 @@
                             <path fill-rule="evenodd" clip-rule="evenodd" d="M15.85 2.50065C16.481 2.50065 17.111 2.58965 17.71 2.79065C21.401 3.99065 22.731 8.04065 21.62 11.5806C20.99 13.3896 19.96 15.0406 18.611 16.3896C16.68 18.2596 14.561 19.9196 12.28 21.3496L12.03 21.5006L11.77 21.3396C9.48102 19.9196 7.35002 18.2596 5.40102 16.3796C4.06102 15.0306 3.03002 13.3896 2.39002 11.5806C1.26002 8.04065 2.59002 3.99065 6.32102 2.76965C6.61102 2.66965 6.91002 2.59965 7.21002 2.56065H7.33002C7.61102 2.51965 7.89002 2.50065 8.17002 2.50065H8.28002C8.91002 2.51965 9.52002 2.62965 10.111 2.83065H10.17C10.21 2.84965 10.24 2.87065 10.26 2.88965C10.481 2.96065 10.69 3.04065 10.89 3.15065L11.27 3.32065C11.3618 3.36962 11.4649 3.44445 11.554 3.50912C11.6104 3.55009 11.6612 3.58699 11.7 3.61065C11.7163 3.62028 11.7329 3.62996 11.7496 3.63972C11.8354 3.68977 11.9247 3.74191 12 3.79965C13.111 2.95065 14.46 2.49065 15.85 2.50065ZM18.51 9.70065C18.92 9.68965 19.27 9.36065 19.3 8.93965V8.82065C19.33 7.41965 18.481 6.15065 17.19 5.66065C16.78 5.51965 16.33 5.74065 16.18 6.16065C16.04 6.58065 16.26 7.04065 16.68 7.18965C17.321 7.42965 17.75 8.06065 17.75 8.75965V8.79065C17.731 9.01965 17.8 9.24065 17.94 9.41065C18.08 9.58065 18.29 9.67965 18.51 9.70065Z" fill="currentColor"></path>
                         </svg>
                     </span>
-                    by <a href="https://seagull-technology.com/ar" target="_blank" rel="noreferrer">seagull-technology</a>.
+                    by <a href="https://seagull-technology.com/ar" target="_blank" rel="noopener noreferrer">seagull-technology</a>.
                 </div>
             </div>
         </footer>
     </main>
 
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         (function () {
             const releaseLoader = function () {
                 const loadingWrapper = document.getElementById('loading');
@@ -496,22 +498,22 @@
             window.setTimeout(releaseLoader, 1800);
         })();
     </script>
-    <script src="{{ asset('js/libs.min.js') }}"></script>
-    <script src="{{ asset('js/slider-tabs.js') }}"></script>
-    <script src="{{ asset('js/lodash.min.js') }}"></script>
-    <script src="{{ asset('js/utility.min.js') }}"></script>
-    <script src="{{ asset('js/setting.min.js') }}"></script>
-    <script src="{{ asset('js/setting-init.js') }}"></script>
-    <script src="{{ asset('js/external.min.js') }}"></script>
-    <script src="{{ asset('js/widgetcharts.js') }}?v=5.4.0" defer></script>
-    <script src="{{ asset('js/dashboard.js') }}?v=5.4.0" defer></script>
-    <script src="{{ asset('js/streamit.js') }}?v=5.4.2" defer></script>
-    <script src="{{ asset('js/sidebar.js') }}?v=5.4.5" defer></script>
-    <script src="{{ asset('js/chart-custom.js') }}?v=5.4.0" defer></script>
-    <script src="{{ asset('js/select2.js') }}?v=5.4.0" defer></script>
-    <script src="{{ asset('js/flatpickr.js') }}?v=5.4.0" defer></script>
-    <script src="{{ asset('js/countdown.js') }}?v=5.4.0" defer></script>
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/libs.min.js') }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/slider-tabs.js') }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/lodash.min.js') }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/utility.min.js') }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/setting.min.js') }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/setting-init.js') }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/external.min.js') }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/widgetcharts.js') }}?v=5.4.0" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/dashboard.js') }}?v=5.4.0" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/streamit.js') }}?v=5.4.2" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/sidebar.js') }}?v=5.4.5" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/chart-custom.js') }}?v=5.4.0" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/select2.js') }}?v=5.4.0" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/flatpickr.js') }}?v=5.4.0" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/countdown.js') }}?v=5.4.0" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         window.addEventListener('load', function () {
             window.setTimeout(function () {
                 var sidebarBody = document.querySelector('.sidebar[data-toggle="main-sidebar"] .sidebar-body.data-scrollbar');
@@ -542,6 +544,7 @@
         });
     </script>
     @include('layouts.partials.form-submit-state')
+    @include('layouts.partials.notification-read-state')
     @stack('scripts')
 </body>
 </html>

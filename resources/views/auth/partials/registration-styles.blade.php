@@ -1,4 +1,4 @@
-<style>
+<style nonce="{{ $cspNonce ?? '' }}">
     .registration-auth-page {
         padding: 1.5rem 0;
     }
@@ -41,22 +41,17 @@
     .registration-logo-link {
         display: inline-flex;
         justify-content: center;
+        width: min(100%, 12rem);
     }
 
     .registration-logo-badge {
         align-items: center;
-        background: rgba(255, 255, 255, .96);
-        border: 4px solid var(--bs-white);
-        border-radius: 50%;
-        box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .35);
-        height: 8.125rem;
-        padding: .75rem;
-        width: 8.125rem;
     }
 
     .registration-logo {
-        max-height: 6.75rem;
-        width: auto;
+        display: block;
+        max-height: none;
+        width: 100%;
     }
 
     .registration-header {
@@ -468,12 +463,11 @@
         }
 
         .registration-logo-badge {
-            height: 6.75rem;
-            width: 6.75rem;
+            width: min(100%, 10rem);
         }
 
         .registration-logo {
-            max-height: 5.5rem;
+            max-height: none;
         }
 
         .registration-lookup-control {

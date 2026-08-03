@@ -236,7 +236,7 @@
 
 @once
     @push('styles')
-        <style>
+        <style nonce="{{ $cspNonce ?? '' }}">
             .attached-forms-table-wrap {
                 overflow-x: auto;
             }
@@ -678,7 +678,7 @@
                                 <dt>{{ __('app.applications.annex_fields.location_address') }}</dt>
                                 <dd>
                                     @if (filled($locationAddress) && filter_var($locationAddress, FILTER_VALIDATE_URL))
-                                        <a href="{{ $locationAddress }}" target="_blank" rel="noreferrer">{{ $locationAddress }}</a>
+                                        <a href="{{ $locationAddress }}" target="_blank" rel="noopener noreferrer nofollow ugc">{{ $locationAddress }}</a>
                                     @else
                                         {{ $fallback($locationAddress) }}
                                     @endif

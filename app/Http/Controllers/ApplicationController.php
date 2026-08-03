@@ -18,6 +18,8 @@ use App\Models\User;
 use App\Models\WorkCategory;
 use App\Notifications\ForeignProducerInvitationNotification;
 use App\Notifications\InboxMessageNotification;
+use App\Rules\SafeExternalUrl;
+use App\Rules\SafeExternalUrlOrText;
 use App\Rules\SupportRequirementNotesRequired;
 use App\Services\ApprovalRoutingService;
 use App\Services\Gsb\CrewIdentityVerificationService;
@@ -1789,14 +1791,14 @@ class ApplicationController extends Controller
             'director_name' => ['required', 'string', 'max:255'],
             'director_nationality' => ['required', Rule::in(Nationality::activeCodesFor(Nationality::USAGE_DIRECTOR))],
             'director_email' => ['required', 'email', 'max:255'],
-            'director_profile_url' => ['nullable', 'url', 'max:500'],
+            'director_profile_url' => ['nullable', new SafeExternalUrl(config('security.external_urls.professional_profile_hosts', []), true), 'max:500'],
             'international_producer_name' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:255'],
             'international_producer_nationality' => [Rule::requiredIf($requiresInternationalProject), 'nullable', Rule::in(Nationality::activeCodesFor(Nationality::USAGE_INTERNATIONAL_PRODUCER))],
             'international_producer_company' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:255'],
             'international_producer_email' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'email', 'max:255'],
-            'international_producer_profile_url' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'url', 'max:500'],
+            'international_producer_profile_url' => [Rule::requiredIf($requiresInternationalProject), 'nullable', new SafeExternalUrl(config('security.external_urls.professional_profile_hosts', []), true), 'max:500'],
             'international_producer_address' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:500'],
-            'international_producer_website' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'url', 'max:500'],
+            'international_producer_website' => [Rule::requiredIf($requiresInternationalProject), 'nullable', new SafeExternalUrl(config('security.external_urls.business_website_hosts', []), true), 'max:500'],
             'international_liaison_email' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'email', 'max:255'],
             'international_liaison_mobile' => [Rule::requiredIf($requiresInternationalProject), 'nullable', 'string', 'max:50'],
             'international_account_exists' => $requiresInternationalProject ? ['required', 'accepted'] : ['nullable', 'boolean'],
@@ -1845,7 +1847,7 @@ class ApplicationController extends Controller
             'filming_locations.*.location_key' => ['nullable', 'string', 'max:100'],
             'filming_locations.*.governorate' => ['nullable', 'string', Rule::in($governorateCodes)],
             'filming_locations.*.location_name' => ['nullable', 'string', 'max:255'],
-            'filming_locations.*.address' => ['required', 'string', 'max:500'],
+            'filming_locations.*.address' => ['required', 'string', 'max:500', new SafeExternalUrlOrText],
             'filming_locations.*.nature' => ['nullable', 'string', 'max:255'],
             'filming_locations.*.location_type' => ['nullable', 'string', Rule::in($locationTypeCodes), $this->locationTypeBelongsToGovernorateRule($request, 'filming_locations')],
             'filming_locations.*.special_requirements' => ['nullable', 'array'],
@@ -2060,7 +2062,7 @@ class ApplicationController extends Controller
             'filming_locations.*.location_key' => ['nullable', 'string', 'max:100'],
             'filming_locations.*.governorate' => ['nullable', 'string', Rule::in($governorateCodes)],
             'filming_locations.*.location_name' => ['nullable', 'string', 'max:255'],
-            'filming_locations.*.address' => ['required', 'string', 'max:500'],
+            'filming_locations.*.address' => ['required', 'string', 'max:500', new SafeExternalUrlOrText],
             'filming_locations.*.nature' => ['nullable', 'string', 'max:255'],
             'filming_locations.*.location_type' => ['nullable', 'string', Rule::in($locationTypeCodes), $this->locationTypeBelongsToGovernorateRule($request, 'filming_locations')],
             'filming_locations.*.special_requirements' => ['nullable', 'array'],
@@ -2193,16 +2195,44 @@ class ApplicationController extends Controller
      */
     private function ministryInteriorPersonalDetailsValidationRules(Request $request): array
     {
+        $todayDate = now()->startOfDay()->toDateString();
+        $minimumTravelDocumentExpiryDate = now()->startOfDay()->addMonthsNoOverflow(6)->toDateString();
         $rows = MinistryInteriorPersonalDetailsData::rows(
             $request->input('ministry_interior_personal_details', []),
         );
+        $hasSubmittedRows = collect($rows)->contains(
+            fn (array $row): bool => MinistryInteriorPersonalDetailsData::hasSubmittedData($row)
+        );
+        $requestType = (string) $request->input('ministry_interior_personal_details_request.type');
+        $palestinianNationalityCodes = Nationality::query()
+            ->get(['code', 'name_ar', 'name_en'])
+            ->filter(function (Nationality $nationality): bool {
+                $searchable = Str::lower(implode(' ', [
+                    $nationality->code,
+                    $nationality->name_ar,
+                    $nationality->name_en,
+                ]));
+
+                return Str::contains($searchable, ['palestin', 'فلسطين']);
+            })
+            ->pluck('code')
+            ->map(fn (mixed $code): string => (string) $code)
+            ->all();
         $rules = [
             'ministry_interior_personal_details' => ['nullable', 'array'],
+            'ministry_interior_personal_details_request' => ['nullable', 'array'],
+            'ministry_interior_personal_details_request.type' => [
+                Rule::requiredIf($hasSubmittedRows),
+                'nullable',
+                Rule::in(['normal', 'urgent']),
+            ],
+            'ministry_interior_personal_details_request.urgent_fee_accepted' => $hasSubmittedRows && $requestType === 'urgent'
+                ? ['accepted']
+                : ['nullable', 'boolean'],
         ];
 
         foreach ($rows as $index => $row) {
-            $requiresDetails = MinistryInteriorPersonalDetailsData::hasSubmittedData($row)
-                || MinistryInteriorPersonalDetailsData::isConfirmed($row);
+            $requiresDetails = MinistryInteriorPersonalDetailsData::hasSubmittedData($row);
             $prefix = 'ministry_interior_personal_details.'.$index;
             $legacyRow = blank(data_get($row, 'nationality_category'))
                 && filled(data_get($row, 'current_full_name'));
@@ -2213,37 +2243,100 @@ class ApplicationController extends Controller
                 ->contains(fn (string $field): bool => filled(data_get($row, $field)));
             $splitNameRequired = Rule::requiredIf($requiresDetails && ! $legacyRow && ($usesSplitName || blank(data_get($row, 'current_full_name'))));
             $spouseRequired = Rule::requiredIf($requiresDetails && ! $legacyRow && data_get($row, 'marital_status') === 'married');
-            $residencyRequired = Rule::requiredIf(
+            $nationalityCategory = (string) data_get($row, 'nationality_category');
+            $effectiveNationality = $nationalityCategory === 'travel_document'
+                ? (string) data_get($row, 'original_nationality')
+                : (string) data_get($row, 'current_nationality');
+            $countryOfResidence = (string) data_get($row, 'country_of_residence');
+            $requiresResidenceProof = $requiresDetails
+                && ! $legacyRow
+                && filled($effectiveNationality)
+                && filled($countryOfResidence)
+                && $effectiveNationality !== $countryOfResidence;
+            $residenceRequired = Rule::requiredIf($requiresResidenceProof);
+            $visaExpiryRequired = Rule::requiredIf(
                 $requiresDetails
                 && ! $legacyRow
-                && data_get($row, 'nationality_category') !== 'jordanian'
+                && data_get($row, 'schengen_us_visa') === 'yes'
             );
-            $personalNumberRules = match ((string) data_get($row, 'nationality_category')) {
-                'jordanian' => ['digits:10'],
-                'arab', 'foreign' => ['regex:/^\d{1,20}$/'],
-                default => [],
-            };
+            $palestinianPassportIdRequired = Rule::requiredIf(
+                $requiresDetails
+                && ! $legacyRow
+                && in_array($effectiveNationality, $palestinianNationalityCodes, true)
+            );
 
             $rules += [
-                $prefix.'.personal_number' => ['nullable', Rule::when(! $legacyRow, $personalNumberRules), 'max:100'],
-                $prefix.'.nationality_category' => [$modernRequired, 'nullable', Rule::in(['jordanian', 'arab', 'foreign'])],
-                $prefix.'.current_nationality' => [$required, 'nullable', 'string', 'max:255'],
+                $prefix.'.personal_number' => ['nullable', Rule::when(! $legacyRow, ['digits:10']), 'max:100'],
+                $prefix.'.nationality_category' => [$modernRequired, 'nullable', Rule::in(['arab', 'foreign', 'travel_document'])],
+                $prefix.'.travel_document_type' => [
+                    Rule::requiredIf($requiresDetails && ! $legacyRow && $nationalityCategory === 'travel_document'),
+                    'nullable',
+                    Rule::in(['foreign_travel_document', 'passport', 'palestinian_refugee_syrian_passport']),
+                ],
+                $prefix.'.current_nationality' => [
+                    Rule::requiredIf($requiresDetails && ($legacyRow || $nationalityCategory !== 'travel_document')),
+                    'nullable',
+                    'string',
+                    'max:255',
+                ],
                 $prefix.'.current_full_name' => [$legacyRequired, 'nullable', 'string', 'max:255'],
                 $prefix.'.first_name' => [$splitNameRequired, 'nullable', 'string', 'max:100'],
                 $prefix.'.father_name' => [$splitNameRequired, 'nullable', 'string', 'max:100'],
                 $prefix.'.grandfather_name' => [$splitNameRequired, 'nullable', 'string', 'max:100'],
                 $prefix.'.family_name' => [$splitNameRequired, 'nullable', 'string', 'max:100'],
-                $prefix.'.original_nationality' => [$legacyRequired, 'nullable', 'string', 'max:255'],
+                $prefix.'.original_nationality' => [
+                    Rule::requiredIf($requiresDetails && ! $legacyRow && $nationalityCategory === 'travel_document'),
+                    'nullable',
+                    'string',
+                    'max:255',
+                ],
+                $prefix.'.original_document_country' => [
+                    Rule::requiredIf($requiresDetails && ! $legacyRow && $nationalityCategory === 'travel_document'),
+                    'nullable',
+                    'string',
+                    'max:255',
+                ],
                 $prefix.'.original_full_name' => [$legacyRequired, 'nullable', 'string', 'max:255'],
+                $prefix.'.original_first_name' => [
+                    Rule::requiredIf($requiresDetails && ! $legacyRow && $nationalityCategory === 'travel_document'),
+                    'nullable',
+                    'string',
+                    'max:100',
+                ],
+                $prefix.'.original_father_name' => [
+                    Rule::requiredIf($requiresDetails && ! $legacyRow && $nationalityCategory === 'travel_document'),
+                    'nullable',
+                    'string',
+                    'max:100',
+                ],
+                $prefix.'.original_grandfather_name' => [
+                    Rule::requiredIf($requiresDetails && ! $legacyRow && $nationalityCategory === 'travel_document'),
+                    'nullable',
+                    'string',
+                    'max:100',
+                ],
+                $prefix.'.original_family_name' => [
+                    Rule::requiredIf($requiresDetails && ! $legacyRow && $nationalityCategory === 'travel_document'),
+                    'nullable',
+                    'string',
+                    'max:100',
+                ],
                 $prefix.'.gender' => [$required, 'nullable', Rule::in(['male', 'female'])],
                 $prefix.'.marital_status' => [$modernRequired, 'nullable', Rule::in(['single', 'married', 'divorced', 'widowed'])],
                 $prefix.'.passport_number' => [$required, 'nullable', 'string', 'max:100'],
                 $prefix.'.passport_type' => $legacyRow
                     ? [$required, 'nullable', 'string', 'max:100']
-                    : [$modernRequired, 'nullable', Rule::in(['ordinary', 'diplomatic', 'service', 'temporary', 'travel_document', 'other'])],
+                    : [$modernRequired, 'nullable', Rule::in(['ordinary', 'diplomatic', 'travel_document'])],
+                $prefix.'.palestinian_passport_id' => [$palestinianPassportIdRequired, 'nullable', 'string', 'max:100'],
                 $prefix.'.passport_issue_place' => [$required, 'nullable', 'string', 'max:255'],
-                $prefix.'.passport_issue_date' => [$required, 'nullable', 'date'],
-                $prefix.'.passport_expiry_date' => [$required, 'nullable', 'date', 'after_or_equal:'.$prefix.'.passport_issue_date'],
+                $prefix.'.passport_issue_date' => [$required, 'nullable', 'date', 'before_or_equal:'.$todayDate],
+                $prefix.'.passport_expiry_date' => [
+                    $required,
+                    'nullable',
+                    'date',
+                    'after_or_equal:'.$prefix.'.passport_issue_date',
+                    'after_or_equal:'.$minimumTravelDocumentExpiryDate,
+                ],
                 $prefix.'.birth_place' => [$required, 'nullable', 'string', 'max:255'],
                 $prefix.'.birth_date' => [$required, 'nullable', 'date', 'before:today'],
                 $prefix.'.education_qualification' => [$required, 'nullable', 'string', 'max:255'],
@@ -2259,17 +2352,49 @@ class ApplicationController extends Controller
                 $prefix.'.country_of_arrival' => [$required, 'nullable', 'string', 'max:255'],
                 $prefix.'.country_of_residence' => [$required, 'nullable', 'string', 'max:255'],
                 $prefix.'.residence_issue_date' => ['nullable', 'date'],
-                $prefix.'.residence_expiry_date' => [$residencyRequired, 'nullable', 'date'],
-                $prefix.'.schengen_us_visa' => [$residencyRequired, 'nullable', Rule::in(['yes', 'no'])],
-                $prefix.'.previous_jordan_residence' => [$residencyRequired, 'nullable', Rule::in(['yes', 'no'])],
-                $prefix.'.investment_card' => [$residencyRequired, 'nullable', Rule::in(['yes', 'no'])],
-                $prefix.'.free_zones_card' => [$residencyRequired, 'nullable', Rule::in(['yes', 'no'])],
-                $prefix.'.jordan_governorate' => [$modernRequired, 'nullable', 'string', 'max:100'],
-                $prefix.'.jordan_residence_address' => [$modernRequired, 'nullable', 'string', 'max:500'],
-                $prefix.'.entry_method' => [$modernRequired, 'nullable', Rule::in(['lawful_entry', 'visa', 'other'])],
-                $prefix.'.departure_document' => [$modernRequired, 'nullable', Rule::in(['foreign_travel_document', 'passport', 'palestinian_refugee_syrian_passport'])],
-                $prefix.'.departure_method' => [$modernRequired, 'nullable', Rule::in(['facilitation_letter', 'lawful_entry_departure', 'unhcr', 'voluntary_migration', 'other'])],
-                $prefix.'.attachments' => ['nullable', 'array'],
+                $prefix.'.residence_expiry_date' => [
+                    $residenceRequired,
+                    'nullable',
+                    'date',
+                    'after_or_equal:'.$minimumTravelDocumentExpiryDate,
+                ],
+                $prefix.'.schengen_us_visa' => [$modernRequired, 'nullable', Rule::in(['yes', 'no'])],
+                $prefix.'.schengen_us_visa_expiry_date' => [
+                    $visaExpiryRequired,
+                    'nullable',
+                    'date',
+                    'after_or_equal:'.$todayDate,
+                ],
+                $prefix.'.attachments' => [
+                    Rule::requiredIf($requiresDetails),
+                    'nullable',
+                    'array',
+                    function (string $attribute, mixed $value, \Closure $fail) use ($requiresDetails, $requiresResidenceProof): void {
+                        if (! $requiresDetails) {
+                            return;
+                        }
+
+                        $attachments = collect(is_array($value) ? $value : [])
+                            ->filter(fn (mixed $attachment): bool => is_array($attachment)
+                                && ! filter_var($attachment['_remove'] ?? false, FILTER_VALIDATE_BOOLEAN));
+                        $hasDocument = fn (string $type): bool => $attachments->contains(
+                            fn (array $attachment): bool => ($attachment['document_type'] ?? null) === $type
+                                && (
+                                    filled($attachment['id'] ?? null)
+                                    || filled($attachment['path'] ?? null)
+                                    || ($attachment['file'] ?? null) instanceof UploadedFile
+                                )
+                        );
+
+                        if (! $hasDocument('passport_copy')) {
+                            $fail(__('app.applications.validation.passport_copy_required'));
+                        }
+
+                        if ($requiresResidenceProof && ! $hasDocument('foreign_residence')) {
+                            $fail(__('app.applications.validation.residence_copy_required'));
+                        }
+                    },
+                ],
                 $prefix.'.attachments.*.id' => ['nullable', 'string', 'max:100'],
                 $prefix.'.attachments.*.document_type' => ['nullable', Rule::in(self::MINISTRY_INTERIOR_ATTACHMENT_TYPES)],
                 $prefix.'.attachments.*.file' => ['nullable', 'file', 'mimes:jpg,jpeg,tiff,tif', 'max:512'],
@@ -2285,9 +2410,11 @@ class ApplicationController extends Controller
                     continue;
                 }
 
-                $attachmentStarted = filled($attachment['id'] ?? null)
-                    || filled($attachment['document_type'] ?? null)
-                    || ($attachment['file'] ?? null) instanceof UploadedFile;
+                $attachmentStarted = $requiresDetails && (
+                    filled($attachment['id'] ?? null)
+                    || filled($attachment['path'] ?? null)
+                    || ($attachment['file'] ?? null) instanceof UploadedFile
+                );
                 $attachmentPrefix = $prefix.'.attachments.'.$attachmentIndex;
 
                 $rules[$attachmentPrefix.'.document_type'] = [
@@ -2296,7 +2423,11 @@ class ApplicationController extends Controller
                     Rule::in(self::MINISTRY_INTERIOR_ATTACHMENT_TYPES),
                 ];
                 $rules[$attachmentPrefix.'.file'] = [
-                    Rule::requiredIf($attachmentStarted && blank($attachment['id'] ?? null)),
+                    Rule::requiredIf(
+                        $attachmentStarted
+                        && blank($attachment['id'] ?? null)
+                        && blank($attachment['path'] ?? null),
+                    ),
                     'nullable',
                     'file',
                     'mimes:jpg,jpeg,tiff,tif',
@@ -2780,6 +2911,11 @@ class ApplicationController extends Controller
             'ministry_interior_personal_details' => MinistryInteriorPersonalDetailsData::rows(
                 data_get($annex, 'ministry_interior_personal_details', []),
             ),
+            'ministry_interior_personal_details_request' => (array) data_get(
+                $annex,
+                'ministry_interior_personal_details_request',
+                [],
+            ),
             'work_content_summary_synopsis' => data_get($annex, 'work_content_summary.synopsis'),
             'work_content_summary_confirmed' => data_get($annex, 'work_content_summary.confirmed') ? '1' : '0',
             'work_content_summary_attachment_path' => data_get($annex, 'work_content_summary.attachment_path'),
@@ -2933,6 +3069,16 @@ class ApplicationController extends Controller
             : MinistryInteriorPersonalDetailsData::rows(
                 data_get($existingAnnex, 'ministry_interior_personal_details', []),
             );
+        $ministryInteriorPersonalDetailsRequest = array_key_exists('ministry_interior_personal_details_request', $validated)
+            ? [
+                'type' => (string) data_get($validated, 'ministry_interior_personal_details_request.type', 'normal'),
+                'urgent_fee_accepted' => (bool) data_get(
+                    $validated,
+                    'ministry_interior_personal_details_request.urgent_fee_accepted',
+                    false,
+                ),
+            ]
+            : (array) data_get($existingAnnex, 'ministry_interior_personal_details_request', []);
 
         return [
             'production_terms' => [
@@ -2946,6 +3092,7 @@ class ApplicationController extends Controller
                 'accepted_by_user_id' => ($validated['production_terms_accepted_by_user_id'] ?? null) ?: null,
             ],
             'ministry_interior_personal_details' => $ministryInteriorPersonalDetails,
+            'ministry_interior_personal_details_request' => $ministryInteriorPersonalDetailsRequest,
             'work_content_summary' => [
                 'synopsis' => ($validated['work_content_summary_synopsis'] ?? null) ?: null,
                 'confirmed' => (bool) ($validated['work_content_summary_confirmed'] ?? false),

@@ -127,7 +127,7 @@
 @section('page_layout_class', 'authority-request-show-layout py-0')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .authority-request-show-layout {
             padding-top: 0;
         }
@@ -537,7 +537,7 @@
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.director_email') }}:</span><span class="ms-2">{{ data_get($director, 'director_email', __('app.dashboard.not_available')) }}</span></div>
                                         <div class="mb-0"><span class="fw-600">{{ __('app.applications.director_profile_url') }}:</span>
                                             @if (filled(data_get($director, 'director_profile_url')))
-                                                <a href="{{ data_get($director, 'director_profile_url') }}" class="ms-2" target="_blank" rel="noreferrer">{{ data_get($director, 'director_profile_url') }}</a>
+                                                <a href="{{ data_get($director, 'director_profile_url') }}" class="ms-2" target="_blank" rel="noopener noreferrer nofollow ugc">{{ data_get($director, 'director_profile_url') }}</a>
                                             @else
                                                 <span class="ms-2">{{ __('app.dashboard.not_available') }}</span>
                                             @endif
@@ -1139,7 +1139,7 @@
 
 @push('scripts')
     @include('partials.sla-countdown-script')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         document.addEventListener('DOMContentLoaded', function () {
             const form = document.querySelector('[data-authority-decision-form]');
 

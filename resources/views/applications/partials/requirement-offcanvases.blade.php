@@ -121,7 +121,7 @@
 @endphp
 
 @once
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .offcanvas.application-annex-offcanvas {
             --bs-offcanvas-width: 100vw;
             border: 0 !important;
@@ -1101,7 +1101,7 @@
 
 @once
     @push('scripts')
-        <script>
+        <script nonce="{{ $cspNonce ?? '' }}">
             (function () {
                 function normalizedValue(value) {
                     return String(value || '').trim().replace(/\s+/g, ' ');
@@ -1373,17 +1373,16 @@
 
 @once
     @push('scripts')
-        <script>
+        <script nonce="{{ $cspNonce ?? '' }}">
             (function () {
                 const validationMessage = @js(__('app.applications.requirement_validation_summary'));
                 const requiredMinistryFields = [
-                    'nationality_category', 'current_nationality', 'first_name', 'father_name',
+                    'nationality_category', 'first_name', 'father_name',
                     'grandfather_name', 'family_name', 'gender', 'marital_status', 'passport_number',
                     'passport_type', 'passport_issue_place', 'passport_issue_date', 'passport_expiry_date',
                     'birth_place', 'birth_date', 'education_qualification', 'mother_full_name',
                     'mother_nationality', 'country_of_arrival', 'country_of_residence',
-                    'jordan_governorate', 'jordan_residence_address', 'entry_method',
-                    'departure_document', 'departure_method', 'confirmed'
+                    'schengen_us_visa', 'confirmed'
                 ];
 
                 function controlHasValue(control) {
@@ -1438,11 +1437,34 @@
                             setControlRequired(namedRowControl(row, field), started);
                         });
 
-                        const nonJordanian = namedRowControl(row, 'nationality_category')?.value !== 'jordanian';
-                        ['residence_expiry_date', 'schengen_us_visa', 'previous_jordan_residence', 'investment_card', 'free_zones_card']
+                        const nationalityCategory = namedRowControl(row, 'nationality_category')?.value;
+                        const travelDocumentHolder = nationalityCategory === 'travel_document';
+                        const currentNationality = namedRowControl(row, 'current_nationality');
+                        const originalNationality = namedRowControl(row, 'original_nationality');
+                        const residenceCountry = namedRowControl(row, 'country_of_residence');
+                        const effectiveNationality = travelDocumentHolder ? originalNationality : currentNationality;
+                        const residenceMismatch = Boolean(
+                            effectiveNationality?.value
+                            && residenceCountry?.value
+                            && effectiveNationality.value !== residenceCountry.value
+                        );
+
+                        setControlRequired(currentNationality, started && !travelDocumentHolder);
+                        ['original_nationality', 'original_document_country', 'original_first_name', 'original_father_name', 'original_grandfather_name', 'original_family_name']
                             .forEach(function (field) {
-                                setControlRequired(namedRowControl(row, field), started && nonJordanian);
+                                setControlRequired(namedRowControl(row, field), started && travelDocumentHolder);
                             });
+                        setControlRequired(namedRowControl(row, 'residence_expiry_date'), started && residenceMismatch);
+                        setControlRequired(
+                            namedRowControl(row, 'schengen_us_visa_expiry_date'),
+                            started && namedRowControl(row, 'schengen_us_visa')?.value === 'yes'
+                        );
+
+                        const palestinianSection = row.querySelector('[data-ministry-palestinian-passport-id]');
+                        setControlRequired(
+                            namedRowControl(row, 'palestinian_passport_id'),
+                            started && palestinianSection && !palestinianSection.hidden
+                        );
 
                         const married = namedRowControl(row, 'marital_status')?.value === 'married';
                         ['spouse_nationality', 'spouse_full_name', 'spouse_birth_date', 'spouse_mother_full_name']
@@ -1553,9 +1575,6 @@
                     }
 
                     switch (drawer.dataset.projectNeedsForm) {
-                        case 'ministry-personal-details':
-                            syncMinistryPersonalDetails(drawer);
-                            break;
                         case 'equipment':
                             syncShippingEquipment(drawer);
                             syncTravelerEquipment(drawer);

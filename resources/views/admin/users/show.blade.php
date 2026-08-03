@@ -39,7 +39,7 @@
 @section('page_layout_class', 'admin-user-show-layout py-0')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .admin-user-show-layout {
             padding-top: 0;
         }
@@ -732,7 +732,7 @@
 @push('scripts')
     @include('admin.users.partials.role-picker-script', ['entities' => $entities])
 
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         (() => {
             document.querySelectorAll('[data-admin-user-password-toggle]').forEach(function (toggle) {
                 const passwordInput = toggle.closest('.admin-user-password-control')?.querySelector('input');

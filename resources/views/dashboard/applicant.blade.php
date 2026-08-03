@@ -62,7 +62,7 @@
 @section('page_layout_class', 'applicant-dashboard-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .portal-applicant-hero {
             border: 0;
             border-radius: .5rem;

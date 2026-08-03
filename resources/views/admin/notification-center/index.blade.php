@@ -4,7 +4,7 @@
 ])
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .notification-center-table {
             min-width: 1280px;
         }

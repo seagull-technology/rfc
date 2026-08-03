@@ -1,4 +1,4 @@
-<style>
+<style nonce="{{ $cspNonce ?? '' }}">
     @keyframes rfc-submit-spin {
         to { transform: rotate(360deg); }
     }
@@ -22,9 +22,9 @@
         width: 1em;
     }
 </style>
-<script>
+<script nonce="{{ $cspNonce ?? '' }}">
     window.RfcSubmitStateConfig = {
         loadingLabel: @js(__('app.submitting')),
     };
 </script>
-<script src="{{ asset('js/form-submit-state.js') }}?v=1.0.0" defer></script>
+<script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/form-submit-state.js') }}?v=1.0.0" defer></script>

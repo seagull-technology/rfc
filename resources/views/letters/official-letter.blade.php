@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ __('app.official_letters.print_title') }} - {{ $application->code }}</title>
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         body { font-family: Arial, sans-serif; margin: 0; background: #f4f4f4; color: #151515; }
         .print-actions { max-width: 900px; margin: 24px auto 0; display: flex; justify-content: flex-end; gap: 12px; }
         .print-actions a, .print-actions button { background: #b52b1e; color: #fff; border: 0; padding: 12px 18px; text-decoration: none; cursor: pointer; }

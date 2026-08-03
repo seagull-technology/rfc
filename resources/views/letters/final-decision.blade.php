@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ __('app.final_decision.letter_title') }} - {{ $application->code }}</title>
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         body { font-family: Arial, sans-serif; margin: 0; background: #f4f4f4; color: #151515; }
         .page { max-width: 900px; margin: 24px auto; background: #fff; padding: 40px; box-shadow: 0 6px 24px rgba(0,0,0,.08); }
         .header { display: flex; justify-content: space-between; align-items: center; gap: 24px; border-bottom: 2px solid #b52b1e; padding-bottom: 20px; margin-bottom: 28px; }

@@ -10,7 +10,7 @@
 
 @once
     @push('styles')
-        <style>
+        <style nonce="{{ $cspNonce ?? '' }}">
             .approval-annex-trigger-list {
                 display: grid;
                 gap: 1rem;
@@ -37,7 +37,7 @@
     @endpush
 
     @push('scripts')
-        <script>
+        <script nonce="{{ $cspNonce ?? '' }}">
             document.addEventListener('DOMContentLoaded', function () {
                 document.querySelectorAll('[data-annex-trigger-root]').forEach(function (root) {
                     root.querySelectorAll('[data-annex-trigger-group]').forEach(function (group) {

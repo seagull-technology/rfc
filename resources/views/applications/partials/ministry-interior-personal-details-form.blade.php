@@ -1,10 +1,38 @@
 @php
     $ministryInteriorPersonalDetailsReadOnly = (bool) ($ministryInteriorPersonalDetailsReadOnly ?? false);
     $ministryInteriorPersonalDetailsIdPrefix = $ministryInteriorPersonalDetailsIdPrefix ?? 'ministry_interior_personal_details';
-    $ministryNationalityOptions = collect($ministryNationalityOptions ?? data_get($nationalityOptions ?? [], 'director', []));
-    $ministryGovernorateOptions = \App\Models\Governorate::query()->active()->ordered()->get();
+    $ministryCountryOptions = collect($ministryNationalityOptions ?? data_get($nationalityOptions ?? [], 'director', []))
+        ->values();
+    $ministryNationalityOptions = $ministryCountryOptions
+        ->reject(function ($nationality) {
+            $code = mb_strtolower(trim((string) data_get($nationality, 'code')));
+            $nameAr = trim((string) data_get($nationality, 'name_ar'));
+            $nameEn = mb_strtolower(trim((string) data_get($nationality, 'name_en')));
+
+            return in_array($code, ['jo', 'jor', 'jordanian'], true)
+                || in_array($nameAr, ['أردني', 'أردنية', 'الأردن', 'المملكة الأردنية الهاشمية'], true)
+                || in_array($nameEn, ['jordan', 'jordanian'], true);
+        })
+        ->values();
+    $todayDate = now()->startOfDay()->toDateString();
+    $minimumTravelDocumentExpiryDate = now()->startOfDay()->addMonthsNoOverflow(6)->toDateString();
     $submittedDetails = old('ministry_interior_personal_details', $ministryInteriorPersonalDetails ?? []);
     $ministryInteriorPersonalDetailsRows = \App\Support\MinistryInteriorPersonalDetails::rows($submittedDetails);
+    $submittedRequest = old(
+        'ministry_interior_personal_details_request',
+        $ministryInteriorPersonalDetailsRequest
+            ?? data_get($annex ?? [], 'ministry_interior_personal_details_request', [])
+    );
+    $requestType = (string) data_get($submittedRequest, 'type', 'normal');
+    $urgentFeeAccepted = filter_var(data_get($submittedRequest, 'urgent_fee_accepted', false), FILTER_VALIDATE_BOOL);
+    $palestinianNationalityCodes = $ministryNationalityOptions
+        ->filter(function ($nationality) {
+            return str_contains((string) data_get($nationality, 'name_ar'), 'فلسطين')
+                || str_contains(mb_strtolower((string) data_get($nationality, 'name_en')), 'palestin');
+        })
+        ->pluck('code')
+        ->map(fn ($code) => (string) $code)
+        ->values();
 
     if (! $ministryInteriorPersonalDetailsReadOnly && $ministryInteriorPersonalDetailsRows === []) {
         $ministryInteriorPersonalDetailsRows = [[]];
@@ -12,7 +40,7 @@
 @endphp
 
 @once
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .ministry-personal-details-form {
             color: #1f2937;
             width: 100%;
@@ -120,7 +148,95 @@
             text-align: center;
         }
 
+        .ministry-personal-details-form__request {
+            border: 1px solid #d8dde6;
+            background: #fff;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .ministry-personal-details-form__request-options {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: .75rem;
+        }
+
+        .ministry-personal-details-form__request-option {
+            display: flex;
+            align-items: center;
+            gap: .65rem;
+            min-height: 3.25rem;
+            border: 1px solid #cfd5df;
+            padding: .75rem 1rem;
+            cursor: pointer;
+        }
+
+        .ministry-personal-details-form__urgent-warning {
+            border-inline-start: 4px solid #9b241f;
+            background: #fff2f1;
+            color: #671815;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+
+        .ministry-personal-details-form__urgent-warning p {
+            margin: 0;
+        }
+
+        .ministry-personal-details-form__urgent-modal[hidden] {
+            display: none !important;
+        }
+
+        .ministry-personal-details-form__urgent-modal {
+            align-items: center;
+            background: rgb(15 18 23 / 68%);
+            display: flex;
+            inset: 0;
+            justify-content: center;
+            padding: 1rem;
+            position: fixed;
+            z-index: 1080;
+        }
+
+        .ministry-personal-details-form__urgent-dialog {
+            background: #fff;
+            border-top: 5px solid #70251f;
+            box-shadow: 0 1.5rem 3rem rgb(0 0 0 / 25%);
+            max-width: 40rem;
+            padding: 1.5rem;
+            width: min(100%, 40rem);
+        }
+
+        .ministry-personal-details-form__urgent-dialog h3 {
+            color: #1f2937;
+            font-size: 1.4rem;
+            margin: 0 0 .75rem;
+        }
+
+        .ministry-personal-details-form__urgent-dialog p {
+            color: #5b2320;
+            line-height: 1.9;
+            margin: 0 0 1rem;
+        }
+
+        .ministry-personal-details-form__urgent-dialog label {
+            align-items: flex-start;
+            border: 1px solid #d8dde6;
+            display: flex;
+            gap: .65rem;
+            line-height: 1.7;
+            padding: .85rem 1rem;
+        }
+
+        .ministry-personal-details-form__urgent-dialog input[type="checkbox"] {
+            margin-top: .3rem;
+        }
+
         @media (max-width: 767.98px) {
+            .ministry-personal-details-form__request-options {
+                grid-template-columns: 1fr;
+            }
+
             .ministry-personal-details-form__lookup {
                 grid-template-columns: 1fr;
             }
@@ -152,16 +268,91 @@
     @unless($ministryInteriorPersonalDetailsReadOnly)
         data-ministry-personal-details-editor
         data-next-index="{{ count($ministryInteriorPersonalDetailsRows) }}"
+        data-palestinian-nationality-codes='@json($palestinianNationalityCodes)'
     @endunless
 >
     <div class="ministry-personal-details-form__notices">
-        @foreach (['responsibility', 'required', 'nationality'] as $notice)
+        @foreach (['passport', 'residence', 'normal_processing', 'urgent_processing'] as $notice)
             <div class="ministry-personal-details-form__notice">
                 <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
                 <span>{{ __('app.applications.ministry_interior_personal_details.notices.'.$notice) }}</span>
             </div>
         @endforeach
     </div>
+
+    <section class="ministry-personal-details-form__request">
+        <h3>{{ __('app.applications.ministry_interior_personal_details.request_type.title') }}</h3>
+
+        @if($ministryInteriorPersonalDetailsReadOnly)
+            <p class="mb-0">
+                <strong>{{ __('app.applications.ministry_interior_personal_details.request_type.'.$requestType) }}</strong>
+            </p>
+            @if($requestType === 'urgent')
+                <div class="ministry-personal-details-form__urgent-warning mt-3">
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                    <span>{{ __('app.applications.ministry_interior_personal_details.request_type.urgent_warning') }}</span>
+                </div>
+            @endif
+        @else
+            <div class="ministry-personal-details-form__request-options">
+                @foreach (['normal', 'urgent'] as $type)
+                    <label class="ministry-personal-details-form__request-option">
+                        <input
+                            type="radio"
+                            name="ministry_interior_personal_details_request[type]"
+                            value="{{ $type }}"
+                            @checked($requestType === $type)
+                            data-ministry-request-type
+                        >
+                        <span>{{ __('app.applications.ministry_interior_personal_details.request_type.'.$type) }}</span>
+                    </label>
+                @endforeach
+            </div>
+
+            <div
+                class="ministry-personal-details-form__urgent-warning mt-3"
+                data-ministry-urgent-warning
+                @if($requestType !== 'urgent' || ! $urgentFeeAccepted) hidden @endif
+            >
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                <span>{{ __('app.applications.ministry_interior_personal_details.request_type.urgent_warning') }}</span>
+            </div>
+
+            <div
+                class="ministry-personal-details-form__urgent-modal"
+                data-ministry-urgent-modal
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="ministry-urgent-dialog-title"
+                @if($requestType !== 'urgent' || $urgentFeeAccepted) hidden @endif
+            >
+                <section class="ministry-personal-details-form__urgent-dialog">
+                    <h3 id="ministry-urgent-dialog-title">
+                        {{ __('app.applications.ministry_interior_personal_details.request_type.urgent') }}
+                    </h3>
+                    <p>{{ __('app.applications.ministry_interior_personal_details.request_type.urgent_warning') }}</p>
+                    <label>
+                        <input
+                            type="checkbox"
+                            name="ministry_interior_personal_details_request[urgent_fee_accepted]"
+                            value="1"
+                            @checked($urgentFeeAccepted)
+                            data-ministry-urgent-acceptance
+                        >
+                        <span>{{ __('app.applications.ministry_interior_personal_details.request_type.urgent_acceptance') }}</span>
+                    </label>
+                    <div class="d-flex flex-wrap gap-2 justify-content-end mt-4">
+                        <button type="button" class="btn btn-outline-secondary" data-ministry-urgent-cancel>
+                            {{ __('app.applications.cancel_send_action') }}
+                        </button>
+                        <button type="button" class="btn btn-primary" data-ministry-urgent-confirm disabled>
+                            {{ __('app.applications.submit_confirm_confirm') }}
+                        </button>
+                    </div>
+                </section>
+            </div>
+        @endif
+    </section>
 
     @unless($ministryInteriorPersonalDetailsReadOnly)
         <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap mb-3">
@@ -209,303 +400,5 @@
 </div>
 
 @unless($ministryInteriorPersonalDetailsReadOnly)
-    @once
-        @push('scripts')
-            <script>
-                (() => {
-                    const lookupUrl = @js(route('applications.personal-details.lookup'));
-                    const lookupLoadingLabel = @js(__('app.applications.ministry_interior_personal_details.lookup_loading'));
-                    const lookupUnavailableLabel = @js(__('app.applications.ministry_interior_personal_details.lookup_unavailable'));
-                    const lookupSelectCategoryLabel = @js(__('app.applications.ministry_interior_personal_details.lookup_select_category'));
-                    const lookupInvalidJordanianLabel = @js(__('app.applications.ministry_interior_personal_details.lookup_invalid_jordanian'));
-                    const lookupInvalidNonJordanianLabel = @js(__('app.applications.ministry_interior_personal_details.lookup_invalid_non_jordanian'));
-                    const personalNumberLabels = {
-                        default: @js(__('app.applications.ministry_interior_personal_details.fields.personal_number')),
-                        jordanian: @js(__('app.applications.ministry_interior_personal_details.fields.national_number')),
-                        nonJordanian: @js(__('app.applications.ministry_interior_personal_details.fields.individual_number')),
-                    };
-
-                    const initializeMinistryPersonalDetails = () => {
-                        document.querySelectorAll('[data-ministry-personal-details-editor]').forEach((editor) => {
-                            if (editor.dataset.initialized === 'true') return;
-                            editor.dataset.initialized = 'true';
-
-                            const rowsContainer = editor.querySelector('[data-ministry-personal-details-rows]');
-                            const template = editor.querySelector('[data-ministry-personal-details-template]');
-                            if (!rowsContainer || !template) return;
-
-                            const rowControl = (row, field) => row.querySelector(`[name$="[${field}]"]`);
-                            const normalizeOptionText = (value) => String(value || '')
-                                .normalize('NFKC')
-                                .replace(/[\u064B-\u065F\u0670]/g, '')
-                                .replace(/\s+/g, ' ')
-                                .trim()
-                                .toLocaleLowerCase();
-                            const setControlValue = (control, value) => {
-                                if (!control || value === null || value === undefined || String(value).trim() === '') return;
-
-                                if (control instanceof HTMLSelectElement) {
-                                    const expected = normalizeOptionText(value);
-                                    const option = [...control.options].find((candidate) => (
-                                        normalizeOptionText(candidate.value) === expected
-                                        || normalizeOptionText(candidate.textContent) === expected
-                                    ));
-
-                                    if (!option) return;
-                                    control.value = option.value;
-                                } else {
-                                    control.value = value;
-                                }
-
-                                control.dispatchEvent(new Event('input', { bubbles: true }));
-                                control.dispatchEvent(new Event('change', { bubbles: true }));
-                            };
-                            const setSectionVisible = (section, visible) => {
-                                if (!section) return;
-                                section.hidden = !visible;
-                                section.querySelectorAll('input, select, textarea').forEach((control) => {
-                                    control.disabled = !visible;
-                                });
-                            };
-
-                            const syncFullName = (row) => {
-                                const fullName = ['first_name', 'father_name', 'grandfather_name', 'family_name']
-                                    .map((field) => rowControl(row, field)?.value?.trim() || '')
-                                    .filter(Boolean)
-                                    .join(' ');
-                                const hidden = rowControl(row, 'current_full_name');
-                                if (hidden) hidden.value = fullName;
-                            };
-
-                            const refreshAttachmentNumbers = (row) => {
-                                row.querySelectorAll('[data-ministry-attachment-row]').forEach((attachment, index) => {
-                                    const number = attachment.querySelector('[data-ministry-attachment-number]');
-                                    if (number) number.textContent = String(index + 1);
-                                });
-                            };
-
-                            const initializeRow = (row) => {
-                                if (!row || row.dataset.rowInitialized === 'true') return;
-                                row.dataset.rowInitialized = 'true';
-
-                                ['first_name', 'father_name', 'grandfather_name', 'family_name'].forEach((field) => {
-                                    rowControl(row, field)?.addEventListener('input', () => syncFullName(row));
-                                });
-
-                                const maritalStatus = rowControl(row, 'marital_status');
-                                const spouseSection = row.querySelector('[data-ministry-spouse-section]');
-                                const syncSpouse = () => setSectionVisible(spouseSection, maritalStatus?.value === 'married');
-                                maritalStatus?.addEventListener('change', syncSpouse);
-                                syncSpouse();
-
-                                const nationalityCategory = rowControl(row, 'nationality_category');
-                                const personalNumber = rowControl(row, 'personal_number');
-                                const personalNumberLabel = row.querySelector('[data-ministry-personal-number-label]');
-                                const residencyExtras = row.querySelector('[data-ministry-residency-extra]');
-                                const syncResidency = () => setSectionVisible(residencyExtras, nationalityCategory?.value !== 'jordanian');
-                                const syncPersonalNumber = () => {
-                                    const category = nationalityCategory?.value || '';
-                                    const jordanian = category === 'jordanian';
-                                    const nonJordanian = category === 'arab' || category === 'foreign';
-
-                                    if (personalNumberLabel) {
-                                        personalNumberLabel.textContent = jordanian
-                                            ? personalNumberLabels.jordanian
-                                            : (nonJordanian ? personalNumberLabels.nonJordanian : personalNumberLabels.default);
-                                    }
-
-                                    if (!personalNumber) return;
-                                    personalNumber.maxLength = jordanian ? 10 : 20;
-                                    if (jordanian) {
-                                        personalNumber.pattern = '[0-9]{10}';
-                                    } else if (nonJordanian) {
-                                        personalNumber.pattern = '[0-9]{1,20}';
-                                    } else {
-                                        personalNumber.removeAttribute('pattern');
-                                    }
-                                    personalNumber.setCustomValidity('');
-                                };
-                                nationalityCategory?.addEventListener('change', () => {
-                                    nationalityCategory.setCustomValidity('');
-                                    syncResidency();
-                                    syncPersonalNumber();
-                                });
-                                syncResidency();
-                                syncPersonalNumber();
-
-                                const previousJordanResidence = rowControl(row, 'previous_jordan_residence');
-                                const residenceDocumentNotice = row.querySelector('[data-ministry-residence-document-notice]');
-                                const syncResidenceDocumentNotice = () => setSectionVisible(
-                                    residenceDocumentNotice,
-                                    previousJordanResidence?.value === 'yes',
-                                );
-                                previousJordanResidence?.addEventListener('change', syncResidenceDocumentNotice);
-                                syncResidenceDocumentNotice();
-
-                                refreshAttachmentNumbers(row);
-                            };
-
-                            const refresh = () => {
-                                const rows = [...rowsContainer.querySelectorAll(':scope > [data-ministry-personal-details-row]')];
-                                rows.forEach((row, index) => {
-                                    initializeRow(row);
-                                    const number = row.querySelector('[data-ministry-personal-details-number]');
-                                    if (number) number.textContent = String(index + 1);
-                                });
-                                editor.querySelectorAll('[data-ministry-personal-details-count]').forEach((counter) => {
-                                    counter.textContent = (counter.dataset.countTemplate || '__COUNT__').replace('__COUNT__', String(rows.length));
-                                });
-                            };
-
-                            const addRow = () => {
-                                const index = Number.parseInt(editor.dataset.nextIndex || '0', 10);
-                                rowsContainer.insertAdjacentHTML('beforeend', template.innerHTML.replaceAll('__INDEX__', String(index)));
-                                editor.dataset.nextIndex = String(index + 1);
-                                refresh();
-                                rowsContainer.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                            };
-
-                            editor.querySelectorAll('[data-ministry-personal-details-add]').forEach((button) => button.addEventListener('click', addRow));
-
-                            rowsContainer.addEventListener('click', async (event) => {
-                                const removePerson = event.target.closest('[data-ministry-personal-details-remove]');
-                                if (removePerson) {
-                                    removePerson.closest('[data-ministry-personal-details-row]')?.remove();
-                                    refresh();
-                                    return;
-                                }
-
-                                const addAttachment = event.target.closest('[data-ministry-attachment-add]');
-                                if (addAttachment) {
-                                    const row = addAttachment.closest('[data-ministry-personal-details-row]');
-                                    const attachmentContainer = row?.querySelector('[data-ministry-attachment-rows]');
-                                    const attachmentTemplate = row?.querySelector('[data-ministry-attachment-template]');
-                                    const nextIndex = Number.parseInt(row?.dataset.nextAttachmentIndex || '0', 10);
-                                    if (row && attachmentContainer && attachmentTemplate) {
-                                        attachmentContainer.insertAdjacentHTML('beforeend', attachmentTemplate.innerHTML.replaceAll('__ATTACHMENT_INDEX__', String(nextIndex)));
-                                        row.dataset.nextAttachmentIndex = String(nextIndex + 1);
-                                        refreshAttachmentNumbers(row);
-                                    }
-                                    return;
-                                }
-
-                                const removeAttachment = event.target.closest('[data-ministry-attachment-remove]');
-                                if (removeAttachment) {
-                                    const attachmentRow = removeAttachment.closest('[data-ministry-attachment-row]');
-                                    const removeFlag = attachmentRow?.querySelector('[data-ministry-attachment-remove-flag]');
-                                    const row = removeAttachment.closest('[data-ministry-personal-details-row]');
-                                    if (removeFlag?.value !== undefined && attachmentRow?.dataset.stored === 'true') {
-                                        removeFlag.value = '1';
-                                        attachmentRow.hidden = true;
-                                    } else {
-                                        attachmentRow?.remove();
-                                    }
-                                    if (row) refreshAttachmentNumbers(row);
-                                    return;
-                                }
-
-                                const lookupButton = event.target.closest('[data-ministry-personal-details-lookup]');
-                                if (!lookupButton) return;
-
-                                const row = lookupButton.closest('[data-ministry-personal-details-row]');
-                                const personalNumber = rowControl(row, 'personal_number');
-                                const nationalityCategory = rowControl(row, 'nationality_category');
-                                const status = row?.querySelector('[data-ministry-personal-details-lookup-status]');
-
-                                if (!row || !personalNumber || !nationalityCategory) return;
-
-                                const category = nationalityCategory.value;
-                                if (!category) {
-                                    nationalityCategory.setCustomValidity(lookupSelectCategoryLabel);
-                                    nationalityCategory.reportValidity();
-                                    return;
-                                }
-
-                                nationalityCategory.setCustomValidity('');
-                                const personalNumberValue = personalNumber.value.trim();
-                                const validPersonalNumber = category === 'jordanian'
-                                    ? /^\d{10}$/.test(personalNumberValue)
-                                    : /^\d{1,20}$/.test(personalNumberValue);
-                                if (!validPersonalNumber) {
-                                    personalNumber.setCustomValidity(
-                                        category === 'jordanian' ? lookupInvalidJordanianLabel : lookupInvalidNonJordanianLabel,
-                                    );
-                                    personalNumber?.reportValidity();
-                                    return;
-                                }
-
-                                personalNumber.setCustomValidity('');
-                                lookupButton.disabled = true;
-                                const originalLabel = lookupButton.innerHTML;
-                                lookupButton.textContent = lookupLoadingLabel;
-                                if (status) status.textContent = '';
-
-                                try {
-                                    const response = await fetch(lookupUrl, {
-                                        method: 'POST',
-                                        headers: {
-                                            'Accept': 'application/json',
-                                            'Content-Type': 'application/json',
-                                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
-                                        },
-                                        body: JSON.stringify({
-                                            personal_number: personalNumberValue,
-                                            nationality_category: category,
-                                        }),
-                                    });
-                                    const payload = await response.json().catch(() => null);
-                                    if (!payload) throw new Error(lookupUnavailableLabel);
-                                    if (!response.ok || !payload.ok) throw new Error(payload.message || 'Lookup failed');
-
-                                    const fieldMap = {
-                                        first_name: payload.data?.first_name,
-                                        father_name: payload.data?.father_name,
-                                        grandfather_name: payload.data?.grandfather_name,
-                                        family_name: payload.data?.family_name,
-                                        birth_date: payload.data?.birth_date,
-                                        birth_place: payload.data?.birth_place,
-                                        gender: payload.data?.gender,
-                                        current_nationality: payload.data?.nationality,
-                                        mother_full_name: payload.data?.mother_full_name,
-                                        mother_nationality: payload.data?.mother_nationality,
-                                        marital_status: payload.data?.marital_status,
-                                        passport_number: payload.data?.passport_number,
-                                        country_of_residence: payload.data?.country_of_residence,
-                                    };
-                                    if (category === 'jordanian') {
-                                        fieldMap.jordan_residence_address = payload.data?.address;
-                                    }
-                                    Object.entries(fieldMap).forEach(([field, value]) => {
-                                        const control = rowControl(row, field);
-                                        setControlValue(control, value);
-                                    });
-                                    syncFullName(row);
-                                    if (status) {
-                                        status.className = 'ministry-personal-details-form__lookup-status text-success';
-                                        status.textContent = payload.message || '';
-                                    }
-                                } catch (error) {
-                                    if (status) {
-                                        status.className = 'ministry-personal-details-form__lookup-status text-danger';
-                                        status.textContent = error.message;
-                                    }
-                                } finally {
-                                    lookupButton.disabled = false;
-                                    lookupButton.innerHTML = originalLabel;
-                                }
-                            });
-
-                            refresh();
-                        });
-                    };
-
-                    if (document.readyState === 'loading') {
-                        document.addEventListener('DOMContentLoaded', initializeMinistryPersonalDetails, { once: true });
-                    } else {
-                        initializeMinistryPersonalDetails();
-                    }
-                })();
-            </script>
-        @endpush
-    @endonce
+    @include('applications.partials.ministry-interior-personal-details-script')
 @endunless

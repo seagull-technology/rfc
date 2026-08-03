@@ -17,7 +17,7 @@
 @section('page_layout_class', 'admin-applications-index-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .admin-applications-index-layout {
             padding-top: 0;
         }

@@ -8,8 +8,10 @@ use App\Models\Entity;
 use App\Models\ScoutingRequest;
 use App\Models\User;
 use App\Notifications\InboxMessageNotification;
+use App\Rules\SafeExternalUrl;
 use App\Support\ApplicantDashboardState;
 use App\Support\EntityLogo;
+use App\Support\PasswordPolicy;
 use App\Support\PhoneNumber;
 use App\Support\ProfileChangeRequests;
 use Illuminate\Database\Eloquent\Builder;
@@ -22,7 +24,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -256,7 +257,7 @@ class ProfileController extends Controller
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->getKey())],
             'phone' => ['required', 'string', 'max:30', Rule::unique('users', 'phone')->ignore($user->getKey())],
             'current_password' => ['required_with:password', 'nullable', 'current_password'],
-            'password' => ['nullable', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
+            'password' => ['nullable', 'confirmed', PasswordPolicy::rule()],
         ]);
 
         $payload = [
@@ -286,7 +287,7 @@ class ProfileController extends Controller
             'email' => ['required', 'email', 'max:255'],
             'phone' => ['required', 'string', 'max:30'],
             'address' => ['nullable', 'string', 'max:255'],
-            'website_url' => ['nullable', 'url', 'max:255'],
+            'website_url' => ['nullable', new SafeExternalUrl(config('security.external_urls.business_website_hosts', []), true), 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
             'logo' => $this->logoValidationRules(),
         ], $this->logoValidationMessages());

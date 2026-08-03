@@ -7,7 +7,7 @@
 @section('page_layout_class', 'contact-center-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .contact-center-layout {
             padding-top: 0 !important;
         }

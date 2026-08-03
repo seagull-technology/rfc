@@ -1,5 +1,5 @@
 @once
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .sla-live-counter {
             --sla-counter-color: #5e1d19;
             --sla-counter-soft: rgba(94, 29, 25, .1);
@@ -65,7 +65,7 @@
         }
     </style>
 
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         document.addEventListener('DOMContentLoaded', () => {
             const counters = Array.from(document.querySelectorAll('[data-sla-countdown]'));
 

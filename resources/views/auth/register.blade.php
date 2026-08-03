@@ -23,7 +23,7 @@
                         <div class="sign-user_card registration-card registration-card-wide auth-visual-card">
                             <div class="registration-brand-hero">
                                 <a class="registration-logo-link registration-logo-badge" href="{{ route('login') }}">
-                                    <img class="img-fluid logo registration-logo" src="{{ asset('images/logo.svg') }}" alt="#">
+                                    <img class="img-fluid logo registration-logo" src="{{ asset('images/rfc-logo-white.png') }}" alt="{{ config('app.name') }}">
                                 </a>
                             </div>
                             <div class="sign-in-page-data registration-page-data">
@@ -552,7 +552,7 @@
                                     </div>
 
                                     <div class="registration-secondary-action">
-                                        <a href="{{ route('login') }}">{{ __('app.auth.back_to_login') }}</a>
+                                        <a href="{{ route('login') }}" class="auth-secondary-link">{{ __('app.auth.back_to_login') }}</a>
                                     </div>
                                 </div>
                             </div>
@@ -565,7 +565,7 @@
 @endsection
 
 @push('scripts')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         document.addEventListener('DOMContentLoaded', function () {
             const registerMessages = {
                 checkingNationalId: @json(__('app.auth.checking_national_id')),

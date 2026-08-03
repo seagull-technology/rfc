@@ -2,6 +2,7 @@
 
 namespace App\Services\Gsb;
 
+use App\Support\ApprovedOutboundUrl;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -9,6 +10,8 @@ use Throwable;
 
 class GsbClient
 {
+    public function __construct(private readonly ApprovedOutboundUrl $approvedOutboundUrl) {}
+
     /**
      * @return array<string, mixed>
      */
@@ -70,6 +73,10 @@ class GsbClient
 
         $url = $this->urlFromPath($service, $path, $pathParameters);
         $method = strtoupper($method ?: (string) ($config['method'] ?? 'POST'));
+
+        if (! $this->approvedOutboundUrl->isAllowed($url)) {
+            return $this->failure($service, 'UNAPPROVED_DESTINATION');
+        }
 
         try {
             $pendingRequest = Http::withOptions($this->httpOptions($url))
@@ -278,24 +285,25 @@ class GsbClient
     private function httpOptions(string $url): array
     {
         $ip = trim((string) config('services.gsb.force_ip'));
+        $options = ['allow_redirects' => false];
 
         if ($ip === '') {
-            return [];
+            return $options;
         }
 
         $host = parse_url($url, PHP_URL_HOST);
         $port = parse_url($url, PHP_URL_PORT) ?: 443;
 
         if (! $host) {
-            return [];
+            return $options;
         }
 
-        return [
-            'curl' => [
-                CURLOPT_RESOLVE => ["{$host}:{$port}:{$ip}"],
-                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            ],
+        $options['curl'] = [
+            CURLOPT_RESOLVE => ["{$host}:{$port}:{$ip}"],
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
         ];
+
+        return $options;
     }
 
     private function url(string $service, array $pathParameters = []): string

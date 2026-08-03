@@ -27,7 +27,7 @@
 @section('page_layout_class', 'admin-entities-index-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .admin-entities-index-layout {
             padding-top: 0;
         }

@@ -52,7 +52,7 @@
 @section('page_layout_class', 'admin-application-show-layout py-0')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .admin-application-show-layout {
             padding-top: 0;
         }

@@ -6,7 +6,7 @@
 @extends('layouts.admin-dashboard', ['title' => $title])
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .approval-routing-preview-shell {
             position: sticky;
             top: 1.5rem;
@@ -94,7 +94,7 @@
 @endsection
 
 @push('scripts')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         (function () {
             const form = document.getElementById('approval-routing-form');
             const previewContainer = document.getElementById('approval-routing-preview');

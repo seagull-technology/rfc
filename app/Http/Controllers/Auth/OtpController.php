@@ -18,9 +18,11 @@ class OtpController extends Controller
             || (bool) config('services.otp_debug_fallback', false);
     }
 
-    public function create(Request $request): View|RedirectResponse
+    public function create(Request $request, OtpService $otpService): View|RedirectResponse
     {
-        if (! $request->session()->has('pending_auth_user_id')) {
+        $user = $this->pendingUser($request);
+
+        if (! $user) {
             return redirect()->route('login');
         }
 
@@ -29,6 +31,7 @@ class OtpController extends Controller
             'debugCode' => $this->shouldShowDebugCode()
                 ? $request->session()->get('otp_debug_code')
                 : null,
+            'resendAvailableIn' => $otpService->resendAvailableIn($user),
         ]);
     }
 
@@ -73,6 +76,16 @@ class OtpController extends Controller
 
         if (! $user) {
             return redirect()->route('login');
+        }
+
+        $resendAvailableIn = $otpService->resendAvailableIn($user);
+
+        if ($resendAvailableIn > 0) {
+            return back()->withErrors([
+                'resend' => __('app.auth.otp_resend_wait', [
+                    'time' => $this->formatCountdown($resendAvailableIn),
+                ]),
+            ]);
         }
 
         $issuedOtp = $otpService->issueLoginOtp(
@@ -122,5 +135,10 @@ class OtpController extends Controller
         }
 
         return str_repeat('*', max($length - 4, 0)).substr($phone, -4);
+    }
+
+    private function formatCountdown(int $seconds): string
+    {
+        return sprintf('%02d:%02d', intdiv($seconds, 60), $seconds % 60);
     }
 }

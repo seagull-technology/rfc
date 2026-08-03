@@ -34,7 +34,7 @@
     <link rel="shortcut icon" href="{{ asset('images/favicon.ico') }}">
     <link rel="stylesheet" href="{{ asset('fonts/phosphor.css') }}">
     <link rel="stylesheet" href="{{ asset('fonts/Phosphor-Bold.css') }}">
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         @font-face {
             font-family: 'DIN Next LT Arabic Regular';
             src: url('{{ asset('arabicFont/DINNextLTArabic/DINNextLTArabic-Regular.woff') }}') format('woff');

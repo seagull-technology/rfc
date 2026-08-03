@@ -2,12 +2,15 @@
 
 namespace App\Services\Gsb;
 
+use App\Support\ApprovedOutboundUrl;
+
 class SignFlowService
 {
     private const SERVICE = 'signflow_v2';
 
     public function __construct(
         private readonly GsbClient $client,
+        private readonly ApprovedOutboundUrl $approvedOutboundUrl,
     ) {}
 
     public function isRunnable(): bool
@@ -21,6 +24,7 @@ class SignFlowService
     {
         return $this->isRunnable()
             && filled($this->authorizationUrl())
+            && $this->approvedOutboundUrl->isAllowed($this->authorizationUrl())
             && filled($this->clientId())
             && filled($this->clientSecret());
     }

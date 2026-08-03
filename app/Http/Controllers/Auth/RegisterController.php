@@ -9,15 +9,15 @@ use App\Models\User;
 use App\Services\CompanyRegistrationLookupService;
 use App\Services\RoleAssignmentService;
 use App\Services\StudentRegistrationLookupService;
+use App\Support\PasswordPolicy;
 use App\Support\PhoneNumber;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -410,7 +410,7 @@ class RegisterController extends Controller
     private function passwordRules(): array
     {
         return [
-            Password::min(8)->mixedCase()->numbers()->symbols(),
+            PasswordPolicy::rule(),
         ];
     }
 }

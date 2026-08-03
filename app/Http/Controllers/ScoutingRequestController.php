@@ -6,11 +6,12 @@ use App\Models\Entity;
 use App\Models\FilmingLocationType;
 use App\Models\Governorate;
 use App\Models\Nationality;
-use App\Models\ScoutingRequestCorrespondence;
 use App\Models\ScoutingRequest;
+use App\Models\ScoutingRequestCorrespondence;
 use App\Models\User;
 use App\Models\WorkCategory;
 use App\Notifications\InboxMessageNotification;
+use App\Rules\SafeExternalUrl;
 use App\Support\JordanBusinessDays;
 use App\Support\NotificationRecipients;
 use App\Support\ScoutingRequestOverview;
@@ -18,6 +19,7 @@ use App\Support\WorkflowMessageMetadata;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -365,7 +367,7 @@ class ScoutingRequestController extends Controller
     }
 
     /**
-     * @return array{0: \App\Models\User, 1: Entity}
+     * @return array{0: User, 1: Entity}
      */
     private function applicantContext(Request $request): array
     {
@@ -490,7 +492,7 @@ class ScoutingRequestController extends Controller
 
     /**
      * @param  array<int, mixed>  $currentCodes
-     * @return \Illuminate\Support\Collection<int, Nationality>
+     * @return Collection<int, Nationality>
      */
     private function nationalityOptionsForUsage(string $usage, array $currentCodes)
     {
@@ -519,7 +521,7 @@ class ScoutingRequestController extends Controller
 
     /**
      * @param  array<int, mixed>  $currentCodes
-     * @return \Illuminate\Support\Collection<int, WorkCategory>
+     * @return Collection<int, WorkCategory>
      */
     private function workCategoryOptionsForCurrent(array $currentCodes)
     {
@@ -662,9 +664,9 @@ class ScoutingRequestController extends Controller
             'producer_mobile' => ['required', 'string', 'max:50'],
             'producer_fax' => ['required', 'string', 'max:50'],
             'producer_email' => ['required', 'email', 'max:255'],
-            'producer_profile_url' => ['nullable', 'url', 'max:500'],
+            'producer_profile_url' => ['nullable', new SafeExternalUrl(config('security.external_urls.professional_profile_hosts', []), true), 'max:500'],
             'contact_address' => ['required', 'string', 'max:255'],
-            'website_url' => ['nullable', 'url', 'max:500'],
+            'website_url' => ['nullable', new SafeExternalUrl(config('security.external_urls.business_website_hosts', []), true), 'max:500'],
             'liaison_name' => ['required', 'string', 'max:255'],
             'liaison_job_title' => ['required', 'string', 'max:255'],
             'liaison_email' => ['required', 'email', 'max:255'],
@@ -682,7 +684,11 @@ class ScoutingRequestController extends Controller
             'locations' => ['required', 'array', 'min:1'],
             'locations.*.governorate' => ['required', 'string', Rule::in($governorateCodes)],
             'locations.*.location_name' => ['required', 'string', 'max:255'],
-            'locations.*.google_map_url' => ['nullable', 'string', 'max:500'],
+            'locations.*.google_map_url' => [
+                'nullable',
+                new SafeExternalUrl(config('security.external_urls.google_maps_hosts', []), true),
+                'max:500',
+            ],
             'locations.*.location_description' => ['nullable', 'string', 'max:1000'],
             'locations.*.location_type' => ['required', 'string', Rule::in($locationTypeCodes), $this->locationTypeBelongsToGovernorateRule($request)],
             'locations.*.start_date' => ['required', 'date', $this->locationStartRespectsApprovalLeadTimeRule($request, $locationTypeApprovalDays)],

@@ -8,7 +8,7 @@
 @section('page_layout_class', 'admin-permits-index-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .admin-permits-index-layout {
             padding-top: 0;
         }
@@ -144,7 +144,7 @@
                                     <div class="d-flex gap-2 flex-wrap">
                                         <a class="btn btn-sm btn-outline-primary" href="{{ route('admin.permits.show', $permit) }}">{{ __('app.permits.open_action') }}</a>
                                         <a class="btn btn-sm btn-outline-primary" href="{{ route('admin.applications.show', $permit->application) }}">{{ __('app.admin.applications.request_tab') }}</a>
-                                        <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.applications.final-letter.print', $permit->application) }}" target="_blank">{{ __('app.final_decision.print_letter') }}</a>
+                                        <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.applications.final-letter.print', $permit->application) }}" target="_blank" rel="noopener">{{ __('app.final_decision.print_letter') }}</a>
                                     </div>
                                 </td>
                             </tr>

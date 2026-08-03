@@ -45,7 +45,7 @@
 @section('page_layout_class', 'portal-profile-layout py-0')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .portal-profile-layout {
             padding-top: 0;
         }
@@ -466,7 +466,7 @@
 @endsection
 
 @push('scripts')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         document.addEventListener('DOMContentLoaded', function () {
             const renderEmptyState = function (selector, message) {
                 const element = document.querySelector(selector);

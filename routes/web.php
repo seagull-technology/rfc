@@ -28,6 +28,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Auth\OrganizationLookupController;
 use App\Http\Controllers\Auth\OtpController;
+use App\Http\Controllers\Auth\PasswordResetOtpController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\Auth\SanadLoginController;
@@ -37,6 +38,7 @@ use App\Http\Controllers\CompanyEmployeeController;
 use App\Http\Controllers\ContactCenterController;
 use App\Http\Controllers\CurrentEntityController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\NotificationRedirectController;
 use App\Http\Controllers\PermitVerificationController;
 use App\Http\Controllers\ProfileController;
@@ -57,7 +59,9 @@ Route::group([
 
     Route::middleware('guest')->group(function (): void {
         Route::get('/sign-in', [LoginController::class, 'create'])->name('login');
-        Route::post('/sign-in', [LoginController::class, 'store'])->name('login.store');
+        Route::post('/sign-in', [LoginController::class, 'store'])
+            ->middleware('throttle:login')
+            ->name('login.store');
         Route::get('/sign-in/sanad', [SanadLoginController::class, 'redirectToProvider'])
             ->middleware('throttle:10,1')
             ->name('sanad.redirect');
@@ -65,29 +69,44 @@ Route::group([
             ->middleware('throttle:20,1')
             ->name('sanad.callback');
         Route::get('/forgot-password', [ForgotPasswordController::class, 'create'])->name('password.request');
-        Route::post('/forgot-password', [ForgotPasswordController::class, 'store'])->name('password.email');
+        Route::post('/forgot-password', [ForgotPasswordController::class, 'store'])
+            ->middleware('throttle:password-reset')
+            ->name('password.otp.send');
+        Route::get('/forgot-password/verify-otp', [PasswordResetOtpController::class, 'create'])->name('password.otp.create');
+        Route::post('/forgot-password/verify-otp', [PasswordResetOtpController::class, 'store'])
+            ->middleware('throttle:otp-verify')
+            ->name('password.otp.store');
+        Route::post('/forgot-password/verify-otp/resend', [PasswordResetOtpController::class, 'resend'])
+            ->middleware('throttle:otp-resend')
+            ->name('password.otp.resend');
         Route::get('/reset-password/{token}', [ResetPasswordController::class, 'create'])->name('password.reset');
-        Route::post('/reset-password', [ResetPasswordController::class, 'store'])->name('password.store');
+        Route::post('/reset-password', [ResetPasswordController::class, 'store'])
+            ->middleware('throttle:password-reset-complete')
+            ->name('password.store');
 
         Route::get('/verify-otp', [OtpController::class, 'create'])->name('otp.create');
-        Route::post('/verify-otp', [OtpController::class, 'store'])->name('otp.store');
-        Route::post('/verify-otp/resend', [OtpController::class, 'resend'])->name('otp.resend');
+        Route::post('/verify-otp', [OtpController::class, 'store'])
+            ->middleware('throttle:otp-verify')
+            ->name('otp.store');
+        Route::post('/verify-otp/resend', [OtpController::class, 'resend'])
+            ->middleware('throttle:otp-resend')
+            ->name('otp.resend');
 
         Route::get('/register', [RegisterController::class, 'index'])->name('register');
-        Route::post('/register', [RegisterController::class, 'store'])->name('register.store');
-        Route::post('/register/company/lookup', CompanyLookupController::class)->name('register.company.lookup');
-        Route::post('/register/student/lookup', StudentLookupController::class)->name('register.student.lookup');
+        Route::post('/register', [RegisterController::class, 'store'])->middleware('throttle:registration')->name('register.store');
+        Route::post('/register/company/lookup', CompanyLookupController::class)->middleware('throttle:registration-lookup')->name('register.company.lookup');
+        Route::post('/register/student/lookup', StudentLookupController::class)->middleware('throttle:registration-lookup')->name('register.student.lookup');
         Route::get('/register/individual', fn () => redirect()->route('register'))->name('register.individual.create');
         Route::get('/register/organization', fn () => redirect()->route('register'))->name('register.organization.create');
-        Route::post('/register/organization/lookup', OrganizationLookupController::class)->name('register.organization.lookup');
-        Route::post('/register/organization', [RegisterController::class, 'store'])->name('register.organization.store');
-        Route::post('/register/individual', [RegisterController::class, 'store'])->name('register.individual.store');
+        Route::post('/register/organization/lookup', OrganizationLookupController::class)->middleware('throttle:registration-lookup')->name('register.organization.lookup');
+        Route::post('/register/organization', [RegisterController::class, 'store'])->middleware('throttle:registration')->name('register.organization.store');
+        Route::post('/register/individual', [RegisterController::class, 'store'])->middleware('throttle:registration')->name('register.individual.store');
 
         Route::get('/registration/link/{entity}/complete', [RegistrationCompletionController::class, 'editViaSignedLink'])
             ->middleware('signed')
             ->name('registration.completion.link.edit');
         Route::post('/registration/link/{entity}/complete', [RegistrationCompletionController::class, 'updateViaSignedLink'])
-            ->middleware('signed')
+            ->middleware(['signed', 'throttle:registration'])
             ->name('registration.completion.link.update');
     });
 
@@ -96,7 +115,7 @@ Route::group([
         ->middleware('signed')
         ->name('permits.verify.signed');
 
-    Route::middleware('auth')->group(function (): void {
+    Route::middleware(['auth', 'throttle:authenticated-write'])->group(function (): void {
         Route::get('/dashboard', DashboardController::class)->name('dashboard');
         Route::post('/context/entity', CurrentEntityController::class)->name('context.entity.update');
         Route::get('/registration/complete', [RegistrationCompletionController::class, 'edit'])->name('registration.completion.edit');
@@ -110,6 +129,8 @@ Route::group([
         Route::post('/profile/foreign-producer/applications/{application}/declaration', [ProfileController::class, 'signForeignProducerDeclaration'])
             ->name('profile.foreign-producer.applications.declaration.store');
         Route::post('/logout', [LogoutController::class, 'store'])->name('logout');
+        Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
+        Route::post('/notifications/read', [NotificationController::class, 'markAllAsRead'])->name('notifications.read');
         Route::get('/notifications/{notification}', NotificationRedirectController::class)->name('notifications.redirect');
         Route::get('/contact-center', [ContactCenterController::class, 'index'])->name('contact-center.index');
         Route::get('/contact-center/messages/{message}/download', [ContactCenterController::class, 'download'])->name('contact-center.messages.download');

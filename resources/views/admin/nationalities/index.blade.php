@@ -4,7 +4,7 @@
 ])
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .nationality-table {
             min-width: 1080px;
         }

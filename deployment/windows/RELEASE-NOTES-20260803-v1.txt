@@ -1,0 +1,52 @@
+RFC e-Permit security and authentication release 20260803-v1
+============================================================
+
+This complete offline release contains all application, authentication,
+notification, security-hardening, integration, and interface work committed
+through this release.
+
+Main changes
+------------
+
+- Replaces the authentication, registration, OTP, password-recovery, and
+  registration-completion branding with the official white RFC logo and adds
+  responsive sizing for desktop and mobile layouts.
+- Moves password recovery below the login action and changes public password
+  recovery from email links to national/registration number plus a five-digit
+  SMS OTP verification flow.
+- Enforces the OTP resend cooldown on both the server and the interface.
+- Makes the notification badge dynamic, shows the five newest notifications in
+  the dropdown, adds a complete notification-center link, and clears unread
+  state when notifications are opened.
+- Strengthens HTTP security headers, CSP nonces, trusted-host enforcement,
+  private response caching, probe-path blocking, authentication throttling,
+  secure password rules, outbound URL allowlists, and production validation.
+- Adds PDF, Office archive, CSV, image, and external URL inspection controls for
+  uploaded or user-supplied content.
+- Moves required Leaflet and Font Awesome assets into the application package so
+  production pages do not depend on public CDNs.
+- Adds production security evidence generation and dependency/control manifests
+  under storage\app\private\security-evidence during deployment.
+- Improves Ministry of Interior personal-details handling and validation in the
+  application workflow.
+- Keeps local HTTP development working while retaining HTTPS upgrade enforcement
+  on the production deployment.
+
+Deployment notes
+----------------
+
+- No new database migration is introduced by this release. The deployment
+  script still runs all pending migrations safely with --force.
+- The deployment script preserves the real server .env, uploaded storage, and
+  the existing seeded account passwords.
+- Reconcile the existing server .env with .env.production.example before the
+  deployment, especially the SECURITY_*, TRUSTED_HOSTS, SESSION_*, OTP_*, GSB_*,
+  SMS_*, and SANAD_* values. Do not overwrite secrets with placeholders.
+- Keep APP_URL and ASSET_URL on the final HTTPS host, APP_DEBUG=false,
+  SESSION_SECURE_COOKIE=true, OTP_DEBUG_FALLBACK=false, and
+  SECURITY_CSP_REPORT_ONLY=false.
+- The CSPD/GSB integration tests require the restricted government network and
+  must be confirmed from the deployed server or its integration diagnostics.
+- The smoke test uses /ar/sign-in and the package includes production Composer
+  dependencies and compiled frontend assets; Composer and Node.js are not
+  required on the server.

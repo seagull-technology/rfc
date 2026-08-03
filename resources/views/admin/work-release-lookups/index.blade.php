@@ -4,7 +4,7 @@
 ])
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .lookup-table {
             min-width: 960px;
         }

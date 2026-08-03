@@ -141,7 +141,7 @@
 @section('page_layout_class', 'admin-reports-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .admin-reports-layout {
             padding-top: 0;
         }
@@ -811,7 +811,7 @@
 @endsection
 
 @push('scripts')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         document.addEventListener('DOMContentLoaded', function () {
             if (typeof ApexCharts === 'undefined') {
                 return;

@@ -93,7 +93,7 @@
                                         <button class="btn btn-sm btn-icon btn-info-subtle rounded" type="button" data-bs-toggle="offcanvas" data-bs-target="#{{ $officialLetterViewId($letter) }}" aria-controls="{{ $officialLetterViewId($letter) }}" title="{{ __('app.official_letters.view_action') }}">
                                             <i class="ph ph-eye fs-6"></i>
                                         </button>
-                                        <a class="btn btn-sm btn-icon btn-secondary-subtle rounded" href="{{ route('admin.applications.official-letters.print', [$application, $letter]) }}" target="_blank" title="{{ __('app.official_letters.print_action') }}">
+                                        <a class="btn btn-sm btn-icon btn-secondary-subtle rounded" href="{{ route('admin.applications.official-letters.print', [$application, $letter]) }}" target="_blank" rel="noopener" title="{{ __('app.official_letters.print_action') }}">
                                             <i class="ph ph-printer fs-6"></i>
                                         </a>
                                         @can('applications.review')
@@ -158,7 +158,7 @@
                                         <button class="btn btn-sm btn-icon btn-info-subtle rounded" type="button" data-bs-toggle="offcanvas" data-bs-target="#{{ $officialLetterViewId($letter) }}" aria-controls="{{ $officialLetterViewId($letter) }}" title="{{ __('app.official_letters.view_action') }}">
                                             <i class="ph ph-eye fs-6"></i>
                                         </button>
-                                        <a class="btn btn-sm btn-icon btn-secondary-subtle rounded" href="{{ route('admin.applications.official-letters.print', [$application, $letter]) }}" target="_blank" title="{{ __('app.official_letters.print_action') }}">
+                                        <a class="btn btn-sm btn-icon btn-secondary-subtle rounded" href="{{ route('admin.applications.official-letters.print', [$application, $letter]) }}" target="_blank" rel="noopener" title="{{ __('app.official_letters.print_action') }}">
                                             <i class="ph ph-printer fs-6"></i>
                                         </a>
                                         @can('applications.review')

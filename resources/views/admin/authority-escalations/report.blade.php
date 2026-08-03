@@ -6,7 +6,7 @@
 @extends('layouts.admin-dashboard', ['title' => $title])
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .authority-escalation-report-layout {
             padding-top: 0;
         }

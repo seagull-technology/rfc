@@ -3,10 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\Entity;
+use App\Models\Group;
 use App\Models\User;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
@@ -23,7 +23,7 @@ class SignedRegistrationCompletionTest extends TestCase
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
 
-        $group = \App\Models\Group::query()->where('code', 'organizations')->firstOrFail();
+        $group = Group::query()->where('code', 'organizations')->firstOrFail();
 
         $user = User::query()->create([
             'name' => 'Pending NGO',
@@ -81,7 +81,7 @@ class SignedRegistrationCompletionTest extends TestCase
             'phone' => '0793555999',
             'address' => 'Updated NGO address',
             'description' => 'Updated NGO description',
-            'registration_document' => UploadedFile::fake()->create('ngo-license.pdf', 120, 'application/pdf'),
+            'registration_document' => $this->fakePdf('ngo-license.pdf', 120),
         ]);
 
         $response
@@ -108,7 +108,7 @@ class SignedRegistrationCompletionTest extends TestCase
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
 
-        $group = \App\Models\Group::query()->where('code', 'organizations')->firstOrFail();
+        $group = Group::query()->where('code', 'organizations')->firstOrFail();
         $entity = Entity::query()->create([
             'group_id' => $group->getKey(),
             'name_en' => 'Unsigned NGO',

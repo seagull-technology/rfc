@@ -8,7 +8,6 @@ use App\Models\ScoutingRequest;
 use App\Models\User;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\PermissionRegistrar;
@@ -34,7 +33,7 @@ class ContactCenterTest extends TestCase
             'message' => 'Please review the updated filming guidance before your next submission.',
             'recipient_scope' => 'specific',
             'entity_id' => $entity->getKey(),
-            'attachment' => UploadedFile::fake()->create('guidance.pdf', 120, 'application/pdf'),
+            'attachment' => $this->fakePdf('guidance.pdf', 120),
         ]);
 
         $response->assertRedirect(route('admin.contact-center.index'));

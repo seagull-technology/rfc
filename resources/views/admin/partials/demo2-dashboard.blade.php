@@ -443,8 +443,8 @@
 </div>
 
 @push('scripts')
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('vendor/leaflet/leaflet.js') }}?v=1.9.4"></script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         window.addEventListener('load', function () {
             const chartPalette = ['#89050c', '#b70710', '#ce0812', '#9f883a', '#6f1f1b', '#bf6b5d'];
             const chartNoDataText = @json(__('app.admin.dashboard.chart_no_data'));

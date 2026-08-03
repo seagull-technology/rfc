@@ -23,7 +23,7 @@
 @section('page_layout_class', 'authority-inbox-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .portal-authority-hero {
             border: 0;
             border-radius: .5rem;

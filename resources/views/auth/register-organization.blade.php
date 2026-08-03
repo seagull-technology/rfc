@@ -100,7 +100,7 @@
         </div>
     </form>
 
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         (() => {
             const enabled = @json($organizationLookupEnabled);
 

@@ -20,7 +20,7 @@
     <title>{{ $title ?? __('app.meta.app_name') }}</title>
     <meta name="description" content="{{ __('app.meta.app_name') }}">
     <link rel="shortcut icon" href="{{ asset('images/favicon.ico') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="{{ asset('css/all.min.css') }}?v=6.4.2">
     <link rel="stylesheet" href="{{ asset('fonts/phosphor.css') }}">
     <link rel="stylesheet" href="{{ asset('fonts/Phosphor-Bold.css') }}">
     <link rel="stylesheet" href="{{ asset('fonts/Phosphor-Fill.css') }}">
@@ -34,11 +34,8 @@
         <link rel="stylesheet" href="{{ asset('css/rtl.min.css') }}?v=5.4.0">
     @endif
     <link rel="stylesheet" href="{{ asset('css/customizer.min.css') }}?v=5.4.0">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     @include('layouts.partials.dashboard-overflow-guard')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .authority-notification-item .notification-meta {
             margin-top: 0.5rem;
         }
@@ -85,10 +82,10 @@
                                 </a>
                             </li>
                             <li class="nav-item dropdown">
-                                <a href="#" class="nav-link" id="notification-drop" data-bs-toggle="dropdown">
+                                <a href="#" class="nav-link position-relative" id="notification-drop" data-bs-toggle="dropdown" data-notification-trigger>
                                     <i class="ph-fill ph-bell fs-4 align-middle"></i>
                                     @if ($authorityNotificationCount > 0)
-                                        <span class="badge bg-danger rounded-pill position-absolute top-0 start-100 translate-middle" style="font-size:.65rem;">{{ $authorityNotificationCount > 99 ? '99+' : $authorityNotificationCount }}</span>
+                                        <span class="badge bg-danger rounded-pill position-absolute top-0 start-100 translate-middle" style="font-size:.65rem;" data-notification-count>{{ $authorityNotificationCount > 99 ? '99+' : $authorityNotificationCount }}</span>
                                     @endif
                                 </a>
                                 <ul class="p-0 sub-drop dropdown-menu dropdown-menu-end" aria-labelledby="notification-drop">
@@ -123,6 +120,11 @@
                                             @empty
                                                 <div class="p-3 text-muted">{{ __('app.portal.notifications_empty') }}</div>
                                             @endforelse
+                                        </div>
+                                        <div class="border-top p-2 text-center">
+                                            <a href="{{ route('notifications.index') }}" class="btn btn-link text-decoration-none fw-semibold" data-see-all-notifications>
+                                                {{ __('app.portal.see_all_notifications') }}
+                                            </a>
                                         </div>
                                     </li>
                                 </ul>
@@ -202,7 +204,7 @@
         </div>
     </main>
 
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         (function () {
             const releaseLoader = function () {
                 const loadingWrapper = document.getElementById('loading');
@@ -228,22 +230,23 @@
             });
         })();
     </script>
-    <script src="{{ asset('js/libs.min.js') }}"></script>
-    <script src="{{ asset('js/slider-tabs.js') }}"></script>
-    <script src="{{ asset('js/lodash.min.js') }}"></script>
-    <script src="{{ asset('js/utility.min.js') }}"></script>
-    <script src="{{ asset('js/setting.min.js') }}"></script>
-    <script src="{{ asset('js/setting-init.js') }}"></script>
-    <script src="{{ asset('js/external.min.js') }}"></script>
-    <script src="{{ asset('js/widgetcharts.js') }}?v=5.4.0" defer></script>
-    <script src="{{ asset('js/dashboard.js') }}?v=5.4.0" defer></script>
-    <script src="{{ asset('js/streamit.js') }}?v=5.4.2" defer></script>
-    <script src="{{ asset('js/sidebar.js') }}?v=5.4.0" defer></script>
-    <script src="{{ asset('js/chart-custom.js') }}?v=5.4.0" defer></script>
-    <script src="{{ asset('js/select2.js') }}?v=5.4.0" defer></script>
-    <script src="{{ asset('js/flatpickr.js') }}?v=5.4.0" defer></script>
-    <script src="{{ asset('js/countdown.js') }}?v=5.4.0" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/libs.min.js') }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/slider-tabs.js') }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/lodash.min.js') }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/utility.min.js') }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/setting.min.js') }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/setting-init.js') }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/external.min.js') }}"></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/widgetcharts.js') }}?v=5.4.0" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/dashboard.js') }}?v=5.4.0" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/streamit.js') }}?v=5.4.2" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/sidebar.js') }}?v=5.4.0" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/chart-custom.js') }}?v=5.4.0" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/select2.js') }}?v=5.4.0" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/flatpickr.js') }}?v=5.4.0" defer></script>
+    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/countdown.js') }}?v=5.4.0" defer></script>
     @include('layouts.partials.form-submit-state')
+    @include('layouts.partials.notification-read-state')
     @stack('scripts')
 </body>
 </html>

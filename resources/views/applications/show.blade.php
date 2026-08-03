@@ -207,7 +207,7 @@
 @section('page_layout_class', 'applicant-request-show-layout py-0')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .applicant-request-show-layout .request-actions-card {
             border: 1px solid rgba(0, 0, 0, 0.08);
         }
@@ -554,7 +554,7 @@
                                 <div class="mb-1"><span class="fw-600">{{ __('app.applications.director_email') }}:</span><span class="ms-2">{{ data_get($director, 'director_email', __('app.dashboard.not_available')) }}</span></div>
                                 <div class="mb-0"><span class="fw-600">{{ __('app.applications.director_profile_url') }}:</span>
                                     @if (filled(data_get($director, 'director_profile_url')))
-                                        <a href="{{ data_get($director, 'director_profile_url') }}" class="ms-2" target="_blank" rel="noreferrer">{{ __('app.applications.open_profile') }}</a>
+                                        <a href="{{ data_get($director, 'director_profile_url') }}" class="ms-2" target="_blank" rel="noopener noreferrer nofollow ugc">{{ __('app.applications.open_profile') }}</a>
                                     @else
                                         <span class="ms-2">{{ __('app.dashboard.not_available') }}</span>
                                     @endif
@@ -756,7 +756,7 @@
 @endsection
 
 @push('scripts')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         document.addEventListener('DOMContentLoaded', function () {
             const openButton = document.querySelector('[data-open-applicant-correspondence]');
             const approvalsTab = document.querySelector('#profile-pills-tab [href="#profile-approvals"]');

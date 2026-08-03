@@ -47,7 +47,7 @@
 @section('page_layout_class', 'admin-entity-show-layout py-0')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .admin-entity-show-layout {
             padding-top: 0;
         }
@@ -1292,7 +1292,7 @@
 @endsection
 
 @push('scripts')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         window.addEventListener('load', function () {
             if (typeof ApexCharts === 'undefined') {
                 return;

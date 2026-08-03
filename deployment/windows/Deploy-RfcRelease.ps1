@@ -71,6 +71,18 @@ function Assert-SessionCookieConfiguration {
     }
 }
 
+function Assert-PhpSecurityConfiguration {
+    $exposePhp = [string] (& $PhpExe -r "echo ini_get('expose_php') ? '1' : '0';")
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not inspect the PHP security configuration with $PhpExe."
+    }
+
+    if ($exposePhp.Trim() -ne "0") {
+        throw "PHP expose_php must be Off in php.ini so responses do not disclose the PHP version."
+    }
+}
+
 function Start-RfcSite {
     $lastError = $null
 
@@ -175,6 +187,8 @@ if (-not (Test-Path $PhpExe)) {
     throw "PHP executable was not found: $PhpExe"
 }
 
+Assert-PhpSecurityConfiguration
+
 if (-not (Test-Path $ArchivePath)) {
     throw "Release archive was not found: $ArchivePath"
 }
@@ -234,6 +248,8 @@ try {
     Write-Host "== Validate release against server configuration =="
     Invoke-PhpArtisan $stagePath config:clear
     Invoke-PhpArtisan $stagePath view:clear
+    Invoke-PhpArtisan $stagePath security:production-check
+    Invoke-PhpArtisan $stagePath security:evidence "--label=$timestamp"
     Invoke-PhpArtisan $stagePath migrate:status
 
     Write-Host "== Enter maintenance mode =="
@@ -266,7 +282,8 @@ try {
     Start-RfcSite
 
     Write-Host "== Smoke test =="
-    $response = Invoke-WebRequest "http://localhost/ar/sign-in" -UseBasicParsing -TimeoutSec 30
+    $smokeHost = ([Uri](Get-DotEnvValue (Join-Path $AppPath ".env") "APP_URL")).Host
+    $response = Invoke-WebRequest "http://127.0.0.1/ar/sign-in" -Headers @{ Host = $smokeHost } -UseBasicParsing -TimeoutSec 30
 
     if ($response.StatusCode -ne 200) {
         throw "Smoke test returned HTTP $($response.StatusCode)."

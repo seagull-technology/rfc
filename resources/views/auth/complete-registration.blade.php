@@ -12,7 +12,7 @@
                     <div class="align-self-center col-12">
                         <div class="sign-user_card registration-card registration-card-wide auth-visual-card">
                             <a class="registration-logo-link" href="{{ route('login') }}">
-                                <img class="img-fluid logo registration-logo" src="{{ asset('images/logo.svg') }}" alt="#">
+                                <img class="img-fluid logo registration-logo" src="{{ asset('images/rfc-logo-white.png') }}" alt="{{ config('app.name') }}">
                             </a>
                             <div class="sign-in-page-data registration-page-data">
                                 <div class="sign-in-from w-100 m-auto">

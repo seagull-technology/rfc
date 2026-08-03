@@ -8,7 +8,7 @@
 @section('page_layout_class', 'admin-contact-center-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .admin-contact-center-layout {
             padding-top: 0 !important;
         }
@@ -257,7 +257,7 @@
 @endsection
 
 @push('scripts')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         document.addEventListener('DOMContentLoaded', function () {
             const allProducers = document.getElementById('allProducers');
             const specificProducer = document.getElementById('specificProducer');

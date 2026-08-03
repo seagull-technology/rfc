@@ -31,7 +31,7 @@
 @endphp
 
 @once
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .production-terms-document {
             color: #111827;
             line-height: 1.9;

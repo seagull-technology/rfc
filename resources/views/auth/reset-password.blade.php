@@ -7,8 +7,8 @@
                 <div class="justify-content-center align-items-center height-self-center row">
                     <div class="align-self-center col-lg-5 col-md-12">
                         <div class="sign-user_card auth-visual-card">
-                            <a href="{{ route('login') }}">
-                                <img class="img-fluid logo" src="{{ asset('images/logo.svg') }}" alt="#">
+                            <a class="auth-brand-logo-badge" href="{{ route('login') }}">
+                                <img class="img-fluid logo auth-brand-logo" src="{{ asset('images/rfc-logo-white.png') }}" alt="{{ config('app.name') }}">
                             </a>
                             <div class="sign-in-page-data">
                                 <div class="sign-in-from w-100 m-auto">
@@ -29,24 +29,28 @@
                                         @csrf
                                         <input type="hidden" name="token" value="{{ $token }}">
 
-                                        <div class="mb-3">
-                                            <label for="email" class="mb-2">{{ __('app.auth.email') }}</label>
-                                            <input
-                                                required
-                                                type="email"
-                                                id="email"
-                                                name="email"
-                                                value="{{ $isInvitation ? $email : old('email', $email) }}"
-                                                @if ($isInvitation)
-                                                    readonly
-                                                    aria-readonly="true"
-                                                @endif
-                                                class="mb-0 form-control @if ($isInvitation) bg-body-secondary @endif @error('email') is-invalid @enderror"
-                                            />
-                                            @error('email')
-                                                <div class="invalid-feedback d-block">{{ $message }}</div>
-                                            @enderror
-                                        </div>
+                                        @if ($isOtpReset ?? false)
+                                            <input type="hidden" name="email" value="{{ $email }}">
+                                        @else
+                                            <div class="mb-3">
+                                                <label for="email" class="mb-2">{{ __('app.auth.email') }}</label>
+                                                <input
+                                                    required
+                                                    type="email"
+                                                    id="email"
+                                                    name="email"
+                                                    value="{{ $isInvitation ? $email : old('email', $email) }}"
+                                                    @if ($isInvitation)
+                                                        readonly
+                                                        aria-readonly="true"
+                                                    @endif
+                                                    class="mb-0 form-control @if ($isInvitation) bg-body-secondary @endif @error('email') is-invalid @enderror"
+                                                />
+                                                @error('email')
+                                                    <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                @enderror
+                                            </div>
+                                        @endif
 
                                         <div class="mb-3" data-secure-password-field>
                                             <label for="password" class="mb-2">{{ __('app.auth.password_label') }}</label>
@@ -111,7 +115,7 @@
         </section>
     </div>
 
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         document.addEventListener('DOMContentLoaded', () => {
             const form = document.querySelector('[data-password-reset-form]');
             const password = document.querySelector('[data-secure-password]');

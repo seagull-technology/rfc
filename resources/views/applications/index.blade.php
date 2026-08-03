@@ -10,7 +10,7 @@
 @section('page_layout_class', 'applicant-applications-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .applicant-applications-layout .request-toolbar {
             border: 1px solid rgba(0, 0, 0, 0.08);
             border-radius: 6px;

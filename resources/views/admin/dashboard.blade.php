@@ -85,8 +85,8 @@
 @section('page_layout_class', 'admin-template-layout')
 
 @push('styles')
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
-    <style>
+    <link rel="stylesheet" href="{{ asset('vendor/leaflet/leaflet.css') }}?v=1.9.4">
+    <style nonce="{{ $cspNonce ?? '' }}">
         .admin-template-layout {
             padding-top: 0;
         }

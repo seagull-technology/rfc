@@ -1,6 +1,11 @@
 <?php
 
+use App\Http\Middleware\AddSecurityHeaders;
+use App\Http\Middleware\BlockSecurityProbePaths;
+use App\Http\Middleware\EnforceTrustedHosts;
+use App\Http\Middleware\PrivateCacheHeaders;
 use App\Http\Middleware\SetPermissionsEntityContext;
+use App\Http\Middleware\ValidateUploadedFiles;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -23,6 +28,14 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->append([
+            EnforceTrustedHosts::class,
+            BlockSecurityProbePaths::class,
+            AddSecurityHeaders::class,
+            PrivateCacheHeaders::class,
+            ValidateUploadedFiles::class,
+        ]);
+
         $trustedProxies = trim((string) env('TRUSTED_PROXIES'));
 
         if ($trustedProxies !== '') {

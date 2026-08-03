@@ -164,7 +164,7 @@
 
 @once
     @push('styles')
-        <style>
+        <style nonce="{{ $cspNonce ?? '' }}">
             .annex-summary-table-scroll {
                 overflow-x: auto;
             }

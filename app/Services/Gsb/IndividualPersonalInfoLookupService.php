@@ -12,11 +12,7 @@ class IndividualPersonalInfoLookupService
     /** @return array<string, mixed> */
     public function lookup(string $personalNumber, string $nationalityCategory): array
     {
-        if ($nationalityCategory === 'jordanian') {
-            return $this->cspd->lookup($personalNumber);
-        }
-
-        if (in_array($nationalityCategory, ['arab', 'foreign'], true)) {
+        if (in_array($nationalityCategory, ['arab', 'foreign', 'travel_document'], true)) {
             return $this->psd->lookup($personalNumber);
         }
 

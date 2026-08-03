@@ -64,7 +64,7 @@
 @section('page_layout_class', 'organization-dashboard-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .organization-dashboard-layout {
             padding-top: 0 !important;
         }

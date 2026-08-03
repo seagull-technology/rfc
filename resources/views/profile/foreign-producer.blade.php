@@ -16,7 +16,7 @@
 @section('page_layout_class', 'foreign-producer-profile-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .foreign-producer-profile-layout {
             padding-top: 0 !important;
         }

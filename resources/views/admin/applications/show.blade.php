@@ -215,7 +215,7 @@
 @section('page_layout_class', 'admin-application-show-layout py-0')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .admin-application-show-layout {
             padding-top: 0;
         }
@@ -909,7 +909,7 @@
                                         <div class="mb-1"><span class="fw-600">{{ __('app.applications.director_email') }}:</span><span class="ms-2">{{ data_get($metadata, 'director.director_email', __('app.dashboard.not_available')) }}</span></div>
                                         <div class="mb-0"><span class="fw-600">{{ __('app.applications.director_profile_url') }}:</span>
                                             @if (filled(data_get($metadata, 'director.director_profile_url')))
-                                                <a href="{{ data_get($metadata, 'director.director_profile_url') }}" class="ms-2" target="_blank" rel="noreferrer">{{ data_get($metadata, 'director.director_profile_url') }}</a>
+                                                <a href="{{ data_get($metadata, 'director.director_profile_url') }}" class="ms-2" target="_blank" rel="noopener noreferrer nofollow ugc">{{ data_get($metadata, 'director.director_profile_url') }}</a>
                                             @else
                                                 <span class="ms-2">{{ __('app.dashboard.not_available') }}</span>
                                             @endif
@@ -1396,7 +1396,7 @@
 @endsection
 
 @push('scripts')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         document.addEventListener('DOMContentLoaded', function () {
             const tabList = document.getElementById('profile-pills-tab');
             const tabStorageKey = 'rfc.adminApplication.activeTab:' + window.location.pathname;

@@ -7,7 +7,7 @@
 @section('page_layout_class', 'request-form-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .request-form-layout .streamit-wraper-table > .card-header {
             padding: 0 0 1.5rem;
         }

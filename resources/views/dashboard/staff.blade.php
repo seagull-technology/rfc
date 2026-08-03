@@ -51,7 +51,7 @@
 @section('page_layout_class', 'staff-dashboard-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .staff-dashboard-layout {
             padding-top: 0 !important;
         }

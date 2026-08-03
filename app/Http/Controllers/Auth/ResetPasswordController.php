@@ -3,22 +3,28 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Support\PasswordPolicy;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\View\View;
 
 class ResetPasswordController extends Controller
 {
     public function create(Request $request, string $token): View
     {
+        $verifiedToken = (string) $request->session()->get('verified_password_reset_token', '');
+        $isOtpReset = $verifiedToken !== '' && hash_equals($verifiedToken, $token);
+
         return view('auth.reset-password', [
             'token' => $token,
-            'email' => (string) $request->query('email', ''),
+            'email' => $isOtpReset
+                ? (string) $request->session()->get('verified_password_reset_email', '')
+                : (string) $request->query('email', ''),
+            'isOtpReset' => $isOtpReset,
             'isInvitation' => $request->boolean('invitation'),
         ]);
     }
@@ -28,7 +34,7 @@ class ResetPasswordController extends Controller
         $data = $request->validate([
             'token' => ['required', 'string'],
             'email' => ['required', 'email'],
-            'password' => ['required', 'confirmed', PasswordRule::min(8)->mixedCase()->numbers()->symbols()],
+            'password' => ['required', 'confirmed', PasswordPolicy::rule()],
         ]);
 
         $status = Password::reset(
@@ -53,6 +59,11 @@ class ResetPasswordController extends Controller
                     'email' => __('app.auth.invalid_reset_token'),
                 ]);
         }
+
+        $request->session()->forget([
+            'verified_password_reset_token',
+            'verified_password_reset_email',
+        ]);
 
         return redirect()
             ->route('login')

@@ -8,7 +8,6 @@ use App\Models\ScoutingRequest;
 use App\Models\User;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\PermissionRegistrar;
@@ -63,7 +62,7 @@ class ScoutingRequestFlowTest extends TestCase
                         'governorate' => 'amman',
                         'location_type' => 'petra',
                         'location_name' => 'Impossible Petra Location',
-                        'google_map_url' => 'https://maps.example.com/impossible',
+                        'google_map_url' => 'https://maps.google.com/impossible',
                         'location_description' => 'Petra is not available under Amman.',
                         'start_date' => '2026-05-01',
                         'end_date' => '2026-05-02',
@@ -371,7 +370,7 @@ class ScoutingRequestFlowTest extends TestCase
         $adminMessageResponse = $this->actingAs($admin)->post(route('admin.scouting-requests.correspondence.store', $requestRecord), [
             'subject' => 'Clarification Required',
             'message' => 'Please attach the final site timing and any route changes.',
-            'attachment' => UploadedFile::fake()->create('clarification.pdf', 120, 'application/pdf'),
+            'attachment' => $this->fakePdf('clarification.pdf', 120),
         ]);
 
         $adminMessageResponse->assertRedirect(route('admin.scouting-requests.show', $requestRecord));
@@ -420,7 +419,7 @@ class ScoutingRequestFlowTest extends TestCase
         $applicantReplyResponse = $this->actingAs($user)->post(route('scouting-requests.correspondence.store', $requestRecord), [
             'subject' => 'Updated Details',
             'message' => 'We updated the schedule and confirmed the locations.',
-            'attachment' => UploadedFile::fake()->create('updated-schedule.pdf', 120, 'application/pdf'),
+            'attachment' => $this->fakePdf('updated-schedule.pdf', 120),
         ]);
 
         $applicantReplyResponse->assertRedirect(route('scouting-requests.show', $requestRecord));
@@ -545,12 +544,12 @@ class ScoutingRequestFlowTest extends TestCase
             'production_end_date' => '2026-06-10',
             'project_summary' => 'A scouting mission across multiple locations in Jordan.',
             'story_text' => 'A brief documentary concept.',
-            'story_file' => UploadedFile::fake()->create('story.pdf', 120, 'application/pdf'),
+            'story_file' => $this->fakePdf('story.pdf', 120),
             'locations' => [
                 [
                     'governorate' => 'amman',
                     'location_name' => 'Amman Citadel',
-                    'google_map_url' => 'https://maps.example.com/citadel',
+                    'google_map_url' => 'https://maps.google.com/citadel',
                     'location_type' => 'archaeological_sites',
                     'location_description' => 'Historic hilltop ruins.',
                     'start_date' => '2026-05-01',

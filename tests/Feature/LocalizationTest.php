@@ -7,6 +7,7 @@ use App\Models\User;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Mcamara\LaravelLocalization\Facades\LaravelLocalization;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
@@ -19,24 +20,30 @@ class LocalizationTest extends TestCase
         $this->refreshApplicationWithLocale('ar');
 
         $response = $this->get('/ar/sign-in');
-        $englishLoginUrl = \Mcamara\LaravelLocalization\Facades\LaravelLocalization::getLocalizedURL('en', route('login', [], false), [], true);
-        $arabicLoginUrl = \Mcamara\LaravelLocalization\Facades\LaravelLocalization::getLocalizedURL('ar', route('login', [], false), [], true);
+        $englishLoginUrl = LaravelLocalization::getLocalizedURL('en', route('login', [], false), [], true);
+        $arabicLoginUrl = LaravelLocalization::getLocalizedURL('ar', route('login', [], false), [], true);
 
         $response->assertOk();
         $response->assertSee('dir="rtl"', false);
         $response->assertSee('تسجيل الدخول');
         $response->assertSee('إنشاء حساب');
+        $response->assertSee('auth-password-recovery', false);
+        $response->assertSee(__('app.auth.forgot_password'));
         $response->assertSee($englishLoginUrl, false);
         $response->assertDontSee($arabicLoginUrl, false);
+
+        $this->get('/ar/forgot-password')->assertOk();
     }
 
     public function test_arabic_otp_page_keeps_first_digit_focused_from_rtl_start(): void
     {
         $this->refreshApplicationWithLocale('ar');
 
+        $user = User::factory()->create();
+
         $response = $this
             ->withSession([
-                'pending_auth_user_id' => 1,
+                'pending_auth_user_id' => $user->getKey(),
                 'pending_auth_phone' => '0791112233',
                 'otp_debug_code' => '12345',
             ])

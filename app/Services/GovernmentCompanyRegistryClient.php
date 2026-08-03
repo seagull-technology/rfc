@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\ApprovedOutboundUrl;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -9,6 +10,8 @@ use Throwable;
 
 class GovernmentCompanyRegistryClient
 {
+    public function __construct(private readonly ApprovedOutboundUrl $approvedOutboundUrl) {}
+
     /**
      * @return array<string, mixed>
      */
@@ -36,6 +39,7 @@ class GovernmentCompanyRegistryClient
     {
         $url = $this->url();
         try {
+            $this->approvedOutboundUrl->ensureAllowed($url);
             $response = Http::withOptions($this->httpOptions())
                 ->withHeaders($this->headers())
                 ->acceptJson()
@@ -112,7 +116,7 @@ class GovernmentCompanyRegistryClient
      */
     private function httpOptions(): array
     {
-        $options = [];
+        $options = ['allow_redirects' => false];
         $host = (string) config('services.gov_company_registry.host');
         $port = (int) config('services.gov_company_registry.port', 9443);
         $ip = trim((string) config('services.gov_company_registry.ip'));

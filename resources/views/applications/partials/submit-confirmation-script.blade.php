@@ -16,7 +16,7 @@
     </div>
 
     @push('styles')
-        <style>
+        <style nonce="{{ $cspNonce ?? '' }}">
             .application-submit-confirmation-modal {
                 align-items: center;
                 display: none;
@@ -92,7 +92,7 @@
     @endpush
 
     @push('scripts')
-        <script>
+        <script nonce="{{ $cspNonce ?? '' }}">
             (function () {
                 const modalElement = document.getElementById('applicationSubmitConfirmationModal');
                 const titleElement = document.getElementById('applicationSubmitConfirmationTitle');

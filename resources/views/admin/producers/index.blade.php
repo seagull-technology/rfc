@@ -16,7 +16,7 @@
 @section('page_layout_class', 'admin-producers-index-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .admin-producers-index-layout {
             padding-top: 0;
         }

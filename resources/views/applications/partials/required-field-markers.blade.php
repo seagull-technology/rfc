@@ -1,6 +1,6 @@
 @once
     @push('scripts')
-        <script>
+        <script nonce="{{ $cspNonce ?? '' }}">
             (function () {
                 const markerAttribute = 'data-auto-required-marker';
                 let requiredMarkerSyncQueued = false;

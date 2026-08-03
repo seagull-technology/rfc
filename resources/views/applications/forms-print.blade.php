@@ -8,7 +8,7 @@
     @if (app()->getLocale() === 'ar')
         <link rel="stylesheet" href="{{ asset('css/rtl.min.css') }}?v=5.4.0">
     @endif
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         :root { --rfc: #6f1d18; --ink: #1f2937; --muted: #667085; --line: #d9dee7; --soft: #f4f5f7; }
         * { box-sizing: border-box; }
         body { background: #eef0f3; color: var(--ink); font-family: Arial, Tahoma, sans-serif; margin: 0; }

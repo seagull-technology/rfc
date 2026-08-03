@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Entity;
+use App\Models\Group;
 use App\Models\User;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -22,7 +23,7 @@ class RegistrationCompletionTest extends TestCase
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
 
-        $group = \App\Models\Group::query()->where('code', 'organizations')->firstOrFail();
+        $group = Group::query()->where('code', 'organizations')->firstOrFail();
 
         $user = User::query()->create([
             'name' => 'Review Company',
@@ -82,7 +83,7 @@ class RegistrationCompletionTest extends TestCase
             'phone' => '0793001999',
             'address' => 'New address',
             'description' => 'New description',
-            'registration_document' => UploadedFile::fake()->create('updated-license.pdf', 120, 'application/pdf'),
+            'registration_document' => $this->fakePdf('updated-license.pdf', 120),
             'logo' => UploadedFile::fake()->image('updated-logo.png')->size(100),
         ]);
 

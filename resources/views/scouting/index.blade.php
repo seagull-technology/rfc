@@ -26,7 +26,7 @@
 @section('page_layout_class', 'scouting-index-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .scouting-index-layout {
             padding-top: 0 !important;
         }

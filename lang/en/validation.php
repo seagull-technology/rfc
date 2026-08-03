@@ -32,6 +32,8 @@ return [
     ],
     'required' => 'The :attribute field is required.',
     'regex' => 'The :attribute field format is invalid.',
+    'safe_external_url' => 'The :attribute field must use HTTPS and point to an allowed public website.',
+    'secure_upload' => 'The uploaded file was rejected because its type, signature, or active content could not be verified safely.',
     'string' => 'The :attribute field must be a string.',
     'unique' => 'The :attribute field has already been taken.',
     'uploaded' => 'The :attribute field failed to upload.',

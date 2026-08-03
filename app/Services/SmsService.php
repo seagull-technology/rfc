@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\ApprovedOutboundUrl;
 use App\Support\PhoneNumber;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -10,6 +11,13 @@ use Throwable;
 
 class SmsService
 {
+    private readonly ApprovedOutboundUrl $approvedOutboundUrl;
+
+    public function __construct(?ApprovedOutboundUrl $approvedOutboundUrl = null)
+    {
+        $this->approvedOutboundUrl = $approvedOutboundUrl ?? app(ApprovedOutboundUrl::class);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -31,6 +39,10 @@ class SmsService
             return ['ok' => true, 'stage' => 'simulated', 'http' => 200, 'raw' => null, 'msisdn' => $msisdn];
         }
 
+        if (! $this->approvedOutboundUrl->isAllowed((string) config('services.gov_sms.base'))) {
+            return ['ok' => false, 'stage' => 'unapproved_destination', 'http' => null, 'raw' => null, 'msisdn' => $msisdn];
+        }
+
         $token = $this->getToken();
 
         if (! $token) {
@@ -47,7 +59,8 @@ class SmsService
         ];
 
         try {
-            $response = Http::baseUrl(config('services.gov_sms.base'))
+            $response = Http::withOptions(['allow_redirects' => false])
+                ->baseUrl(config('services.gov_sms.base'))
                 ->acceptJson()
                 ->asJson()
                 ->timeout(20)
@@ -56,7 +69,8 @@ class SmsService
                 ->post('/sendSmsNotifications', $payload);
 
             if ($response->status() === 401 || str_contains(strtolower($response->body()), 'unauthorized')) {
-                $response = Http::baseUrl(config('services.gov_sms.base'))
+                $response = Http::withOptions(['allow_redirects' => false])
+                    ->baseUrl(config('services.gov_sms.base'))
                     ->acceptJson()
                     ->asJson()
                     ->timeout(20)
@@ -111,7 +125,8 @@ class SmsService
     {
         return Cache::remember('gov_sms_token', now()->addMinutes(10), function () {
             try {
-                $response = Http::baseUrl(config('services.gov_sms.base'))
+                $response = Http::withOptions(['allow_redirects' => false])
+                    ->baseUrl(config('services.gov_sms.base'))
                     ->acceptJson()
                     ->asJson()
                     ->timeout(20)

@@ -38,7 +38,7 @@
 @section('page_layout_class', 'admin-users-index-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .admin-users-index-layout {
             padding-top: 0;
         }

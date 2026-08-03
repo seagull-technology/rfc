@@ -12,13 +12,27 @@
     $attachments = collect((array) $detailValue('attachments', []))->filter(fn ($item) => is_array($item))->values();
     $maritalStatus = (string) $detailValue('marital_status');
     $nationalityCategory = (string) $detailValue('nationality_category');
-    $personalNumberLabel = match ($nationalityCategory) {
-        'jordanian' => __('app.applications.ministry_interior_personal_details.fields.national_number'),
-        'arab', 'foreign' => __('app.applications.ministry_interior_personal_details.fields.individual_number'),
-        default => __('app.applications.ministry_interior_personal_details.fields.personal_number'),
-    };
-    $personalNumberMaxlength = $nationalityCategory === 'jordanian' ? 10 : 20;
-    $personalNumberPattern = $nationalityCategory === 'jordanian' ? '[0-9]{10}' : '[0-9]{1,20}';
+    $personalNumberLabel = __('app.applications.ministry_interior_personal_details.fields.individual_number');
+    $travelDocumentHolder = $nationalityCategory === 'travel_document';
+    $travelDocumentTypeOptions = [
+        'foreign_travel_document',
+        'passport',
+        'palestinian_refugee_syrian_passport',
+    ];
+    $effectiveNationality = (string) ($travelDocumentHolder
+        ? $detailValue('original_nationality')
+        : $detailValue('current_nationality'));
+    $countryOfResidence = (string) $detailValue('country_of_residence');
+    $residenceRequired = filled($effectiveNationality)
+        && filled($countryOfResidence)
+        && $effectiveNationality !== $countryOfResidence;
+    $schengenUsVisa = (string) $detailValue('schengen_us_visa');
+    $isPalestinian = in_array($effectiveNationality, $ministryPalestinianNationalityCodes ?? [], true);
+    $passportAttachment = (array) ($attachments->firstWhere('document_type', 'passport_copy') ?? []);
+    $residenceAttachment = (array) ($attachments->firstWhere('document_type', 'foreign_residence') ?? []);
+    $additionalAttachments = $attachments
+        ->reject(fn (array $attachment): bool => in_array((string) ($attachment['document_type'] ?? ''), ['passport_copy', 'foreign_residence'], true))
+        ->values();
     $fieldValue = static function (string $key, mixed $fallback = null) use ($detailValue): mixed {
         $value = $detailValue($key);
         return filled($value) ? $value : $fallback;
@@ -45,7 +59,7 @@
 <article
     class="ministry-personal-details-form__record"
     data-ministry-personal-details-row
-    data-next-attachment-index="{{ $attachments->count() }}"
+    data-next-attachment-index="{{ $additionalAttachments->count() + 2 }}"
 >
     <div class="ministry-personal-details-form__record-header">
         <h4 class="mb-0">
@@ -69,7 +83,7 @@
                 <label class="form-label" for="{{ $idPrefix }}_nationality_category">{{ __('app.applications.ministry_interior_personal_details.fields.nationality_category') }} {!! $requiredMark !!}</label>
                 <select class="form-select" id="{{ $idPrefix }}_nationality_category" name="{{ $inputPrefix }}[nationality_category]" @disabled($readOnly)>
                     <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                    @foreach (['jordanian', 'arab', 'foreign'] as $option)
+                    @foreach (['arab', 'foreign', 'travel_document'] as $option)
                         <option value="{{ $option }}" @selected($nationalityCategory === $option)>{{ $optionLabel('nationality_category', $option) }}</option>
                     @endforeach
                 </select>
@@ -79,7 +93,8 @@
                 <div class="ministry-personal-details-form__lookup">
                     <div>
                         <label class="form-label" for="{{ $idPrefix }}_personal_number" data-ministry-personal-number-label>{{ $personalNumberLabel }}</label>
-                        <input type="text" inputmode="numeric" maxlength="{{ $personalNumberMaxlength }}" pattern="{{ $personalNumberPattern }}" class="form-control" id="{{ $idPrefix }}_personal_number" name="{{ $inputPrefix }}[personal_number]" value="{{ $detailValue('personal_number') }}" @disabled($readOnly)>
+                        <input type="text" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" class="form-control" id="{{ $idPrefix }}_personal_number" name="{{ $inputPrefix }}[personal_number]" value="{{ $detailValue('personal_number') }}" @disabled($readOnly)>
+                        <div class="form-text">{{ __('app.applications.ministry_interior_personal_details.personal_number_help') }}</div>
                     </div>
                     @unless ($readOnly)
                         <button type="button" class="btn btn-primary" data-ministry-personal-details-lookup>
@@ -90,7 +105,7 @@
                 </div>
             </div>
 
-            <div class="col-12 col-md-6 col-xl-4">
+            <div class="col-12 col-md-6 col-xl-4" data-ministry-current-nationality @if ($travelDocumentHolder) hidden @endif>
                 <label class="form-label" for="{{ $idPrefix }}_current_nationality">{{ __('app.applications.ministry_interior_personal_details.fields.current_nationality') }} {!! $requiredMark !!}</label>
                 @if ($readOnly)
                     <input type="text" class="form-control" value="{{ $nationalityLabel($detailValue('current_nationality')) }}" disabled>
@@ -157,7 +172,7 @@
                 @else
                     <select class="form-select" id="{{ $idPrefix }}_mother_nationality" name="{{ $inputPrefix }}[mother_nationality]">
                         <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                        @foreach ($ministryNationalityOptions as $nationality)
+                        @foreach ($ministryCountryOptions as $nationality)
                             <option value="{{ $nationality->code }}" @selected((string) $detailValue('mother_nationality') === (string) $nationality->code)>{{ $nationality->displayName() }}</option>
                         @endforeach
                     </select>
@@ -166,6 +181,59 @@
             <div class="col-12 col-xl-4">
                 <label class="form-label" for="{{ $idPrefix }}_education_qualification">{{ __('app.applications.ministry_interior_personal_details.fields.education_qualification') }} {!! $requiredMark !!}</label>
                 <input type="text" class="form-control" id="{{ $idPrefix }}_education_qualification" name="{{ $inputPrefix }}[education_qualification]" value="{{ $detailValue('education_qualification') }}" @disabled($readOnly)>
+            </div>
+
+            <div class="col-12" data-ministry-original-nationality @if (! $travelDocumentHolder) hidden @endif>
+                <div class="ministry-personal-details-form__conditional-panel">
+                    <h6>{{ __('app.applications.ministry_interior_personal_details.sections.original_nationality') }}</h6>
+                    <div class="row g-3">
+                        <div class="col-12 col-lg-4">
+                            <label class="form-label" for="{{ $idPrefix }}_travel_document_type">{{ __('app.applications.ministry_interior_personal_details.fields.travel_document_type') }} {!! $requiredMark !!}</label>
+                            @if ($readOnly)
+                                <input type="text" class="form-control" value="{{ $optionLabel('travel_document_type', $detailValue('travel_document_type')) }}" disabled>
+                            @else
+                                <select class="form-select" id="{{ $idPrefix }}_travel_document_type" name="{{ $inputPrefix }}[travel_document_type]">
+                                    <option value="">{{ __('app.admin.select_placeholder') }}</option>
+                                    @foreach ($travelDocumentTypeOptions as $travelDocumentType)
+                                        <option value="{{ $travelDocumentType }}" @selected((string) $detailValue('travel_document_type') === $travelDocumentType)>{{ $optionLabel('travel_document_type', $travelDocumentType) }}</option>
+                                    @endforeach
+                                </select>
+                            @endif
+                        </div>
+                        <div class="col-12 col-lg-4">
+                            <label class="form-label" for="{{ $idPrefix }}_original_nationality">{{ __('app.applications.ministry_interior_personal_details.fields.original_nationality') }} {!! $requiredMark !!}</label>
+                            @if ($readOnly)
+                                <input type="text" class="form-control" value="{{ $nationalityLabel($detailValue('original_nationality')) }}" disabled>
+                            @else
+                                <select class="form-select" id="{{ $idPrefix }}_original_nationality" name="{{ $inputPrefix }}[original_nationality]">
+                                    <option value="">{{ __('app.admin.select_placeholder') }}</option>
+                                    @foreach ($ministryNationalityOptions as $nationality)
+                                        <option value="{{ $nationality->code }}" @selected((string) $detailValue('original_nationality') === (string) $nationality->code)>{{ $nationality->displayName() }}</option>
+                                    @endforeach
+                                </select>
+                            @endif
+                        </div>
+                        <div class="col-12 col-lg-4">
+                            <label class="form-label" for="{{ $idPrefix }}_original_document_country">{{ __('app.applications.ministry_interior_personal_details.fields.original_document_country') }} {!! $requiredMark !!}</label>
+                            @if ($readOnly)
+                                <input type="text" class="form-control" value="{{ $nationalityLabel($detailValue('original_document_country')) }}" disabled>
+                            @else
+                                <select class="form-select" id="{{ $idPrefix }}_original_document_country" name="{{ $inputPrefix }}[original_document_country]">
+                                    <option value="">{{ __('app.admin.select_placeholder') }}</option>
+                                    @foreach ($ministryCountryOptions as $country)
+                                        <option value="{{ $country->code }}" @selected((string) $detailValue('original_document_country') === (string) $country->code)>{{ $country->displayName() }}</option>
+                                    @endforeach
+                                </select>
+                            @endif
+                        </div>
+                        @foreach (['original_first_name', 'original_father_name', 'original_grandfather_name', 'original_family_name'] as $field)
+                            <div class="col-12 col-sm-6 col-xl-3">
+                                <label class="form-label" for="{{ $idPrefix }}_{{ $field }}">{{ __('app.applications.ministry_interior_personal_details.fields.'.$field) }} {!! $requiredMark !!}</label>
+                                <input type="text" class="form-control" id="{{ $idPrefix }}_{{ $field }}" name="{{ $inputPrefix }}[{{ $field }}]" value="{{ $detailValue($field) }}" @disabled($readOnly)>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
             </div>
         </div>
     </section>
@@ -176,55 +244,46 @@
             @foreach (['country_of_arrival', 'country_of_residence'] as $field)
                 <div class="col-12 col-md-6">
                     <label class="form-label" for="{{ $idPrefix }}_{{ $field }}">{{ __('app.applications.ministry_interior_personal_details.fields.'.$field) }} {!! $requiredMark !!}</label>
-                    <input type="text" class="form-control" id="{{ $idPrefix }}_{{ $field }}" name="{{ $inputPrefix }}[{{ $field }}]" value="{{ $detailValue($field) }}" @disabled($readOnly)>
+                    @if ($readOnly)
+                        <input type="text" class="form-control" value="{{ $nationalityLabel($detailValue($field)) }}" disabled>
+                    @else
+                        <select class="form-select" id="{{ $idPrefix }}_{{ $field }}" name="{{ $inputPrefix }}[{{ $field }}]">
+                            <option value="">{{ __('app.admin.select_placeholder') }}</option>
+                            @foreach ($ministryCountryOptions as $nationality)
+                                <option value="{{ $nationality->code }}" @selected((string) $detailValue($field) === (string) $nationality->code)>{{ $nationality->displayName() }}</option>
+                            @endforeach
+                        </select>
+                    @endif
                 </div>
             @endforeach
 
-            <div class="col-12" data-ministry-residency-extra @if($nationalityCategory === 'jordanian') hidden @endif>
-                <div class="row g-3">
-                    <div class="col-12 col-md-6">
-                        <label class="form-label" for="{{ $idPrefix }}_residence_expiry_date">{{ __('app.applications.ministry_interior_personal_details.fields.residence_expiry_date') }} {!! $requiredMark !!}</label>
-                        <input type="date" class="form-control" id="{{ $idPrefix }}_residence_expiry_date" name="{{ $inputPrefix }}[residence_expiry_date]" value="{{ $detailValue('residence_expiry_date') }}" @disabled($readOnly || $nationalityCategory === 'jordanian')>
+            <div class="col-12" data-ministry-residency-extra @if (! $residenceRequired) hidden @endif>
+                <div class="ministry-personal-details-form__conditional-panel">
+                    <div class="alert alert-info d-flex align-items-start gap-2 mb-3" role="note">
+                        <i class="fa-solid fa-circle-info mt-1" aria-hidden="true"></i>
+                        <span>{{ __('app.applications.ministry_interior_personal_details.residence_document_notice') }}</span>
                     </div>
-                    @foreach (['schengen_us_visa', 'previous_jordan_residence', 'investment_card', 'free_zones_card'] as $field)
-                        <div class="col-12 col-md-6 col-xl-3">
-                            <label class="form-label" for="{{ $idPrefix }}_{{ $field }}">{{ __('app.applications.ministry_interior_personal_details.fields.'.$field) }} {!! $requiredMark !!}</label>
-                            <select class="form-select" id="{{ $idPrefix }}_{{ $field }}" name="{{ $inputPrefix }}[{{ $field }}]" @disabled($readOnly || $nationalityCategory === 'jordanian')>
-                                <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                                @foreach (['yes', 'no'] as $option)
-                                    <option value="{{ $option }}" @selected((string) $detailValue($field) === $option)>{{ $optionLabel('yes_no', $option) }}</option>
-                                @endforeach
-                            </select>
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label" for="{{ $idPrefix }}_residence_expiry_date">{{ __('app.applications.ministry_interior_personal_details.fields.residence_expiry_date') }} {!! $requiredMark !!}</label>
+                            <input type="date" class="form-control" id="{{ $idPrefix }}_residence_expiry_date" name="{{ $inputPrefix }}[residence_expiry_date]" value="{{ $detailValue('residence_expiry_date') }}" min="{{ $minimumTravelDocumentExpiryDate }}" @disabled($readOnly)>
                         </div>
-                        @if ($field === 'previous_jordan_residence')
-                            <div class="col-12" data-ministry-residence-document-notice @if((string) $detailValue($field) !== 'yes') hidden @endif>
-                                <div class="alert alert-info d-flex align-items-start gap-2 mb-0" role="note">
-                                    <i class="fa-solid fa-circle-info mt-1" aria-hidden="true"></i>
-                                    <span>{{ __('app.applications.ministry_interior_personal_details.residence_document_notice') }}</span>
-                                </div>
-                            </div>
-                        @endif
-                    @endforeach
+                    </div>
                 </div>
             </div>
-        </div>
-    </section>
 
-    <section class="ministry-personal-details-form__section">
-        <h5 class="ministry-personal-details-form__section-title">{{ __('app.applications.ministry_interior_personal_details.sections.jordan_address') }}</h5>
-        <div class="row g-3">
-            <div class="col-12 col-md-4">
-                <label class="form-label" for="{{ $idPrefix }}_jordan_governorate">{{ __('app.applications.ministry_interior_personal_details.fields.jordan_governorate') }} {!! $requiredMark !!}</label>
-                <select class="form-select" id="{{ $idPrefix }}_jordan_governorate" name="{{ $inputPrefix }}[jordan_governorate]" @disabled($readOnly)>
+            <div class="col-12 col-md-6">
+                <label class="form-label" for="{{ $idPrefix }}_schengen_us_visa">{{ __('app.applications.ministry_interior_personal_details.fields.schengen_us_visa') }} {!! $requiredMark !!}</label>
+                <select class="form-select" id="{{ $idPrefix }}_schengen_us_visa" name="{{ $inputPrefix }}[schengen_us_visa]" @disabled($readOnly)>
                     <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                    @foreach ($ministryGovernorateOptions as $governorate)
-                        <option value="{{ $governorate->code }}" @selected((string) $detailValue('jordan_governorate') === (string) $governorate->code)>{{ $governorate->displayName() }}</option>
+                    @foreach (['yes', 'no'] as $option)
+                        <option value="{{ $option }}" @selected($schengenUsVisa === $option)>{{ $optionLabel('yes_no', $option) }}</option>
                     @endforeach
                 </select>
             </div>
-            <div class="col-12 col-md-8">
-                <label class="form-label" for="{{ $idPrefix }}_jordan_residence_address">{{ __('app.applications.ministry_interior_personal_details.fields.jordan_residence_address') }} {!! $requiredMark !!}</label>
-                <input type="text" class="form-control" id="{{ $idPrefix }}_jordan_residence_address" name="{{ $inputPrefix }}[jordan_residence_address]" value="{{ $detailValue('jordan_residence_address') }}" @disabled($readOnly)>
+            <div class="col-12 col-md-6" data-ministry-visa-expiry @if ($schengenUsVisa !== 'yes') hidden @endif>
+                <label class="form-label" for="{{ $idPrefix }}_schengen_us_visa_expiry_date">{{ __('app.applications.ministry_interior_personal_details.fields.schengen_us_visa_expiry_date') }} {!! $requiredMark !!}</label>
+                <input type="date" class="form-control" id="{{ $idPrefix }}_schengen_us_visa_expiry_date" name="{{ $inputPrefix }}[schengen_us_visa_expiry_date]" value="{{ $detailValue('schengen_us_visa_expiry_date') }}" min="{{ $todayDate }}" @disabled($readOnly)>
             </div>
         </div>
     </section>
@@ -236,7 +295,7 @@
                 <label class="form-label" for="{{ $idPrefix }}_passport_type">{{ __('app.applications.ministry_interior_personal_details.fields.passport_type') }} {!! $requiredMark !!}</label>
                 <select class="form-select" id="{{ $idPrefix }}_passport_type" name="{{ $inputPrefix }}[passport_type]" @disabled($readOnly)>
                     <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                    @foreach (['ordinary', 'diplomatic', 'service', 'temporary', 'travel_document', 'other'] as $option)
+                    @foreach (['ordinary', 'diplomatic', 'travel_document'] as $option)
                         <option value="{{ $option }}" @selected((string) $detailValue('passport_type') === $option)>{{ $optionLabel('passport_type', $option) }}</option>
                     @endforeach
                 </select>
@@ -249,9 +308,22 @@
             ] as $field => $type)
                 <div class="col-12 col-md-6 @if(in_array($field, ['passport_issue_date', 'passport_expiry_date'])) col-xl-3 @else col-xl-3 @endif">
                     <label class="form-label" for="{{ $idPrefix }}_{{ $field }}">{{ __('app.applications.ministry_interior_personal_details.fields.'.$field) }} {!! $requiredMark !!}</label>
-                    <input type="{{ $type }}" class="form-control" id="{{ $idPrefix }}_{{ $field }}" name="{{ $inputPrefix }}[{{ $field }}]" value="{{ $detailValue($field) }}" @disabled($readOnly)>
+                    <input
+                        type="{{ $type }}"
+                        class="form-control"
+                        id="{{ $idPrefix }}_{{ $field }}"
+                        name="{{ $inputPrefix }}[{{ $field }}]"
+                        value="{{ $detailValue($field) }}"
+                        @if ($field === 'passport_issue_date') max="{{ $todayDate }}" @endif
+                        @if ($field === 'passport_expiry_date') min="{{ $minimumTravelDocumentExpiryDate }}" @endif
+                        @disabled($readOnly)
+                    >
                 </div>
             @endforeach
+            <div class="col-12 col-md-6" data-ministry-palestinian-passport-id @if (! $isPalestinian) hidden @endif>
+                <label class="form-label" for="{{ $idPrefix }}_palestinian_passport_id">{{ __('app.applications.ministry_interior_personal_details.fields.palestinian_passport_id') }} {!! $requiredMark !!}</label>
+                <input type="text" class="form-control" id="{{ $idPrefix }}_palestinian_passport_id" name="{{ $inputPrefix }}[palestinian_passport_id]" value="{{ $detailValue('palestinian_passport_id') }}" @disabled($readOnly)>
+            </div>
         </div>
     </section>
 
@@ -265,7 +337,7 @@
                 @else
                     <select class="form-select" id="{{ $idPrefix }}_spouse_nationality" name="{{ $inputPrefix }}[spouse_nationality]" @disabled($maritalStatus !== 'married')>
                         <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                        @foreach ($ministryNationalityOptions as $nationality)
+                        @foreach ($ministryCountryOptions as $nationality)
                             <option value="{{ $nationality->code }}" @selected((string) $detailValue('spouse_nationality') === (string) $nationality->code)>{{ $nationality->displayName() }}</option>
                         @endforeach
                     </select>
@@ -275,27 +347,6 @@
                 <div class="col-12 col-md-6 col-xl-3">
                     <label class="form-label" for="{{ $idPrefix }}_{{ $field }}">{{ __('app.applications.ministry_interior_personal_details.fields.'.$field) }} {!! $requiredMark !!}</label>
                     <input type="{{ $type }}" class="form-control" id="{{ $idPrefix }}_{{ $field }}" name="{{ $inputPrefix }}[{{ $field }}]" value="{{ $detailValue($field) }}" @if($type === 'date') max="{{ now()->subDay()->toDateString() }}" @endif @disabled($readOnly || $maritalStatus !== 'married')>
-                </div>
-            @endforeach
-        </div>
-    </section>
-
-    <section class="ministry-personal-details-form__section">
-        <h5 class="ministry-personal-details-form__section-title">{{ __('app.applications.ministry_interior_personal_details.sections.travel') }}</h5>
-        <div class="row g-3">
-            @foreach ([
-                'entry_method' => ['lawful_entry', 'visa', 'other'],
-                'departure_document' => ['foreign_travel_document', 'passport', 'palestinian_refugee_syrian_passport'],
-                'departure_method' => ['facilitation_letter', 'lawful_entry_departure', 'unhcr', 'voluntary_migration', 'other'],
-            ] as $field => $options)
-                <div class="col-12 col-lg-4">
-                    <label class="form-label" for="{{ $idPrefix }}_{{ $field }}">{{ __('app.applications.ministry_interior_personal_details.fields.'.$field) }} {!! $requiredMark !!}</label>
-                    <select class="form-select" id="{{ $idPrefix }}_{{ $field }}" name="{{ $inputPrefix }}[{{ $field }}]" @disabled($readOnly)>
-                        <option value="">{{ __('app.admin.select_placeholder') }}</option>
-                        @foreach ($options as $option)
-                            <option value="{{ $option }}" @selected((string) $detailValue($field) === $option)>{{ $optionLabel($field, $option) }}</option>
-                        @endforeach
-                    </select>
                 </div>
             @endforeach
         </div>
@@ -315,10 +366,24 @@
         </div>
 
         <div data-ministry-attachment-rows>
-            @foreach ($attachments as $attachmentIndex => $attachment)
+            @include('applications.partials.ministry-interior-personal-details-attachment-row', [
+                'attachment' => $passportAttachment,
+                'attachmentIndex' => 0,
+                'fixedDocumentType' => 'passport_copy',
+            ])
+
+            <div data-ministry-residence-attachment @if (! $residenceRequired) hidden @endif>
+                @include('applications.partials.ministry-interior-personal-details-attachment-row', [
+                    'attachment' => $residenceAttachment,
+                    'attachmentIndex' => 1,
+                    'fixedDocumentType' => 'foreign_residence',
+                ])
+            </div>
+
+            @foreach ($additionalAttachments as $attachmentIndex => $attachment)
                 @include('applications.partials.ministry-interior-personal-details-attachment-row', [
                     'attachment' => $attachment,
-                    'attachmentIndex' => $attachmentIndex,
+                    'attachmentIndex' => $attachmentIndex + 2,
                 ])
             @endforeach
         </div>

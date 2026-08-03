@@ -383,7 +383,7 @@ class AuthFlowTest extends TestCase
             'phone' => '0790000001',
             'address' => 'Amman, Jordan',
             'description' => 'Production house',
-            'registration_document' => UploadedFile::fake()->create('license.pdf', 250, 'application/pdf'),
+            'registration_document' => $this->fakePdf('license.pdf', 250),
             'logo' => UploadedFile::fake()->image('company-logo.png')->size(100),
             'company_lookup_verified' => '1',
             'password' => 'Password123!',
@@ -470,7 +470,7 @@ class AuthFlowTest extends TestCase
             'phone' => '0790000002',
             'address' => 'Amman, Jordan',
             'description' => 'Production house',
-            'registration_document' => UploadedFile::fake()->create('license.pdf', 250, 'application/pdf'),
+            'registration_document' => $this->fakePdf('license.pdf', 250),
             'company_lookup_verified' => '1',
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
@@ -877,6 +877,54 @@ class AuthFlowTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
+    public function test_login_otp_cannot_be_resent_before_five_minute_cooldown_expires(): void
+    {
+        $this->seed(AccessControlSeeder::class);
+
+        $entity = Entity::query()->where('code', 'rfc-jordan')->firstOrFail();
+
+        $user = User::query()->create([
+            'name' => 'RFC OTP Cooldown Tester',
+            'username' => 'rfc_otp_cooldown',
+            'email' => 'otp-cooldown@example.com',
+            'national_id' => '5566778899',
+            'phone' => '0791112255',
+            'status' => 'active',
+            'registration_type' => 'staff',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $entity->users()->attach($user->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($entity->getKey());
+        $user->assignRole('rfc_reviewer');
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        $this->post(route('login.store'), [
+            'identifier' => 'otp-cooldown@example.com',
+            'password' => 'password123',
+        ])->assertRedirect(route('otp.create'));
+
+        $this->assertDatabaseCount('login_otps', 1);
+
+        $this->post(route('otp.resend'))
+            ->assertSessionHasErrors('resend');
+
+        $this->assertDatabaseCount('login_otps', 1);
+
+        $this->travel(301)->seconds();
+
+        $this->post(route('otp.resend'))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('status');
+
+        $this->assertDatabaseCount('login_otps', 1);
+    }
+
     public function test_login_debug_otp_fallback_survives_sms_gateway_timeout(): void
     {
         $this->seed(AccessControlSeeder::class);
@@ -938,6 +986,7 @@ class AuthFlowTest extends TestCase
         $html = view('auth.verify-otp', [
             'maskedPhone' => '******2233',
             'debugCode' => '12345',
+            'resendAvailableIn' => 300,
             'errors' => new ViewErrorBag,
         ])->render();
 
@@ -947,6 +996,9 @@ class AuthFlowTest extends TestCase
         $this->assertStringContainsString('inputmode="numeric"', $html);
         $this->assertStringContainsString('autocomplete="one-time-code"', $html);
         $this->assertStringContainsString('focus({ preventScroll: true })', $html);
+        $this->assertStringContainsString('id="otp-resend-countdown"', $html);
+        $this->assertStringContainsString('id="otp-resend-button"', $html);
+        $this->assertStringContainsString('05:00', $html);
     }
 
     public function test_arabic_registration_validation_messages_are_localized(): void
@@ -1000,7 +1052,7 @@ class AuthFlowTest extends TestCase
             'phone' => $phone,
             'address' => $address,
             'description' => ucfirst($registrationType).' registration test',
-            'registration_document' => UploadedFile::fake()->create($registrationType.'-license.pdf', 250, 'application/pdf'),
+            'registration_document' => $this->fakePdf($registrationType.'-license.pdf', 250),
             'logo' => UploadedFile::fake()->image($registrationType.'-logo.png')->size(100),
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',

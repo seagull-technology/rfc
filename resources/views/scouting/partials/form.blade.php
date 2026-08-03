@@ -333,7 +333,7 @@
 </form>
 
 @push('scripts')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         const scoutGovernorateOptions = @json($governorateOptions->map(fn ($option) => ['value' => $option->code, 'label' => $option->displayName()])->values());
         const scoutLocationTypeOptions = @json($locationTypeOptions->map(fn ($option) => ['value' => $option->code, 'label' => $option->displayName()])->values());
         const scoutLocationTypesByGovernorate = @json($locationTypesByGovernorate);

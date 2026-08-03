@@ -7,7 +7,7 @@
         ->mapWithKeys(fn ($roleName) => [$roleName => __('app.roles.'.$roleName)]);
 @endphp
 
-<style>
+<style nonce="{{ $cspNonce ?? '' }}">
     .admin-role-picker-field .select2-container--default .select2-selection--multiple {
         min-height: 55px;
         display: flex;
@@ -36,7 +36,7 @@
     }
 </style>
 
-<script>
+<script nonce="{{ $cspNonce ?? '' }}">
     document.addEventListener('DOMContentLoaded', () => {
         const entitySelect = document.getElementById('entity_id');
         const roleSelect = document.getElementById('roles');

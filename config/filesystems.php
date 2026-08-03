@@ -33,7 +33,7 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            'serve' => filter_var(env('FILESYSTEM_LOCAL_SERVE', false), FILTER_VALIDATE_BOOL),
             'throw' => false,
             'report' => false,
         ],

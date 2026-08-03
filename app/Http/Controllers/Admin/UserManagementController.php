@@ -2,18 +2,19 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Controller;
 use App\Models\Application as FilmApplication;
 use App\Models\ApplicationAuthorityApproval;
-use App\Http\Controllers\Controller;
 use App\Models\Entity;
 use App\Models\ScoutingRequest;
 use App\Models\User;
 use App\Models\UserRoleAssignmentAudit;
 use App\Services\AuthorityApprovalNotificationService;
 use App\Services\RoleAssignmentService;
+use App\Support\PasswordPolicy;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -25,8 +26,7 @@ class UserManagementController extends Controller
     public function __construct(
         private readonly RoleAssignmentService $roleAssignmentService,
         private readonly AuthorityApprovalNotificationService $authorityApprovalNotificationService,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): View
     {
@@ -117,7 +117,7 @@ class UserManagementController extends Controller
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'national_id' => ['required', 'string', 'max:255', 'unique:users,national_id'],
             'phone' => ['required', 'string', 'max:255', 'unique:users,phone'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'password' => ['required', 'confirmed', PasswordPolicy::rule()],
             'entity_id' => ['required', 'exists:entities,id'],
             'roles' => ['required', 'array', 'min:1'],
             'roles.*' => ['nullable', 'string'],
@@ -334,7 +334,7 @@ class UserManagementController extends Controller
         $record = $this->findUser($user);
 
         $validated = $request->validate([
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'password' => ['required', 'confirmed', PasswordPolicy::rule()],
         ]);
 
         $record->forceFill([

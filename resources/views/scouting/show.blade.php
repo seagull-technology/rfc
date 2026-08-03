@@ -61,7 +61,7 @@
 @extends('layouts.portal-dashboard', ['title' => $title])
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .scouting-show-layout .request-actions-card {
             border: 1px solid rgba(0, 0, 0, 0.08);
         }

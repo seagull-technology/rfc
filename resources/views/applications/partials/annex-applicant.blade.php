@@ -98,7 +98,7 @@
 
 @once
     @push('styles')
-        <style>
+        <style nonce="{{ $cspNonce ?? '' }}">
             .applicant-annex-table-wrap {
                 overflow-x: auto;
             }

@@ -18,7 +18,7 @@
 @section('page_layout_class', 'approval-routing-simulator-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .approval-routing-simulator-layout {
             padding-top: 0;
         }

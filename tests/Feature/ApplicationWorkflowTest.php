@@ -733,7 +733,7 @@ class ApplicationWorkflowTest extends TestCase
                 'password' => 'AnyPassword@123',
             ])
             ->assertSessionHasErrors([
-                'identifier' => __('app.auth.account_activation_required'),
+                'identifier' => __('app.auth.invalid_credentials'),
             ]);
 
         $this
@@ -1887,7 +1887,7 @@ class ApplicationWorkflowTest extends TestCase
             [
                 'payload' => [
                     'ministry_interior_personal_details' => [[
-                        'current_full_name' => 'Partially Entered Visitor',
+                        'first_name' => 'Partially Entered Visitor',
                     ]],
                 ],
                 'errors' => [
@@ -2195,6 +2195,7 @@ class ApplicationWorkflowTest extends TestCase
     {
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
+        Storage::fake('local');
 
         [$user] = $this->createApplicantContext();
 
@@ -2225,8 +2226,12 @@ class ApplicationWorkflowTest extends TestCase
             'country_of_arrival' => 'Jordan',
             'country_of_residence' => 'Jordan',
             'residence_issue_date' => '2025-01-01',
-            'residence_expiry_date' => '2027-01-01',
+            'residence_expiry_date' => now()->addYear()->toDateString(),
             'jordan_residence_address' => 'Amman, Jordan',
+            'attachments' => [[
+                'document_type' => 'passport_copy',
+                'file' => UploadedFile::fake()->image('passport-one.jpg', 800, 600)->size(200),
+            ]],
             'signature' => 'Forged Signature',
             'confirmed' => '1',
         ];
@@ -2236,15 +2241,21 @@ class ApplicationWorkflowTest extends TestCase
             'current_full_name' => 'Second Visitor Full Name',
             'original_full_name' => 'Second Visitor Original Name',
             'passport_number' => 'P87654321',
+            'attachments' => [[
+                'document_type' => 'passport_copy',
+                'file' => UploadedFile::fake()->image('passport-two.jpg', 800, 600)->size(200),
+            ]],
             'signature' => 'Another Forged Signature',
         ]);
 
         $this
             ->actingAs($user)
             ->post(route('applications.store'), $this->applicationPayload([
+                'ministry_interior_personal_details_request' => ['type' => 'normal'],
                 'ministry_interior_personal_details' => [$details, $secondDetails],
             ]))
-            ->assertRedirect();
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
 
         $application = Application::query()->firstOrFail();
         $storedDetails = MinistryInteriorPersonalDetails::rows(
@@ -2329,16 +2340,23 @@ class ApplicationWorkflowTest extends TestCase
             'entry_method' => 'visa',
             'departure_document' => 'passport',
             'departure_method' => 'facilitation_letter',
-            'attachments' => [[
-                'document_type' => 'passport_copy',
-                'file' => UploadedFile::fake()->image('passport.jpg', 800, 600)->size(200),
-            ]],
+            'attachments' => [
+                [
+                    'document_type' => 'passport_copy',
+                    'file' => UploadedFile::fake()->image('passport.jpg', 800, 600)->size(200),
+                ],
+                [
+                    'document_type' => 'foreign_residence',
+                    'file' => UploadedFile::fake()->image('residence.jpg', 800, 600)->size(200),
+                ],
+            ],
             'confirmed' => '1',
         ];
 
         $this
             ->actingAs($user)
             ->post(route('applications.store'), $this->applicationPayload([
+                'ministry_interior_personal_details_request' => ['type' => 'normal'],
                 'ministry_interior_personal_details' => [$details],
             ]))
             ->assertRedirect()
@@ -2359,7 +2377,7 @@ class ApplicationWorkflowTest extends TestCase
             ->actingAs($user)
             ->get(route('applications.edit', $application))
             ->assertOk()
-            ->assertSee('data-ministry-residence-document-notice', false)
+            ->assertSee('data-ministry-residency-extra', false)
             ->assertSeeText(__('app.applications.ministry_interior_personal_details.residence_document_notice'));
 
         $this
@@ -2390,6 +2408,89 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSee('value="Nadia"', false)
             ->assertSee('value="Mahmoud"', false)
             ->assertSee('data-print-form="ministry_interior_personal_details"', false);
+    }
+
+    public function test_ministry_personal_details_enforces_all_conditional_visa_requirements(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+        Storage::fake('local');
+
+        [$user] = $this->createApplicantContext();
+
+        $details = [
+            'personal_number' => '123456789',
+            'nationality_category' => 'travel_document',
+            'travel_document_type' => 'foreign_travel_document',
+            'original_nationality' => 'palestinian',
+            'first_name' => 'Nadia',
+            'father_name' => 'Mahmoud',
+            'grandfather_name' => 'Hassan',
+            'family_name' => 'Ali',
+            'gender' => 'female',
+            'marital_status' => 'single',
+            'birth_place' => 'Cairo',
+            'birth_date' => '1992-05-11',
+            'mother_full_name' => 'Mona Hassan',
+            'mother_nationality' => 'egyptian',
+            'education_qualification' => 'Bachelor degree',
+            'country_of_arrival' => 'egyptian',
+            'country_of_residence' => 'jordanian',
+            'schengen_us_visa' => 'yes',
+            'jordan_governorate' => 'amman',
+            'jordan_residence_address' => 'Amman, Jordan',
+            'passport_type' => 'travel_document',
+            'passport_number' => 'TD1234567',
+            'passport_issue_place' => 'Cairo',
+            'passport_issue_date' => now()->subYear()->toDateString(),
+            'passport_expiry_date' => now()->addMonth()->toDateString(),
+            'confirmed' => '1',
+        ];
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'ministry_interior_personal_details_request' => ['type' => 'urgent'],
+                'ministry_interior_personal_details' => [$details],
+            ]))
+            ->assertSessionHasErrors([
+                'ministry_interior_personal_details.0.personal_number',
+                'ministry_interior_personal_details.0.passport_expiry_date',
+            ]);
+
+        $this->assertDatabaseCount('applications', 0);
+
+        $details['personal_number'] = '';
+        $details['passport_expiry_date'] = now()->addYear()->toDateString();
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'ministry_interior_personal_details_request' => ['type' => 'urgent'],
+                'ministry_interior_personal_details' => [$details],
+            ]))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $application = Application::query()->firstOrFail();
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.submit', $application))
+            ->assertSessionHasErrors([
+                'ministry_interior_personal_details_request.urgent_fee_accepted',
+                'ministry_interior_personal_details.0.original_first_name',
+                'ministry_interior_personal_details.0.original_father_name',
+                'ministry_interior_personal_details.0.original_grandfather_name',
+                'ministry_interior_personal_details.0.original_family_name',
+                'ministry_interior_personal_details.0.palestinian_passport_id',
+                'ministry_interior_personal_details.0.residence_expiry_date',
+                'ministry_interior_personal_details.0.schengen_us_visa_expiry_date',
+                'ministry_interior_personal_details.0.attachments',
+            ]);
+
+        $this->assertDatabaseCount('applications', 1);
+        $this->assertSame('draft', $application->fresh()->status);
     }
 
     public function test_application_stores_and_displays_structured_annex_forms(): void
@@ -2442,11 +2543,7 @@ class ApplicationWorkflowTest extends TestCase
             'international_liaison_mobile' => '+962799999999',
             'work_content_summary_synopsis' => $workContentSummary,
             'work_content_summary_confirmed' => '1',
-            'work_content_summary_attachment' => UploadedFile::fake()->create(
-                'english-work-content-summary.pdf',
-                320,
-                'application/pdf',
-            ),
+            'work_content_summary_attachment' => $this->fakePdf('english-work-content-summary.pdf', 320),
             'cast_crew' => [
                 ['name' => 'Jordanian Lead Test Actor', 'first_name' => 'Jordanian', 'second_name' => 'Lead', 'third_name' => 'Test', 'family_name' => 'Actor', 'role' => 'Actor', 'nationality' => 'jordanian', 'gender' => 'male', 'birth_date' => '1990-03-15', 'identity_number' => '1234567890', 'identity_verification_status' => $crewVerification['status'], 'identity_verification_source' => $crewVerification['source'], 'identity_verified_at' => $crewVerification['verified_at'], 'identity_verification_category' => 'jordanian', 'verification_token' => $crewVerification['proof'], 'passport_image' => UploadedFile::fake()->image('ignored-jordanian-passport.png', 800, 600)->size(200)],
                 ['name' => 'International Supporting Actor', 'role' => 'Supporting actor', 'nationality' => 'egyptian', 'gender' => 'female', 'birth_date' => '1992-07-21', 'identity_number' => 'P9876543', 'passport_image' => UploadedFile::fake()->image('international-actor-passport.png', 800, 600)->size(280)],
@@ -2497,7 +2594,7 @@ class ApplicationWorkflowTest extends TestCase
             'traveler_equipment_acknowledged' => '1',
             'shipping_equipment_acknowledged' => '1',
             'imported_equipment' => [
-                ['transport_group' => 'shipping', 'shipping_company_name' => 'Jordan Freight', 'invoice_number' => 'INV-7788', 'bill_of_lading_number' => '', 'arrival_date' => '2026-04-28', 'departure_date' => '', 'customs_center' => 'queen_alia_international_airport', 'attachment' => UploadedFile::fake()->create('jordan-freight-invoice.pdf', 240, 'application/pdf')],
+                ['transport_group' => 'shipping', 'shipping_company_name' => 'Jordan Freight', 'invoice_number' => 'INV-7788', 'bill_of_lading_number' => '', 'arrival_date' => '2026-04-28', 'departure_date' => '', 'customs_center' => 'queen_alia_international_airport', 'attachment' => $this->fakePdf('jordan-freight-invoice.pdf', 240)],
                 ['transport_group' => 'traveler', 'item' => 'Camera crane', 'serial_number' => 'CR-7788', 'flight_reference' => 'RJ102', 'traveler_name' => 'Equipment Handler', 'quantity' => 3, 'unit_value' => 9000, 'total_value' => 1, 'classification' => 'camera_equipment', 'shipping_method' => 'luggage', 'origin_country' => 'Germany', 'entry_point' => 'queen_alia_international_airport'],
             ],
             'airport_filming_airport_name' => 'Queen Alia International Airport',
@@ -3038,7 +3135,7 @@ class ApplicationWorkflowTest extends TestCase
         $this->actingAs($authorityUser)->post(route('authority.applications.approval.update', $application), [
             'status' => 'approved',
             'note' => 'Airport approval issued.',
-            'response_attachment' => UploadedFile::fake()->create('authority-book.pdf', 120, 'application/pdf'),
+            'response_attachment' => $this->fakePdf('authority-book.pdf', 120),
         ])->assertRedirect(route('authority.applications.show', $application));
 
         $this->assertDatabaseHas('application_authority_approvals', [
@@ -3134,7 +3231,7 @@ class ApplicationWorkflowTest extends TestCase
             'document_type' => 'work_content_summary',
             'title' => 'Work Content Summary Form',
             'note' => 'Latest signed version.',
-            'file' => UploadedFile::fake()->create('summary.pdf', 120, 'application/pdf'),
+            'file' => $this->fakePdf('summary.pdf', 120),
         ]);
 
         $uploadResponse->assertRedirect(route('applications.show', $application));
@@ -3153,7 +3250,7 @@ class ApplicationWorkflowTest extends TestCase
             'document_type' => 'airport_filming',
             'title' => 'Airport annex',
             'note' => 'Airport access details.',
-            'file' => UploadedFile::fake()->create('airport-annex.pdf', 80, 'application/pdf'),
+            'file' => $this->fakePdf('airport-annex.pdf', 80),
         ])->assertRedirect(route('applications.show', $application));
 
         $this->assertDatabaseHas('application_documents', [
@@ -3187,7 +3284,7 @@ class ApplicationWorkflowTest extends TestCase
         $messageResponse = $this->actingAs($admin)->post(route('admin.applications.correspondence.store', $application), [
             'subject' => 'Official RFC note',
             'message' => 'Please upload the revised signed form before we continue.',
-            'attachment' => UploadedFile::fake()->create('rfc-note.pdf', 60, 'application/pdf'),
+            'attachment' => $this->fakePdf('rfc-note.pdf', 60),
         ]);
 
         $messageResponse->assertRedirect(route('admin.applications.show', $application));
@@ -3409,7 +3506,7 @@ class ApplicationWorkflowTest extends TestCase
             'document_type' => 'work_content_summary',
             'title' => 'Revised Work Content Summary',
             'note' => 'Updated after RFC clarification.',
-            'file' => UploadedFile::fake()->create('revised-summary.pdf', 120, 'application/pdf'),
+            'file' => $this->fakePdf('revised-summary.pdf', 120),
         ]);
 
         $response->assertRedirect(route('applications.show', $application));
@@ -3619,7 +3716,7 @@ class ApplicationWorkflowTest extends TestCase
         $updateResponse = $this->actingAs($authorityUser)->post(route('authority.applications.approval.update', $application), [
             'status' => 'approved',
             'note' => 'Security approval granted.',
-            'response_attachment' => UploadedFile::fake()->create('security-approval-book.pdf', 80, 'application/pdf'),
+            'response_attachment' => $this->fakePdf('security-approval-book.pdf', 80),
         ]);
 
         $updateResponse->assertRedirect(route('authority.applications.show', $application));
@@ -3674,7 +3771,7 @@ class ApplicationWorkflowTest extends TestCase
             'recipient_type' => ApplicationCorrespondence::RECIPIENT_RFC,
             'subject' => 'RFC-only Authority Note',
             'message' => 'Security authority has approved the request.',
-            'attachment' => UploadedFile::fake()->create('rfc-authority-letter.pdf', 50, 'application/pdf'),
+            'attachment' => $this->fakePdf('rfc-authority-letter.pdf', 50),
         ]);
 
         $correspondenceResponse->assertRedirect(route('authority.applications.show', $application));
@@ -3699,7 +3796,7 @@ class ApplicationWorkflowTest extends TestCase
             'recipient_type' => ApplicationCorrespondence::RECIPIENT_APPLICANT,
             'subject' => 'Applicant-only Authority Note',
             'message' => 'Please review the attached authority instructions.',
-            'attachment' => UploadedFile::fake()->create('applicant-authority-letter.pdf', 50, 'application/pdf'),
+            'attachment' => $this->fakePdf('applicant-authority-letter.pdf', 50),
         ]);
 
         $applicantOnlyCorrespondenceResponse->assertSessionHasErrors('recipient_type');
@@ -3723,7 +3820,7 @@ class ApplicationWorkflowTest extends TestCase
             'recipient_type' => ApplicationCorrespondence::RECIPIENT_ALL,
             'subject' => 'Shared Authority Note',
             'message' => 'This authority message is addressed to the RFC and the applicant.',
-            'attachment' => UploadedFile::fake()->create('shared-authority-letter.pdf', 50, 'application/pdf'),
+            'attachment' => $this->fakePdf('shared-authority-letter.pdf', 50),
         ]);
 
         $sharedCorrespondenceResponse->assertRedirect(route('authority.applications.show', $application));
@@ -3887,7 +3984,7 @@ class ApplicationWorkflowTest extends TestCase
                     [
                         'section_key' => 'filming_locations',
                         'details' => 'Add the complete street address and filming dates.',
-                        'attachment' => UploadedFile::fake()->create('location-guidance.pdf', 40, 'application/pdf'),
+                        'attachment' => $this->fakePdf('location-guidance.pdf', 40),
                     ],
                     [
                         'section_key' => 'cast_crew',
@@ -5682,7 +5779,7 @@ class ApplicationWorkflowTest extends TestCase
             'decision' => 'approved',
             'note' => 'All approvals are complete and the permit is issued.',
             'permit_number' => 'RFC-PERMIT-2026-001',
-            'final_letter' => UploadedFile::fake()->create('final-letter.pdf', 90, 'application/pdf'),
+            'final_letter' => $this->fakePdf('final-letter.pdf', 90),
         ]);
 
         $finalizeResponse->assertRedirect(route('admin.applications.show', $application));
@@ -5796,7 +5893,7 @@ class ApplicationWorkflowTest extends TestCase
             'decision' => 'approved',
             'note' => 'Permit registered.',
             'permit_number' => 'RFC-PERMIT-2026-099',
-            'final_letter' => UploadedFile::fake()->create('registry-letter.pdf', 90, 'application/pdf'),
+            'final_letter' => $this->fakePdf('registry-letter.pdf', 90),
         ]);
 
         $response = $this->actingAs($admin)->get(route('admin.permits.export', [
@@ -5879,7 +5976,7 @@ class ApplicationWorkflowTest extends TestCase
             'decision' => 'approved',
             'note' => 'Permit registered.',
             'permit_number' => 'RFC-PERMIT-2026-010',
-            'final_letter' => UploadedFile::fake()->create('registry-letter.pdf', 90, 'application/pdf'),
+            'final_letter' => $this->fakePdf('registry-letter.pdf', 90),
         ]);
 
         $permit = Permit::query()->firstOrFail();

@@ -8,7 +8,7 @@
 @section('page_layout_class', 'company-employees-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .company-employees-layout {
             padding-top: 0 !important;
         }
@@ -307,7 +307,7 @@
 @endsection
 
 @push('scripts')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         document.querySelectorAll('[data-company-password-toggle]').forEach(function (toggle) {
             const passwordInput = toggle.closest('.company-password-control')?.querySelector('input');
             const icon = toggle.querySelector('i');

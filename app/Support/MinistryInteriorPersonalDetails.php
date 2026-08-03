@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 
 final class MinistryInteriorPersonalDetails
@@ -30,15 +31,30 @@ final class MinistryInteriorPersonalDetails
 
     public static function hasSubmittedData(array $row): bool
     {
+        $hasUploadedOrStoredAttachment = collect((array) ($row['attachments'] ?? []))
+            ->contains(function (mixed $attachment): bool {
+                if (! is_array($attachment) || filter_var($attachment['_remove'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                    return false;
+                }
+
+                return filled($attachment['id'] ?? null)
+                    || filled($attachment['path'] ?? null)
+                    || ($attachment['file'] ?? null) instanceof UploadedFile;
+            });
+
         $submitted = Arr::except($row, [
+            // Render-only values must not turn this optional form into a submitted record.
+            'current_full_name',
+            'attachments',
             'confirmed',
             'signature',
             'signed_at',
             'signed_by_user_id',
         ]);
 
-        return collect(Arr::dot($submitted))
-            ->contains(fn ($value): bool => filled($value));
+        return $hasUploadedOrStoredAttachment
+            || collect(Arr::dot($submitted))
+                ->contains(fn ($value): bool => filled($value));
     }
 
     public static function isConfirmed(array $row): bool
@@ -59,7 +75,7 @@ final class MinistryInteriorPersonalDetails
     {
         return collect(self::rows($value))
             ->map(fn (array $row): array => self::normalizeArray($row))
-            ->filter(fn (array $row): bool => self::hasSubmittedData($row) || self::isConfirmed($row))
+            ->filter(fn (array $row): bool => self::hasSubmittedData($row))
             ->values()
             ->all();
     }

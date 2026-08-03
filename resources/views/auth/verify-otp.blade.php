@@ -1,4 +1,9 @@
-@extends('layouts.auth', ['title' => __('app.auth.verify_title')])
+@extends('layouts.auth', ['title' => $pageTitle ?? __('app.auth.verify_title')])
+
+@php
+    $resendSeconds = max(0, (int) ($resendAvailableIn ?? 0));
+    $resendCountdown = sprintf('%02d:%02d', intdiv($resendSeconds, 60), $resendSeconds % 60);
+@endphp
 
 @section('content')
     <div class="wrapper">
@@ -7,21 +12,21 @@
                 <div class="justify-content-center align-items-center height-self-center row">
                     <div class="align-self-center col-lg-5 col-md-12">
                         <div class="sign-user_card auth-visual-card">
-                            <a href="{{ route('home') }}">
-                                <img class="img-fluid logo" src="{{ asset('images/logo.svg') }}" alt="#">
+                            <a class="auth-brand-logo-badge" href="{{ route('home') }}">
+                                <img class="img-fluid logo auth-brand-logo" src="{{ asset('images/rfc-logo-white.png') }}" alt="{{ config('app.name') }}">
                             </a>
                             <div class="sign-in-page-data">
                                 <div class="sign-in-from w-100 m-auto">
                                     @include('auth.partials.alerts')
 
-                                    <h3 class="mb-3 text-center">{{ __('app.auth.verify_heading') }}</h3>
-                                    <form class="mt-4" method="POST" action="{{ route('otp.store') }}" id="otp-form">
+                                    <h3 class="mb-3 text-center">{{ $heading ?? __('app.auth.verify_heading') }}</h3>
+                                    <form class="mt-4" method="POST" action="{{ $formAction ?? route('otp.store') }}" id="otp-form">
                                         @csrf
                                         <input type="hidden" name="code" id="otp-code" value="{{ old('code') }}">
 
                                         <div class="form-group mt-3 text-center">
                                             <label class="form-label mb-3">
-                                                {{ __('app.auth.verify_intro', ['phone' => $maskedPhone]) }}
+                                                {{ $intro ?? __('app.auth.verify_intro', ['phone' => $maskedPhone]) }}
                                             </label>
                                             @php
                                                 $oldOtpCode = preg_replace('/\D/', '', (string) old('code', ''));
@@ -51,26 +56,51 @@
                                         @endif
 
                                         <button type="submit" class="btn btn-danger w-100 custom-sign-btn mt-4">
-                                            {{ __('app.auth.verify_submit') }}
+                                            {{ $submitLabel ?? __('app.auth.verify_submit') }}
                                         </button>
                                     </form>
                                 </div>
                             </div>
                             <div class="mt-2">
-                                <div class="d-flex justify-content-center links">
-                                    {{ __('app.auth.no_account_question') }}
-                                    <a href="{{ route('register') }}" class="text-danger {{ app()->getLocale() === 'ar' ? 'me-2' : 'ms-2' }}">{{ __('app.auth.create_account') }}</a>
-                                </div>
+                                @if ($showRegistrationLink ?? true)
+                                    <div class="d-flex justify-content-center links">
+                                        {{ __('app.auth.no_account_question') }}
+                                        <a href="{{ route('register') }}" class="auth-secondary-link {{ app()->getLocale() === 'ar' ? 'me-2' : 'ms-2' }}">{{ __('app.auth.create_account') }}</a>
+                                    </div>
+                                @endif
 
-                                <div class="d-flex justify-content-center links">
-                                    <form method="POST" action="{{ route('otp.resend') }}">
+                                <div class="d-flex flex-column align-items-center justify-content-center links">
+                                    <form
+                                        method="POST"
+                                        action="{{ $resendAction ?? route('otp.resend') }}"
+                                        id="otp-resend-form"
+                                        data-resend-seconds="{{ $resendSeconds }}"
+                                    >
                                         @csrf
-                                        <button type="submit" class="btn btn-link f-link text-danger p-0">{{ __('app.auth.resend_code') }}</button>
+                                        <button
+                                            type="submit"
+                                            class="btn btn-link f-link auth-secondary-link p-0"
+                                            id="otp-resend-button"
+                                            @disabled($resendSeconds > 0)
+                                        >
+                                            <span id="otp-resend-label">{{ __('app.auth.resend_code') }}</span>
+                                        </button>
                                     </form>
+                                    <div
+                                        id="otp-resend-countdown"
+                                        class="auth-resend-countdown"
+                                        @if ($resendSeconds <= 0) hidden @endif
+                                    >
+                                        {{ __('app.auth.resend_available_in') }}
+                                        <span id="otp-resend-time" dir="ltr">{{ $resendCountdown }}</span>
+                                    </div>
+                                    @error('resend')
+                                        <div class="alert alert-danger py-2 mt-2 mb-0">{{ $message }}</div>
+                                    @enderror
                                 </div>
 
                                 <div class="d-flex justify-content-center links mt-2">
-                                    <a href="{{ route('login') }}" class="f-link text-danger">{{ __('app.auth.back_to_login') }}</a>
+                                    <a href="{{ route('login') }}" class="f-link auth-secondary-link">{{ __('app.auth.back_to_login') }}</a>
                                 </div>
                             </div>
                         </div>
@@ -82,7 +112,7 @@
 @endsection
 
 @push('scripts')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         document.addEventListener('DOMContentLoaded', function () {
             const inputs = Array.from(document.querySelectorAll('.otp-input'));
             const hiddenCode = document.getElementById('otp-code');
@@ -123,6 +153,54 @@
                     focusTarget.focus({ preventScroll: true });
                     focusTarget.select();
                 }, 0);
+            }
+
+            const resendForm = document.getElementById('otp-resend-form');
+            const resendButton = document.getElementById('otp-resend-button');
+            const resendLabel = document.getElementById('otp-resend-label');
+            const countdown = document.getElementById('otp-resend-countdown');
+            const countdownTime = document.getElementById('otp-resend-time');
+
+            if (resendForm && resendButton && countdown && countdownTime) {
+                const initialSeconds = Math.max(
+                    0,
+                    Number.parseInt(resendForm.dataset.resendSeconds || '0', 10) || 0
+                );
+                const availableAt = Date.now() + (initialSeconds * 1000);
+                let timerId = null;
+
+                const renderCountdown = function () {
+                    const seconds = Math.max(0, Math.ceil((availableAt - Date.now()) / 1000));
+                    const minutes = String(Math.floor(seconds / 60)).padStart(2, '0');
+                    const remainder = String(seconds % 60).padStart(2, '0');
+
+                    countdownTime.textContent = minutes + ':' + remainder;
+                    resendButton.disabled = seconds > 0;
+                    countdown.hidden = seconds <= 0;
+
+                    if (seconds <= 0 && timerId !== null) {
+                        window.clearInterval(timerId);
+                        timerId = null;
+                    }
+                };
+
+                renderCountdown();
+
+                if (initialSeconds > 0) {
+                    timerId = window.setInterval(renderCountdown, 250);
+                }
+
+                resendForm.addEventListener('submit', function () {
+                    if (resendButton.disabled) {
+                        return;
+                    }
+
+                    resendButton.disabled = true;
+
+                    if (resendLabel) {
+                        resendLabel.textContent = @json(__('app.auth.resending_code'));
+                    }
+                });
             }
         });
     </script>

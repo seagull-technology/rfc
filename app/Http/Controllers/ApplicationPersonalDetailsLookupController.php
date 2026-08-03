@@ -11,8 +11,8 @@ class ApplicationPersonalDetailsLookupController extends Controller
     public function __invoke(Request $request, IndividualPersonalInfoLookupService $service): JsonResponse
     {
         $validated = $request->validate([
-            'nationality_category' => ['required', 'string', 'in:jordanian,arab,foreign'],
-            'personal_number' => ['required', 'string', 'max:20'],
+            'nationality_category' => ['required', 'string', 'in:arab,foreign,travel_document'],
+            'personal_number' => ['required', 'string', 'digits:10'],
         ]);
 
         $result = $service->lookup(

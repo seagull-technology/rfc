@@ -6,6 +6,7 @@ use App\Models\Entity;
 use App\Models\User;
 use App\Models\UserRoleAssignmentAudit;
 use App\Services\RoleAssignmentService;
+use App\Support\PasswordPolicy;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -13,7 +14,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
 
 class CompanyEmployeeController extends Controller
@@ -71,7 +71,7 @@ class CompanyEmployeeController extends Controller
             'national_id' => ['nullable', 'string', 'max:255', 'unique:users,national_id'],
             'job_title' => ['nullable', 'string', 'max:255'],
             'role' => ['required', Rule::in(self::ASSIGNABLE_ROLES)],
-            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
+            'password' => ['required', 'confirmed', PasswordPolicy::rule()],
         ]);
 
         $member = DB::transaction(function () use ($actor, $entity, $validated): User {
@@ -118,7 +118,7 @@ class CompanyEmployeeController extends Controller
             'national_id' => ['nullable', 'string', 'max:255', Rule::unique('users', 'national_id')->ignore($member->getKey())],
             'job_title' => ['nullable', 'string', 'max:255'],
             'role' => ['required', Rule::in(self::ASSIGNABLE_ROLES)],
-            'password' => ['nullable', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
+            'password' => ['nullable', 'confirmed', PasswordPolicy::rule()],
         ]);
 
         DB::transaction(function () use ($actor, $entity, $member, $validated): void {

@@ -19,7 +19,22 @@ Before running the deployment:
    ASSET_URL=https://filmjordan.jo
    APP_TIMEZONE=Asia/Amman
    TRUSTED_PROXIES=
+   TRUSTED_HOSTS=filmjordan.jo
+   TRUSTED_HOSTS_ENFORCE=true
+   SECURITY_HEADERS_ENABLED=true
+   SECURITY_CSP_REPORT_ONLY=false
+   SECURITY_HSTS_ENABLED=true
+   SECURITY_HSTS_MAX_AGE=31536000
+   SECURITY_PROFILE_URL_ALLOWED_HOSTS=imdb.com,linkedin.com,filmfreeway.com,vimeo.com,youtube.com
+   SECURITY_WEBSITE_URL_ALLOWED_HOSTS=filmjordan.jo
+   SECURITY_OUTBOUND_HTTP_ALLOWED_HOSTS=api-gateway.stg.gsb.gov.jo,bulk-sms.gov.jo,signflow.sanad.gov.jo
    SESSION_SECURE_COOKIE=true
+   SESSION_ENCRYPT=true
+   SESSION_HTTP_ONLY=true
+   SESSION_SAME_SITE=lax
+   SESSION_DOMAIN=null
+   OTP_DEBUG_FALLBACK=false
+   FILESYSTEM_LOCAL_SERVE=false
    GSB_ENABLED=true
    GSB_ENVIRONMENT=stg
    GSB_BASE_URL=https://api-gateway.stg.gsb.gov.jo:9443
@@ -69,7 +84,16 @@ Before running the deployment:
 5. Confirm APP_URL, ASSET_URL, and SANAD_REDIRECT_URI use the final HTTPS public
    host. Leave TRUSTED_PROXIES empty for direct IIS/NAT traffic. If IT confirms
    that a reverse proxy terminates HTTPS before IIS, set its exact internal IP
-   or CIDR instead.
+   or CIDR instead. Confirm the proxy strips the generic Forwarded header and
+   emits only filmjordan.jo in any X-Forwarded-Host header; IIS and Laravel both
+   reject other forwarded hosts.
+
+   Review SECURITY_PROFILE_URL_ALLOWED_HOSTS and
+   SECURITY_WEBSITE_URL_ALLOWED_HOSTS with the RFC business owner. Add only
+   domains that users genuinely need; do not use wildcard or generic CDN hosts.
+   Keep SECURITY_OUTBOUND_HTTP_ALLOWED_HOSTS limited to the government API,
+   SMS, and SANAD hosts approved by MODEE. HTTP redirects are disabled by the
+   application clients, so any provider endpoint change must be reviewed here.
 
    The IIS site needs an HTTPS binding with a certificate that includes its
    private key. A .crt file alone is not sufficient unless the matching CSR and
@@ -81,7 +105,25 @@ Before running the deployment:
 
    HasPrivateKey must be True before creating the IIS HTTPS binding.
 6. Confirm C: has enough free space for the new release and one full application backup.
-7. Run PowerShell as Administrator.
+7. Confirm C:\php\php.ini contains expose_php=Off, display_errors=Off, and
+   log_errors=On. Verify the effective PHP configuration with:
+
+     C:\php\php.exe -r "echo ini_get('expose_php') ? 'FAIL' : 'OK';"
+
+   It must print OK. The deployment script will stop before extracting the
+   release if PHP version disclosure is still enabled.
+8. Run PowerShell as Administrator.
+
+The release must be built with production dependencies only:
+
+  composer install --no-dev --classmap-authoritative
+
+The deployment script runs `php artisan security:production-check` before any
+database migration. It will reject debug mode, OTP debug fallback, insecure or
+parent-domain cookies, HTTP application URLs, Laravel Boost, the browser logging
+endpoint, direct private-filesystem serving, and missing authentication
+rate-limit middleware. It then writes a versioned dependency SBOM and control
+manifest under the private local disk at storage\app\private\security-evidence.
 
 Deployment command example:
 

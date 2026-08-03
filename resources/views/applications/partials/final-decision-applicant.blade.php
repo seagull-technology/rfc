@@ -22,7 +22,7 @@
                 @if ($application->final_letter_path)
                     <a class="btn btn-outline-primary" href="{{ route('applications.final-letter.download', $application) }}">{{ __('app.final_decision.download_letter') }}</a>
                 @endif
-                <a class="btn btn-outline-secondary" href="{{ route('applications.final-letter.print', $application) }}" target="_blank">{{ __('app.final_decision.print_letter') }}</a>
+                <a class="btn btn-outline-secondary" href="{{ route('applications.final-letter.print', $application) }}" target="_blank" rel="noopener">{{ __('app.final_decision.print_letter') }}</a>
             </div>
         @else
             <div class="text-muted">{{ __('app.final_decision.pending_message') }}</div>

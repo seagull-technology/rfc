@@ -1,4 +1,4 @@
-<style>
+<style nonce="{{ $cspNonce ?? '' }}">
     html,
     body {
         max-width: 100%;

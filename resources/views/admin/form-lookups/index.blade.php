@@ -4,7 +4,7 @@
 ])
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .form-lookup-table {
             min-width: 1560px;
         }
@@ -247,7 +247,7 @@
 @endsection
 
 @push('scripts')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         document.addEventListener('DOMContentLoaded', () => {
             const typeSelect = document.getElementById('new-type');
             const supportFields = document.querySelector('[data-support-requirement-fields]');

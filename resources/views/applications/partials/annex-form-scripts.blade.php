@@ -30,7 +30,7 @@
                 $maxCrewBirthDate = $maxCrewBirthDate ?? now()->subDay()->toDateString();
                 $minimumFilmingLocationStartDate = $minimumFilmingLocationStartDate ?? \App\Support\JordanBusinessDays::today()->toDateString();
 	        @endphp
-	        <script>
+	        <script nonce="{{ $cspNonce ?? '' }}">
 		            const applicationNationalityOptionsHtml = @js($applicationNationalityOptionsHtml);
 		            const applicationGovernorateOptionsHtml = @js($applicationGovernorateOptionsHtml);
 		            const applicationGenderOptionsHtml = @js($applicationGenderOptionsHtml);

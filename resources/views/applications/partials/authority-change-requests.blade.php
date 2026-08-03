@@ -75,7 +75,7 @@
 
     @once
         @push('styles')
-            <style>
+            <style nonce="{{ $cspNonce ?? '' }}">
                 .authority-change-request-summary {
                     background: #fff8e6;
                     border: 1px solid #e8c675;

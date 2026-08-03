@@ -51,7 +51,7 @@ class ProfileManagementTest extends TestCase
                 'email' => 'studio-contact@example.test',
                 'phone' => '0792223344',
                 'address' => 'Jabal Amman',
-                'website_url' => 'https://example.test/studio',
+                'website_url' => 'https://example.com/studio',
                 'description' => 'Updated production profile.',
                 'logo' => $logo,
             ])
@@ -62,7 +62,7 @@ class ProfileManagementTest extends TestCase
         $this->assertSame('studio-contact@example.test', $entity->email);
         $this->assertSame('962792223344', $entity->phone);
         $this->assertSame('Jabal Amman', data_get($entity->metadata, 'address'));
-        $this->assertSame('https://example.test/studio', data_get($entity->metadata, 'website_url'));
+        $this->assertSame('https://example.com/studio', data_get($entity->metadata, 'website_url'));
         $this->assertSame('Updated production profile.', data_get($entity->metadata, 'description'));
         $this->assertSame('profile-logo.png', data_get($entity->metadata, 'logo_name'));
         Storage::disk('local')->assertExists(data_get($entity->metadata, 'logo_path'));

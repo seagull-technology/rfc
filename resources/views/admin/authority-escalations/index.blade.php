@@ -6,7 +6,7 @@
 @extends('layouts.admin-dashboard', ['title' => $title])
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .authority-escalations-layout {
             padding-top: 0;
         }
@@ -172,7 +172,7 @@
 @endsection
 
 @push('scripts')
-    <script>
+    <script nonce="{{ $cspNonce ?? '' }}">
         document.addEventListener('DOMContentLoaded', function () {
             if (window.jQuery && typeof window.jQuery.fn.select2 === 'function') {
                 window.jQuery('.select2').select2({

@@ -64,7 +64,7 @@
 @section('page_layout_class', 'approval-routing-index-layout')
 
 @push('styles')
-    <style>
+    <style nonce="{{ $cspNonce ?? '' }}">
         .approval-routing-index-layout {
             padding-top: 0;
         }
