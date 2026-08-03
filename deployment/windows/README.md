@@ -191,10 +191,12 @@ ASSET_URL=https://filmjordan.jo
 TRUSTED_PROXIES=
 SECURITY_PROFILE_URL_ALLOWED_HOSTS=imdb.com,linkedin.com,filmfreeway.com,vimeo.com,youtube.com
 SECURITY_WEBSITE_URL_ALLOWED_HOSTS=filmjordan.jo
-SECURITY_OUTBOUND_HTTP_ALLOWED_HOSTS=api-gateway.stg.gsb.gov.jo,bulk-sms.gov.jo,signflow.sanad.gov.jo,tawqi3i-signflow.sanad.gov.jo
+SECURITY_OUTBOUND_HTTP_ALLOWED_HOSTS=api-gateway.stg.gsb.gov.jo,bulk-sms.gov.jo,signflow.sanad.gov.jo
 SESSION_SECURE_COOKIE=true
 SESSION_DOMAIN=null
+SANAD_SIGNFLOW_BASE=https://signflow.sanad.gov.jo
 SANAD_REDIRECT_URI=https://filmjordan.jo/ar/sign-in/sanad/callback
+SANAD_CULTURE=ar
 ```
 
 Leave `TRUSTED_PROXIES` empty for direct IIS/NAT traffic. If IT confirms that
@@ -208,9 +210,10 @@ the final public host before enabling the proxy.
 The two `SECURITY_*_ALLOWED_HOSTS` values are explicit URL-domain allowlists.
 Review them with the RFC business owner and add only required profile or company
 domains; subdomains of an approved hostname are accepted automatically.
-Outbound government HTTP clients use the separate
-`SECURITY_OUTBOUND_HTTP_ALLOWED_HOSTS` list and do not follow redirects. Coordinate
-changes to that list with MODEE and the server egress/firewall policy.
+Outbound government HTTP clients and the validated SANAD browser redirect target
+use the separate `SECURITY_OUTBOUND_HTTP_ALLOWED_HOSTS` list. Server-side HTTP
+clients do not follow redirects. Coordinate changes to that list with MODEE and
+the server egress/firewall policy.
 
 Each deployment also runs `php artisan security:evidence`. The resulting
 versioned JSON manifest is stored privately under

@@ -117,6 +117,10 @@ class VerifyProductionSecurity extends Command
                 $destinations['GSB service '.$service] = (string) ($serviceConfig['base_url']
                     ?? config('services.gsb.base_url'));
             }
+
+            if (config('services.gsb.services.signflow_v2.enabled')) {
+                $destinations['SANAD_SIGNFLOW_BASE'] = (string) config('services.sanad.signflow_base');
+            }
         }
 
         if (config('services.gov_company_registry.enabled')) {

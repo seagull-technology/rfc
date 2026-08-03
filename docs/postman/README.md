@@ -34,7 +34,7 @@ Token and signing requests use these local secret values only when needed:
 - `sanad_refresh_token`
 - `sanad_hash`
 
-The supplied SignFlow contracts do not define the browser authorization URL. Obtain it from MODEE and have the RFC callback URL registered before configuring `SANAD_AUTHORIZATION_URL` in Laravel. Until then, the application's SANAD login control remains disabled, while the status diagnostic and direct API tests remain available.
+The V3.3.1 integration guide defines the production browser authorization route as `https://signflow.sanad.gov.jo/signflow/v2/auth`. RFC constructs this client-side redirect from `SANAD_SIGNFLOW_BASE`; MODEE must register the exact `SANAD_REDIRECT_URI` before browser login is enabled. Token and user-information calls continue through GSB.
 
 ## Security
 

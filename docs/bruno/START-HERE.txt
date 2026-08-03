@@ -26,8 +26,8 @@ contains a specific establishment.
 8. Configure authorization codes, tokens, PKCE values, and hashes only for
    the individual SANAD request being tested. Never save real values in Git.
 
-The SignFlow contracts supplied by MODEE do not publish the SANAD browser
-authorization URL. Obtain that URL and register the RFC callback URL before
-enabling the application's Login with SANAD button.
+The V3.3.1 guide publishes the SANAD browser authorization route as
+{SignFlow-BaseURL}/signflow/v2/auth. Configure SANAD_SIGNFLOW_BASE and have
+MODEE register the exact RFC callback URL before enabling browser login.
 
 Never place real credentials directly in request files or screenshots.

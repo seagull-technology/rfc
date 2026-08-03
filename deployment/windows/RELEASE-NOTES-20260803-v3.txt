@@ -1,0 +1,49 @@
+RFC e-Permit Sanad client-side authorization correction 20260803-v3
+=================================================================
+
+This release supersedes 20260803-v2 for Sanad authentication.
+
+Changes
+-------
+
+- Removes the server-side OpenID discovery request to
+  signflow.sanad.gov.jo. The RFC server no longer needs public HTTPS access to
+  the SignFlow browser host.
+- Redirects the user's browser directly to the production endpoint documented
+  in MoDEE's Identity Verification and Remote Signing Integration Guide v3.3.1:
+
+    https://signflow.sanad.gov.jo/signflow/v2/auth
+
+- Sends the documented authorization parameters: client_id, redirect_uri,
+  state, challenge, and culture.
+- Keeps PKCE state, verifier, expiry, and callback validation protections.
+- Handles SignFlow's documented errorCode and login_attempts callback values.
+- Retrieves the authenticated National ID from the GSB /info/user response's
+  username field instead of expecting it in the token introspection response.
+- Separates SignFlow portal credentials from GSB transport credentials:
+  SANAD_CLIENT_ID and SANAD_CLIENT_SECRET are used in SignFlow request bodies;
+  GSB_CLIENT_ID and GSB_CLIENT_SECRET are used in X-IBM headers.
+- Retains explicit allowlist validation for the browser redirect destination.
+
+Server environment
+------------------
+
+Keep the existing real credentials and callback values. Add these explicit
+values if they are not already present:
+
+  SANAD_SIGNFLOW_BASE=https://signflow.sanad.gov.jo
+  SANAD_CULTURE=ar
+  SANAD_REDIRECT_URI=https://filmjordan.jo/ar/sign-in/sanad/callback
+
+SANAD_SCOPE is no longer used and may be removed. Do not add
+SANAD_AUTHORIZATION_URL.
+
+The deployment script preserves the real server .env and uploaded storage.
+No database migration is introduced by this release.
+
+Verification
+------------
+
+- Sanad, security, and integration regression suite: 41 tests passed with
+  239 assertions.
+- PHP syntax, formatting, and diff validation passed.

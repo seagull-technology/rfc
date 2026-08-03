@@ -53,7 +53,7 @@ return [
         'allowed_ports' => [443, 9443],
         'allowed_hosts' => $parseHostList((string) env(
             'SECURITY_OUTBOUND_HTTP_ALLOWED_HOSTS',
-            'api-gateway.stg.gsb.gov.jo,bulk-sms.gov.jo,signflow.sanad.gov.jo,tawqi3i-signflow.sanad.gov.jo'.$localOutboundUrlHosts,
+            'api-gateway.stg.gsb.gov.jo,bulk-sms.gov.jo,signflow.sanad.gov.jo'.$localOutboundUrlHosts,
         )),
     ],
 

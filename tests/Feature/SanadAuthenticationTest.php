@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Mcamara\LaravelLocalization\LaravelLocalization;
 use Tests\TestCase;
@@ -22,7 +21,6 @@ class SanadAuthenticationTest extends TestCase
         config()->set('security.outbound_http.allowed_hosts', [
             'api-gateway.stg.gsb.gov.jo',
             'signflow.sanad.gov.jo',
-            'tawqi3i-signflow.sanad.gov.jo',
         ]);
         config()->set('services.gsb.enabled', true);
 
@@ -33,24 +31,20 @@ class SanadAuthenticationTest extends TestCase
             config()->set("services.gsb.services.{$service}.method", 'POST');
             config()->set("services.gsb.services.{$service}.send_modee_headers", false);
             config()->set("services.gsb.services.{$service}.send_ibm_headers", true);
-            config()->set("services.gsb.services.{$service}.client_id", 'sanad-client');
-            config()->set("services.gsb.services.{$service}.client_secret", 'sanad-secret');
+            config()->set("services.gsb.services.{$service}.client_id", 'gsb-client');
+            config()->set("services.gsb.services.{$service}.client_secret", 'gsb-secret');
         }
 
         config()->set('services.sanad.client_id', 'sanad-client');
         config()->set('services.sanad.client_secret', 'sanad-secret');
+        config()->set('services.sanad.signflow_base', 'https://signflow.sanad.gov.jo');
         config()->set('services.sanad.redirect_uri', 'https://rfc.example/ar/sign-in/sanad/callback');
-        config()->set('services.sanad.scope', 'openid');
+        config()->set('services.sanad.culture', 'ar');
     }
 
-    public function test_sanad_login_discovers_provider_authorization_endpoint_and_uses_state_and_s256_pkce(): void
+    public function test_sanad_login_redirects_the_browser_directly_with_signflow_pkce_parameters(): void
     {
-        Cache::forget('sanad.openid-configuration');
-        Http::fake([
-            'https://signflow.sanad.gov.jo/.well-known/openid-configuration' => Http::response([
-                'authorization_endpoint' => 'https://tawqi3i-signflow.sanad.gov.jo/signflow/v2/auth',
-            ]),
-        ]);
+        Http::fake();
 
         $response = $this->get(route('sanad.redirect'));
 
@@ -68,17 +62,20 @@ class SanadAuthenticationTest extends TestCase
         ), '=');
 
         $this->assertSame('https', $parts['scheme'] ?? null);
-        $this->assertSame('tawqi3i-signflow.sanad.gov.jo', $parts['host'] ?? null);
+        $this->assertSame('signflow.sanad.gov.jo', $parts['host'] ?? null);
         $this->assertSame('/signflow/v2/auth', $parts['path'] ?? null);
-        $this->assertSame('code', $query['response_type'] ?? null);
         $this->assertSame('sanad-client', $query['client_id'] ?? null);
         $this->assertSame('https://rfc.example/ar/sign-in/sanad/callback', $query['redirect_uri'] ?? null);
-        $this->assertSame('openid', $query['scope'] ?? null);
-        $this->assertSame('S256', $query['code_challenge_method'] ?? null);
-        $this->assertSame($expectedChallenge, $query['code_challenge'] ?? null);
+        $this->assertSame($expectedChallenge, $query['challenge'] ?? null);
+        $this->assertSame('ar', $query['culture'] ?? null);
         $this->assertSame(session('sanad_oauth_state'), $query['state'] ?? null);
+        $this->assertArrayNotHasKey('response_type', $query);
+        $this->assertArrayNotHasKey('scope', $query);
+        $this->assertArrayNotHasKey('code_challenge', $query);
+        $this->assertArrayNotHasKey('code_challenge_method', $query);
         $this->assertGreaterThanOrEqual(43, strlen($verifier));
         $this->assertNotEmpty(session('sanad_oauth_started_at'));
+        Http::assertNothingSent();
     }
 
     public function test_sanad_login_is_unavailable_without_the_registered_redirect_url(): void
@@ -92,20 +89,17 @@ class SanadAuthenticationTest extends TestCase
             ->assertSessionHasErrors('sanad');
     }
 
-    public function test_sanad_login_rejects_an_unapproved_discovered_authorization_endpoint(): void
+    public function test_sanad_login_rejects_an_unapproved_signflow_base_url(): void
     {
-        Cache::forget('sanad.openid-configuration');
-        Http::fake([
-            'https://signflow.sanad.gov.jo/.well-known/openid-configuration' => Http::response([
-                'authorization_endpoint' => 'https://attacker.example/authorize',
-            ]),
-        ]);
+        config()->set('services.sanad.signflow_base', 'https://attacker.example');
+        Http::fake();
 
         $response = $this->from(route('login'))->get(route('sanad.redirect'));
 
         $response
             ->assertRedirect(route('login'))
             ->assertSessionHasErrors('sanad');
+        Http::assertNothingSent();
     }
 
     public function test_sanad_callback_authenticates_an_existing_user_by_national_id(): void
@@ -119,8 +113,8 @@ class SanadAuthenticationTest extends TestCase
 
         Http::fake([
             '*/signflow/v2/token' => Http::response(['access_token' => 'sanad-access-token']),
-            '*/signflow/v2/introspect' => Http::response(['nationalId' => '9876543210']),
-            '*/signflow/v2/logout' => Http::response(['nationalId' => '9876543210']),
+            '*/signflow/v2/info/user' => Http::response(['username' => '9876543210']),
+            '*/signflow/v2/logout' => Http::response([]),
         ]);
 
         $response = $this
@@ -143,8 +137,8 @@ class SanadAuthenticationTest extends TestCase
                 return false;
             }
 
-            return $request->hasHeader('X-IBM-Client-Id', 'sanad-client')
-                && $request->hasHeader('X-IBM-Client-Secret', 'sanad-secret')
+            return $request->hasHeader('X-IBM-Client-Id', 'gsb-client')
+                && $request->hasHeader('X-IBM-Client-Secret', 'gsb-secret')
                 && $request->hasHeader('Accept', 'text/plain')
                 && ! $request->hasHeader('X-MODEE-Client-Id')
                 && $request['client_id'] === 'sanad-client'
@@ -154,10 +148,11 @@ class SanadAuthenticationTest extends TestCase
                 && $request['redirect_uri'] === 'https://rfc.example/ar/sign-in/sanad/callback';
         });
 
-        Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/signflow/v2/introspect')
+        Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/signflow/v2/info/user')
             && $request['access_token'] === 'sanad-access-token');
         Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/signflow/v2/logout')
             && $request['access_token'] === 'sanad-access-token');
+        Http::assertNotSent(fn ($request): bool => str_ends_with($request->url(), '/signflow/v2/introspect'));
     }
 
     public function test_sanad_callback_rejects_an_invalid_state_without_calling_signflow(): void
@@ -182,12 +177,34 @@ class SanadAuthenticationTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_sanad_callback_handles_the_documented_error_code_without_calling_gsb(): void
+    {
+        Http::fake();
+
+        $response = $this
+            ->withSession([
+                'sanad_oauth_state' => 'expected-state',
+                'sanad_pkce_verifier' => 'expected-pkce-verifier',
+                'sanad_oauth_started_at' => now()->timestamp,
+            ])
+            ->get(route('sanad.callback', [
+                'errorCode' => 'incorrect_login_credentials',
+                'login_attempts' => 3,
+            ]));
+
+        $response
+            ->assertRedirect(route('login'))
+            ->assertSessionHasErrors('sanad');
+        $this->assertGuest();
+        Http::assertNothingSent();
+    }
+
     public function test_sanad_callback_does_not_create_an_unknown_user(): void
     {
         Http::fake([
             '*/signflow/v2/token' => Http::response(['access_token' => 'sanad-access-token']),
-            '*/signflow/v2/introspect' => Http::response(['nationalId' => '1234567890']),
-            '*/signflow/v2/logout' => Http::response(['nationalId' => '1234567890']),
+            '*/signflow/v2/info/user' => Http::response(['username' => '1234567890']),
+            '*/signflow/v2/logout' => Http::response([]),
         ]);
 
         $response = $this

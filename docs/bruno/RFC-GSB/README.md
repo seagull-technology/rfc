@@ -34,7 +34,7 @@ The endpoint URL is fixed in the request, so an empty environment cannot produce
 Both `SignFlow.v2` and `SignFlow.v2.Open` must be subscribed for the RFC application. Configure the SANAD product credentials separately, even when the provider currently issued the same values as the general GSB credentials.
 
 1. Start with **SANAD > User Status**. It needs only `test_national_no` and confirms product subscription, network access, TLS, and IBM credentials.
-2. The authorization-code request can be tested only after MODEE provides and registers the SANAD browser authorization URL and RFC callback URL.
+2. Browser authorization can be tested after MODEE registers the RFC callback URL. RFC redirects the browser to `{SANAD_SIGNFLOW_BASE}/signflow/v2/auth`.
 3. For token operations, configure only the values required by that request:
    - `sanad_authorization_code`
    - `sanad_pkce_verifier`
@@ -44,7 +44,7 @@ Both `SignFlow.v2` and `SignFlow.v2.Open` must be subscribed for the RFC applica
    - `sanad_hash`
 4. Authorization codes and access tokens are short lived. Never reuse or share them in screenshots.
 
-The supplied OpenAPI contracts do not contain the browser authorization endpoint. The application therefore keeps the SANAD login control disabled until `SANAD_AUTHORIZATION_URL` is explicitly configured. It does not guess this URL.
+The V3.3.1 integration guide documents the browser authorization route as `{SignFlow-BaseURL}/signflow/v2/auth`. Configure `SANAD_SIGNFLOW_BASE` and the registered `SANAD_REDIRECT_URI`; do not add a separate authorization-URL variable.
 
 ## Security
 

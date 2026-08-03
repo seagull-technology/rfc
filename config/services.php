@@ -104,8 +104,8 @@ return [
                 'send_modee_headers' => false,
                 'send_ibm_headers' => true,
                 'accept' => 'text/plain',
-                'client_id' => env('SANAD_CLIENT_ID', env('GSB_CLIENT_ID')),
-                'client_secret' => env('SANAD_CLIENT_SECRET', env('GSB_CLIENT_SECRET')),
+                'client_id' => env('GSB_CLIENT_ID'),
+                'client_secret' => env('GSB_CLIENT_SECRET'),
             ],
             'signflow_v2_open' => [
                 'enabled' => filter_var(env('GSB_SIGNFLOW_V2_OPEN_ENABLED', env('GSB_ENABLED', false)), FILTER_VALIDATE_BOOL),
@@ -115,17 +115,18 @@ return [
                 'send_modee_headers' => false,
                 'send_ibm_headers' => true,
                 'accept' => 'text/plain',
-                'client_id' => env('SANAD_CLIENT_ID', env('GSB_CLIENT_ID')),
-                'client_secret' => env('SANAD_CLIENT_SECRET', env('GSB_CLIENT_SECRET')),
+                'client_id' => env('GSB_CLIENT_ID'),
+                'client_secret' => env('GSB_CLIENT_SECRET'),
             ],
         ],
     ],
 
     'sanad' => [
+        'signflow_base' => env('SANAD_SIGNFLOW_BASE', 'https://signflow.sanad.gov.jo'),
         'client_id' => env('SANAD_CLIENT_ID', env('GSB_CLIENT_ID')),
         'client_secret' => env('SANAD_CLIENT_SECRET', env('GSB_CLIENT_SECRET')),
         'redirect_uri' => env('SANAD_REDIRECT_URI', ''),
-        'scope' => env('SANAD_SCOPE', 'openid'),
+        'culture' => env('SANAD_CULTURE', 'ar'),
     ],
 
     'otp_debug_fallback' => filter_var(env('OTP_DEBUG_FALLBACK', false), FILTER_VALIDATE_BOOL),

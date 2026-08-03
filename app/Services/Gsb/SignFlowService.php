@@ -3,17 +3,10 @@
 namespace App\Services\Gsb;
 
 use App\Support\ApprovedOutboundUrl;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
-use Throwable;
 
 class SignFlowService
 {
     private const SERVICE = 'signflow_v2';
-
-    private const DISCOVERY_CACHE_KEY = 'sanad.openid-configuration';
-
-    private const DISCOVERY_URL = 'https://signflow.sanad.gov.jo/.well-known/openid-configuration';
 
     public function __construct(
         private readonly GsbClient $client,
@@ -32,34 +25,14 @@ class SignFlowService
         return $this->isRunnable()
             && filled($this->clientId())
             && filled($this->clientSecret())
-            && filled($this->redirectUri(''));
+            && filled($this->redirectUri(''))
+            && $this->authorizationUrl() !== null;
     }
 
     public function authorizationUrl(): ?string
     {
-        $metadata = Cache::remember(
-            self::DISCOVERY_CACHE_KEY,
-            now()->addHours(6),
-            function (): ?array {
-                try {
-                    $response = Http::acceptJson()
-                        ->connectTimeout(5)
-                        ->timeout(10)
-                        ->withOptions(['allow_redirects' => false])
-                        ->get(self::DISCOVERY_URL);
-                } catch (Throwable) {
-                    return null;
-                }
-
-                return $response->successful() && is_array($response->json())
-                    ? $response->json()
-                    : null;
-            },
-        );
-
-        $authorizationUrl = is_array($metadata)
-            ? trim((string) ($metadata['authorization_endpoint'] ?? ''))
-            : '';
+        $baseUrl = rtrim(trim((string) config('services.sanad.signflow_base')), '/');
+        $authorizationUrl = $baseUrl === '' ? '' : $baseUrl.'/signflow/v2/auth';
 
         return $authorizationUrl !== '' && $this->approvedOutboundUrl->isAllowed($authorizationUrl)
             ? $authorizationUrl
@@ -81,9 +54,11 @@ class SignFlowService
         return trim((string) config('services.sanad.redirect_uri')) ?: $fallback;
     }
 
-    public function scope(): string
+    public function culture(): string
     {
-        return trim((string) config('services.sanad.scope', 'openid'));
+        $culture = strtolower(trim((string) config('services.sanad.culture', 'ar')));
+
+        return in_array($culture, ['ar', 'en'], true) ? $culture : 'ar';
     }
 
     /** @return array<string, mixed> */

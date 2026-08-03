@@ -44,13 +44,11 @@ class SanadLoginController extends Controller
         ]);
 
         $query = http_build_query([
-            'response_type' => 'code',
             'client_id' => $signFlow->clientId(),
             'redirect_uri' => $redirectUri,
-            'scope' => $signFlow->scope(),
             'state' => $state,
-            'code_challenge' => $challenge,
-            'code_challenge_method' => 'S256',
+            'challenge' => $challenge,
+            'culture' => $signFlow->culture(),
         ], '', '&', PHP_QUERY_RFC3986);
 
         $separator = str_contains($authorizationUrl, '?') ? '&' : '?';
@@ -68,8 +66,17 @@ class SanadLoginController extends Controller
         $startedAt = (int) $request->session()->pull('sanad_oauth_started_at', 0);
         $receivedState = (string) $request->query('state', '');
 
-        if ($request->filled('error')) {
-            return $this->loginError('sanad_cancelled');
+        $errorCode = trim((string) ($request->query('errorCode') ?: $request->query('error', '')));
+
+        if ($errorCode !== '') {
+            Log::notice('SANAD authorization returned an error.', [
+                'error_code' => Str::limit($errorCode, 100, ''),
+                'login_attempts' => $request->integer('login_attempts'),
+            ]);
+
+            return $this->loginError(
+                $errorCode === 'access_denied' ? 'sanad_cancelled' : 'sanad_verification_failed',
+            );
         }
 
         if ($expectedState === ''
@@ -103,11 +110,11 @@ class SanadLoginController extends Controller
         }
 
         try {
-            $identityResult = $signFlowOpen->introspect($accessToken);
+            $identityResult = $signFlowOpen->userInfo($accessToken);
             $nationalId = $signFlowOpen->nationalId($identityResult);
 
             if (! ($identityResult['ok'] ?? false) || $nationalId === null) {
-                Log::warning('SANAD identity introspection failed.', [
+                Log::warning('SANAD user information lookup failed.', [
                     'status' => $identityResult['status'] ?? null,
                     'error' => $identityResult['error'] ?? null,
                 ]);

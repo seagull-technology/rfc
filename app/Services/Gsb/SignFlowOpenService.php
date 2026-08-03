@@ -75,7 +75,14 @@ class SignFlowOpenService
      */
     public function nationalId(array $result): ?string
     {
-        foreach (['data.nationalId', 'data.national_id', 'data.data.nationalId', 'data.data.national_id'] as $path) {
+        foreach ([
+            'data.username',
+            'data.nationalId',
+            'data.national_id',
+            'data.data.username',
+            'data.data.nationalId',
+            'data.data.national_id',
+        ] as $path) {
             $value = preg_replace('/\D+/', '', (string) data_get($result, $path)) ?: '';
 
             if (preg_match('/^\d{10}$/', $value)) {
