@@ -139,7 +139,6 @@ class SecurityBaselineTest extends TestCase
             'security.outbound_http.allowed_hosts' => ['bulk-sms.gov.jo'],
             'services.gov_sms.base' => 'https://bulk-sms.gov.jo',
             'services.gsb.enabled' => false,
-            'services.sanad.authorization_url' => '',
             'services.gov_company_registry.enabled' => false,
         ]);
 

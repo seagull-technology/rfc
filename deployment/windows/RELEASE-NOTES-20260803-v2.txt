@@ -1,0 +1,39 @@
+RFC e-Permit Sanad discovery correction 20260803-v2
+===================================================
+
+This release supersedes 20260803-v1 for Sanad authentication setup.
+
+Changes
+-------
+
+- Removes the unsupported SANAD_AUTHORIZATION_URL environment variable.
+- Keeps SANAD_REDIRECT_URI as the RFC callback URL registered in the Sanad
+  stakeholder portal.
+- Discovers Sanad's browser authorization endpoint from the provider's standard
+  OpenID configuration at:
+
+    https://signflow.sanad.gov.jo/.well-known/openid-configuration
+
+- Validates the discovered authorization endpoint against the explicit outbound
+  host allowlist before redirecting a user.
+- Retains authorization-code state validation and PKCE S256 protection.
+- Adds tawqi3i-signflow.sanad.gov.jo to the production outbound allowlist because
+  it is the authorization host currently published by Sanad's metadata.
+- Prevents the previous self-redirect configuration that exhausted the RFC
+  login throttle and returned HTTP 429.
+
+Server environment
+------------------
+
+Remove SANAD_AUTHORIZATION_URL from the server .env. Keep:
+
+  SANAD_REDIRECT_URI=https://filmjordan.jo/ar/sign-in/sanad/callback
+  SANAD_SCOPE=openid
+
+Ensure SECURITY_OUTBOUND_HTTP_ALLOWED_HOSTS includes both:
+
+  signflow.sanad.gov.jo
+  tawqi3i-signflow.sanad.gov.jo
+
+No database migration is introduced by this release. The deployment script
+preserves the real server .env and uploaded storage.

@@ -119,10 +119,6 @@ class VerifyProductionSecurity extends Command
             }
         }
 
-        if (filled(config('services.sanad.authorization_url'))) {
-            $destinations['SANAD_AUTHORIZATION_URL'] = (string) config('services.sanad.authorization_url');
-        }
-
         if (config('services.gov_company_registry.enabled')) {
             $host = (string) config('services.gov_company_registry.host');
             $port = (int) config('services.gov_company_registry.port', 9443);

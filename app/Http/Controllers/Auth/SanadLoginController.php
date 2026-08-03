@@ -24,6 +24,14 @@ class SanadLoginController extends Controller
             ]);
         }
 
+        $authorizationUrl = $signFlow->authorizationUrl();
+
+        if ($authorizationUrl === null) {
+            return redirect()->route('login')->withErrors([
+                'sanad' => __('app.auth.sanad_not_configured'),
+            ]);
+        }
+
         $state = Str::random(64);
         $verifier = Str::random(96);
         $challenge = $this->base64UrlEncode(hash('sha256', $verifier, true));
@@ -45,9 +53,9 @@ class SanadLoginController extends Controller
             'code_challenge_method' => 'S256',
         ], '', '&', PHP_QUERY_RFC3986);
 
-        $separator = str_contains($signFlow->authorizationUrl(), '?') ? '&' : '?';
+        $separator = str_contains($authorizationUrl, '?') ? '&' : '?';
 
-        return redirect()->away($signFlow->authorizationUrl().$separator.$query);
+        return redirect()->away($authorizationUrl.$separator.$query);
     }
 
     public function callback(

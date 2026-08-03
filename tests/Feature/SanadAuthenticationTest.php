@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Mcamara\LaravelLocalization\LaravelLocalization;
 use Tests\TestCase;
@@ -20,7 +21,8 @@ class SanadAuthenticationTest extends TestCase
 
         config()->set('security.outbound_http.allowed_hosts', [
             'api-gateway.stg.gsb.gov.jo',
-            'sanad.example',
+            'signflow.sanad.gov.jo',
+            'tawqi3i-signflow.sanad.gov.jo',
         ]);
         config()->set('services.gsb.enabled', true);
 
@@ -35,15 +37,21 @@ class SanadAuthenticationTest extends TestCase
             config()->set("services.gsb.services.{$service}.client_secret", 'sanad-secret');
         }
 
-        config()->set('services.sanad.authorization_url', 'https://sanad.example/authorize');
         config()->set('services.sanad.client_id', 'sanad-client');
         config()->set('services.sanad.client_secret', 'sanad-secret');
         config()->set('services.sanad.redirect_uri', 'https://rfc.example/ar/sign-in/sanad/callback');
         config()->set('services.sanad.scope', 'openid');
     }
 
-    public function test_sanad_login_redirect_uses_state_and_s256_pkce(): void
+    public function test_sanad_login_discovers_provider_authorization_endpoint_and_uses_state_and_s256_pkce(): void
     {
+        Cache::forget('sanad.openid-configuration');
+        Http::fake([
+            'https://signflow.sanad.gov.jo/.well-known/openid-configuration' => Http::response([
+                'authorization_endpoint' => 'https://tawqi3i-signflow.sanad.gov.jo/signflow/v2/auth',
+            ]),
+        ]);
+
         $response = $this->get(route('sanad.redirect'));
 
         $response->assertRedirect();
@@ -60,8 +68,8 @@ class SanadAuthenticationTest extends TestCase
         ), '=');
 
         $this->assertSame('https', $parts['scheme'] ?? null);
-        $this->assertSame('sanad.example', $parts['host'] ?? null);
-        $this->assertSame('/authorize', $parts['path'] ?? null);
+        $this->assertSame('tawqi3i-signflow.sanad.gov.jo', $parts['host'] ?? null);
+        $this->assertSame('/signflow/v2/auth', $parts['path'] ?? null);
         $this->assertSame('code', $query['response_type'] ?? null);
         $this->assertSame('sanad-client', $query['client_id'] ?? null);
         $this->assertSame('https://rfc.example/ar/sign-in/sanad/callback', $query['redirect_uri'] ?? null);
@@ -73,9 +81,25 @@ class SanadAuthenticationTest extends TestCase
         $this->assertNotEmpty(session('sanad_oauth_started_at'));
     }
 
-    public function test_sanad_login_is_unavailable_without_the_provider_authorization_url(): void
+    public function test_sanad_login_is_unavailable_without_the_registered_redirect_url(): void
     {
-        config()->set('services.sanad.authorization_url', '');
+        config()->set('services.sanad.redirect_uri', '');
+
+        $response = $this->from(route('login'))->get(route('sanad.redirect'));
+
+        $response
+            ->assertRedirect(route('login'))
+            ->assertSessionHasErrors('sanad');
+    }
+
+    public function test_sanad_login_rejects_an_unapproved_discovered_authorization_endpoint(): void
+    {
+        Cache::forget('sanad.openid-configuration');
+        Http::fake([
+            'https://signflow.sanad.gov.jo/.well-known/openid-configuration' => Http::response([
+                'authorization_endpoint' => 'https://attacker.example/authorize',
+            ]),
+        ]);
 
         $response = $this->from(route('login'))->get(route('sanad.redirect'));
 

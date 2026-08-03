@@ -27,7 +27,7 @@ Before running the deployment:
    SECURITY_HSTS_MAX_AGE=31536000
    SECURITY_PROFILE_URL_ALLOWED_HOSTS=imdb.com,linkedin.com,filmfreeway.com,vimeo.com,youtube.com
    SECURITY_WEBSITE_URL_ALLOWED_HOSTS=filmjordan.jo
-   SECURITY_OUTBOUND_HTTP_ALLOWED_HOSTS=api-gateway.stg.gsb.gov.jo,bulk-sms.gov.jo,signflow.sanad.gov.jo
+   SECURITY_OUTBOUND_HTTP_ALLOWED_HOSTS=api-gateway.stg.gsb.gov.jo,bulk-sms.gov.jo,signflow.sanad.gov.jo,tawqi3i-signflow.sanad.gov.jo
    SESSION_SECURE_COOKIE=true
    SESSION_ENCRYPT=true
    SESSION_HTTP_ONLY=true
@@ -63,10 +63,9 @@ Before running the deployment:
    GSB_SIGNFLOW_V2_OPEN_METHOD=POST
 
    Keep GSB_SIGNFLOW_V2_ENABLED and GSB_SIGNFLOW_V2_OPEN_ENABLED false until
-   MODEE supplies the browser authorization endpoint and registers the RFC
-   callback URL. Then set:
+   the RFC callback URL is registered in the Sanad portal. RFC discovers the
+   provider authorization endpoint from Sanad's OpenID metadata. Then set:
 
-   SANAD_AUTHORIZATION_URL=<provider URL>
    SANAD_REDIRECT_URI=https://<public host>/ar/sign-in/sanad/callback
    SANAD_SCOPE=openid
 

@@ -122,7 +122,6 @@ return [
     ],
 
     'sanad' => [
-        'authorization_url' => env('SANAD_AUTHORIZATION_URL', ''),
         'client_id' => env('SANAD_CLIENT_ID', env('GSB_CLIENT_ID')),
         'client_secret' => env('SANAD_CLIENT_SECRET', env('GSB_CLIENT_SECRET')),
         'redirect_uri' => env('SANAD_REDIRECT_URI', ''),

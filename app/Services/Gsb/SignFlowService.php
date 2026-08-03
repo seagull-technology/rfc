@@ -3,10 +3,17 @@
 namespace App\Services\Gsb;
 
 use App\Support\ApprovedOutboundUrl;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Throwable;
 
 class SignFlowService
 {
     private const SERVICE = 'signflow_v2';
+
+    private const DISCOVERY_CACHE_KEY = 'sanad.openid-configuration';
+
+    private const DISCOVERY_URL = 'https://signflow.sanad.gov.jo/.well-known/openid-configuration';
 
     public function __construct(
         private readonly GsbClient $client,
@@ -23,15 +30,40 @@ class SignFlowService
     public function isAuthorizationConfigured(): bool
     {
         return $this->isRunnable()
-            && filled($this->authorizationUrl())
-            && $this->approvedOutboundUrl->isAllowed($this->authorizationUrl())
             && filled($this->clientId())
-            && filled($this->clientSecret());
+            && filled($this->clientSecret())
+            && filled($this->redirectUri(''));
     }
 
-    public function authorizationUrl(): string
+    public function authorizationUrl(): ?string
     {
-        return trim((string) config('services.sanad.authorization_url'));
+        $metadata = Cache::remember(
+            self::DISCOVERY_CACHE_KEY,
+            now()->addHours(6),
+            function (): ?array {
+                try {
+                    $response = Http::acceptJson()
+                        ->connectTimeout(5)
+                        ->timeout(10)
+                        ->withOptions(['allow_redirects' => false])
+                        ->get(self::DISCOVERY_URL);
+                } catch (Throwable) {
+                    return null;
+                }
+
+                return $response->successful() && is_array($response->json())
+                    ? $response->json()
+                    : null;
+            },
+        );
+
+        $authorizationUrl = is_array($metadata)
+            ? trim((string) ($metadata['authorization_endpoint'] ?? ''))
+            : '';
+
+        return $authorizationUrl !== '' && $this->approvedOutboundUrl->isAllowed($authorizationUrl)
+            ? $authorizationUrl
+            : null;
     }
 
     public function clientId(): string
