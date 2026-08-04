@@ -1,0 +1,50 @@
+RFC e-Permit A2A SMS protocol alignment 20260804-v1
+==================================================
+
+This release aligns RFC OTP delivery with the government Bulk SMS API
+documentation supplied by MoDEE.
+
+Changes
+-------
+
+- Sends SMS requests under the documented data1 root element.
+- Caches the one-minute authentication token for 45 seconds by default, with
+  an enforced upper limit of 55 seconds.
+- Normalizes the Authorization header to exactly one Bearer prefix, whether
+  the provider token already includes that prefix or not.
+- Re-authenticates and retries a send exactly once when the provider rejects
+  the token as unauthorized.
+- Accepts an SMS as delivered only when the HTTP response is successful and
+  the documented E001 provider response is present.
+- Records the provider response code and message for safer diagnostics without
+  logging credentials or tokens.
+- Uses bounded connection and request timeouts and does not retry HTTP 400
+  authentication failures.
+
+Server environment
+------------------
+
+Preserve the existing real GOV_SMS_USER, GOV_SMS_PASS, GOV_SMS_HEADER, and
+GOV_SMS_MESSAGE_TYPE_ID values. Add these non-secret values if absent:
+
+  GOV_SMS_CONNECT_TIMEOUT=5
+  GOV_SMS_TIMEOUT=15
+  GOV_SMS_TOKEN_CACHE_SECONDS=45
+
+If GOV_SMS_PASS contains a # character, wrap the complete value in single
+quotes in .env. Otherwise Laravel treats the remainder as a comment.
+
+The government provider's /authenticate endpoint must return HTTP 200 with a
+token before OTP delivery can succeed. An HTTP 400 at that endpoint indicates
+that the provider is rejecting the supplied account or credentials; this
+release cannot resolve that external account condition.
+
+The deployment script preserves the real server .env and uploaded storage.
+No database migration is introduced by this release.
+
+Verification
+------------
+
+- SMS, integration diagnostics, login, and password-reset regression suite:
+  44 tests passed with 311 assertions.
+- PHP syntax, formatting, and diff validation passed.

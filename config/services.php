@@ -137,6 +137,9 @@ return [
         'password' => env('GOV_SMS_PASS'),
         'header' => env('GOV_SMS_HEADER', 'rfc'),
         'message_type_id' => (int) env('GOV_SMS_MESSAGE_TYPE_ID', 3),
+        'connect_timeout' => (int) env('GOV_SMS_CONNECT_TIMEOUT', 5),
+        'timeout' => (int) env('GOV_SMS_TIMEOUT', 15),
+        'token_cache_seconds' => (int) env('GOV_SMS_TOKEN_CACHE_SECONDS', 45),
     ],
 
     'gov_company_registry' => [

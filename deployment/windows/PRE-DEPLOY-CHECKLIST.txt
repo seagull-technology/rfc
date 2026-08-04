@@ -34,6 +34,9 @@ Before running the deployment:
    SESSION_SAME_SITE=lax
    SESSION_DOMAIN=null
    OTP_DEBUG_FALLBACK=false
+   GOV_SMS_CONNECT_TIMEOUT=5
+   GOV_SMS_TIMEOUT=15
+   GOV_SMS_TOKEN_CACHE_SECONDS=45
    FILESYSTEM_LOCAL_SERVE=false
    GSB_ENABLED=true
    GSB_ENVIRONMENT=stg
@@ -83,6 +86,13 @@ Before running the deployment:
    Store the SignFlow portal ApiKey and SecretKey as SANAD_CLIENT_ID and
    SANAD_CLIENT_SECRET. GSB_CLIENT_ID and GSB_CLIENT_SECRET remain the
    X-IBM header credentials for server-side GSB calls.
+
+   Preserve the real GOV_SMS_USER, GOV_SMS_PASS, and provider-approved
+   GOV_SMS_HEADER values. If GOV_SMS_PASS contains a # character, wrap the
+   complete value in single quotes in .env so Laravel does not treat the rest
+   of the password as a comment. Before OTP UAT, confirm /authenticate returns
+   HTTP 200 and a token; HTTP 400 is a provider credential/account response,
+   not a network-access failure.
 5. Confirm APP_URL, ASSET_URL, and SANAD_REDIRECT_URI use the final HTTPS public
    host. Leave TRUSTED_PROXIES empty for direct IIS/NAT traffic. If IT confirms
    that a reverse proxy terminates HTTPS before IIS, set its exact internal IP
@@ -130,8 +140,8 @@ manifest under the private local disk at storage\app\private\security-evidence.
 Deployment command example:
 
   Set-ExecutionPolicy -Scope Process Bypass
-  C:\Deploy\rfc-offline-release-20260803-v3\Deploy-RfcRelease.ps1 `
-    -ArchivePath C:\Deploy\rfc-offline-release-20260803-v3\rfc-app.tar.gz
+  C:\Deploy\rfc-offline-release-20260804-v1\Deploy-RfcRelease.ps1 `
+    -ArchivePath C:\Deploy\rfc-offline-release-20260804-v1\rfc-app.tar.gz
 
 The script preserves .env and storage, applies migrations, refreshes permissions and
 reference lookups without changing existing Super Admin/RFC passwords, swaps the

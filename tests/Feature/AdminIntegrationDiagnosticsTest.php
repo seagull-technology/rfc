@@ -45,7 +45,9 @@ class AdminIntegrationDiagnosticsTest extends TestCase
 
         Http::fake([
             'https://bulk-sms.gov.jo/authenticate' => Http::response(['token' => 'test-token'], 200),
-            'https://bulk-sms.gov.jo/sendSmsNotifications' => Http::response(['ok' => true], 200),
+            'https://bulk-sms.gov.jo/sendSmsNotifications' => Http::response([
+                'E001' => 'mobile number[962791234567] messagesId[12345]',
+            ], 200),
         ]);
 
         $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
