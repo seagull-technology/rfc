@@ -173,12 +173,20 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSee('data-ministry-personal-details-template', false)
             ->assertDontSee('ministry-personal-details-form__heading', false)
             ->assertSeeText(__('app.applications.annex_sections.ministry_interior_personal_details'))
+            ->assertSeeText(__('app.applications.ministry_interior_personal_details.personal_number_help'))
+            ->assertSeeText(__('app.applications.submit_confirm_cancel'))
+            ->assertDontSee('app.applications.cancel_send_action')
+            ->assertSeeText(__('app.applications.ministry_interior_personal_details.request_type.urgent_warning'))
             ->assertDontSee('data-application-password-strength', false)
             ->assertDontSee('name="international_account_password"', false)
             ->assertSee('formnovalidate', false)
             ->assertSee('js/form-wizard.js', false);
 
         $content = $response->getContent();
+
+        foreach (MinistryInteriorPersonalDetails::TRAVEL_DOCUMENT_TYPES as $travelDocumentType) {
+            $this->assertStringContainsString('value="'.$travelDocumentType.'"', $content);
+        }
 
         $this->assertMatchesRegularExpression('/name="producer_name"[^>]*value="Applicant Owner"[^>]*readonly/s', $content);
         $this->assertMatchesRegularExpression('/name="production_company_name"[^>]*value="Applicant Studio"[^>]*readonly/s', $content);
@@ -592,6 +600,10 @@ class ApplicationWorkflowTest extends TestCase
         $this
             ->actingAs($user)
             ->post(route('applications.store'), $this->applicationPayload([
+                'airport_filming_airport_name' => 'Queen Alia International Airport',
+                'airport_filming_area' => 'Departures hall',
+                'airport_filming_date' => now()->addMonth()->toDateString(),
+                'airport_filming_crew_count' => 1,
                 'airport_people' => [[
                     'first_name' => 'Airport',
                     'second_name' => 'Access',
@@ -1817,66 +1829,54 @@ class ApplicationWorkflowTest extends TestCase
         }
     }
 
-    public function test_traveler_equipment_acknowledgement_is_required_before_final_submit(): void
+    public function test_traveler_equipment_acknowledgement_is_required_before_draft_save(): void
     {
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
 
         [$user] = $this->createApplicantContext();
 
-        $this->actingAs($user)->post(route('applications.store'), $this->applicationPayload([
-            'equipment_travelers' => [
-                ['traveler_name' => 'Equipment Handler', 'arrival_date' => '2026-04-28'],
-            ],
-            'imported_equipment' => [
-                ['transport_group' => 'traveler', 'item' => 'Camera kit', 'traveler_name' => 'Equipment Handler'],
-            ],
-            'traveler_equipment_acknowledged' => '0',
-        ]));
-
-        $application = Application::query()->firstOrFail();
-
         $this
-            ->from(route('applications.show', $application))
             ->actingAs($user)
-            ->post(route('applications.submit', $application))
-            ->assertRedirect(route('applications.show', $application))
+            ->post(route('applications.store'), $this->applicationPayload([
+                'equipment_travelers' => [
+                    ['traveler_name' => 'Equipment Handler', 'arrival_date' => '2026-04-28'],
+                ],
+                'imported_equipment' => [
+                    ['transport_group' => 'traveler', 'item' => 'Camera kit', 'traveler_name' => 'Equipment Handler'],
+                ],
+                'traveler_equipment_acknowledged' => '0',
+            ]))
             ->assertSessionHasErrors('traveler_equipment_acknowledged');
 
-        $this->assertSame('draft', $application->fresh()->status);
+        $this->assertDatabaseCount('applications', 0);
     }
 
-    public function test_shipping_equipment_acknowledgement_is_required_before_final_submit(): void
+    public function test_shipping_equipment_acknowledgement_is_required_before_draft_save(): void
     {
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
 
         [$user] = $this->createApplicantContext();
 
-        $this->actingAs($user)->post(route('applications.store'), $this->applicationPayload([
-            'imported_equipment' => [
-                [
-                    'transport_group' => 'shipping',
-                    'shipping_company_name' => 'RFC Freight Services',
-                    'invoice_number' => 'INV-2026-001',
-                ],
-            ],
-            'shipping_equipment_acknowledged' => '0',
-        ]));
-
-        $application = Application::query()->firstOrFail();
-
         $this
-            ->from(route('applications.show', $application))
             ->actingAs($user)
-            ->post(route('applications.submit', $application))
-            ->assertRedirect(route('applications.show', $application))
+            ->post(route('applications.store'), $this->applicationPayload([
+                'imported_equipment' => [
+                    [
+                        'transport_group' => 'shipping',
+                        'shipping_company_name' => 'RFC Freight Services',
+                        'invoice_number' => 'INV-2026-001',
+                    ],
+                ],
+                'shipping_equipment_acknowledged' => '0',
+            ]))
             ->assertSessionHasErrors('shipping_equipment_acknowledged');
 
-        $this->assertSame('draft', $application->fresh()->status);
+        $this->assertDatabaseCount('applications', 0);
     }
 
-    public function test_started_project_needs_forms_require_completion_before_final_submit(): void
+    public function test_started_project_needs_forms_require_completion_before_draft_save(): void
     {
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
@@ -1939,18 +1939,9 @@ class ApplicationWorkflowTest extends TestCase
                 ->actingAs($user)
                 ->post(route('applications.store'), $this->applicationPayload($case['payload']))
                 ->assertRedirect()
-                ->assertSessionHasNoErrors();
-
-            $application = Application::query()->latest('id')->firstOrFail();
-
-            $this
-                ->from(route('applications.show', $application))
-                ->actingAs($user)
-                ->post(route('applications.submit', $application))
-                ->assertRedirect(route('applications.show', $application))
                 ->assertSessionHasErrors($case['errors']);
 
-            $this->assertSame('draft', $application->fresh()->status);
+            $this->assertDatabaseCount('applications', 0);
         }
     }
 
@@ -2421,7 +2412,7 @@ class ApplicationWorkflowTest extends TestCase
         $details = [
             'personal_number' => '123456789',
             'nationality_category' => 'travel_document',
-            'travel_document_type' => 'foreign_travel_document',
+            'travel_document_type' => 'arab_travel_document',
             'original_nationality' => 'palestinian',
             'first_name' => 'Nadia',
             'father_name' => 'Mahmoud',
@@ -2454,31 +2445,10 @@ class ApplicationWorkflowTest extends TestCase
                 'ministry_interior_personal_details' => [$details],
             ]))
             ->assertSessionHasErrors([
+                'ministry_interior_personal_details_request.urgent_fee_accepted',
                 'ministry_interior_personal_details.0.personal_number',
                 'ministry_interior_personal_details.0.passport_expiry_date',
-            ]);
-
-        $this->assertDatabaseCount('applications', 0);
-
-        $details['personal_number'] = '';
-        $details['passport_expiry_date'] = now()->addYear()->toDateString();
-
-        $this
-            ->actingAs($user)
-            ->post(route('applications.store'), $this->applicationPayload([
-                'ministry_interior_personal_details_request' => ['type' => 'urgent'],
-                'ministry_interior_personal_details' => [$details],
-            ]))
-            ->assertRedirect()
-            ->assertSessionHasNoErrors();
-
-        $application = Application::query()->firstOrFail();
-
-        $this
-            ->actingAs($user)
-            ->post(route('applications.submit', $application))
-            ->assertSessionHasErrors([
-                'ministry_interior_personal_details_request.urgent_fee_accepted',
+                'ministry_interior_personal_details.0.original_document_country',
                 'ministry_interior_personal_details.0.original_first_name',
                 'ministry_interior_personal_details.0.original_father_name',
                 'ministry_interior_personal_details.0.original_grandfather_name',
@@ -2489,8 +2459,73 @@ class ApplicationWorkflowTest extends TestCase
                 'ministry_interior_personal_details.0.attachments',
             ]);
 
+        $this->assertDatabaseCount('applications', 0);
+
+        $details['personal_number'] = '';
+        $details['passport_expiry_date'] = now()->addYear()->toDateString();
+        $details['original_document_country'] = 'syrian';
+        $details['original_first_name'] = 'Nadia';
+        $details['original_father_name'] = 'Mahmoud';
+        $details['original_grandfather_name'] = 'Hassan';
+        $details['original_family_name'] = 'Ali';
+        $details['palestinian_passport_id'] = 'PS1234567';
+        $details['residence_expiry_date'] = now()->addYear()->toDateString();
+        $details['schengen_us_visa_expiry_date'] = now()->addYear()->toDateString();
+        $details['attachments'] = [
+            [
+                'document_type' => 'passport_copy',
+                'file' => UploadedFile::fake()->image('travel-document.jpg', 800, 600)->size(200),
+            ],
+            [
+                'document_type' => 'foreign_residence',
+                'file' => UploadedFile::fake()->image('residence.jpg', 800, 600)->size(200),
+            ],
+        ];
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'ministry_interior_personal_details_request' => [
+                    'type' => 'urgent',
+                    'urgent_fee_accepted' => '1',
+                ],
+                'ministry_interior_personal_details' => [$details, []],
+            ]))
+            ->assertSessionHasErrors('ministry_interior_personal_details.1.nationality_category');
+
+        $this->assertDatabaseCount('applications', 0);
+
+        $details['attachments'] = [
+            [
+                'document_type' => 'passport_copy',
+                'file' => UploadedFile::fake()->image('travel-document-complete.jpg', 800, 600)->size(200),
+            ],
+            [
+                'document_type' => 'foreign_residence',
+                'file' => UploadedFile::fake()->image('residence-complete.jpg', 800, 600)->size(200),
+            ],
+        ];
+
+        $this
+            ->actingAs($user)
+            ->post(route('applications.store'), $this->applicationPayload([
+                'ministry_interior_personal_details_request' => [
+                    'type' => 'urgent',
+                    'urgent_fee_accepted' => '1',
+                ],
+                'ministry_interior_personal_details' => [$details],
+            ]))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $application = Application::query()->firstOrFail();
+
         $this->assertDatabaseCount('applications', 1);
         $this->assertSame('draft', $application->fresh()->status);
+        $this->assertSame(
+            'arab_travel_document',
+            data_get($application->metadata, 'annex.ministry_interior_personal_details.0.travel_document_type'),
+        );
     }
 
     public function test_application_stores_and_displays_structured_annex_forms(): void
@@ -3901,6 +3936,7 @@ class ApplicationWorkflowTest extends TestCase
                 'arrival_flight_number' => 'RJ100',
                 'departure_date' => '2026-05-10',
                 'departure_flight_number' => 'RJ101',
+                'passport_image' => UploadedFile::fake()->image('traveler-one-passport.jpg', 800, 600)->size(200),
             ]],
             'imported_equipment' => [[
                 'transport_group' => 'traveler',
@@ -3915,6 +3951,7 @@ class ApplicationWorkflowTest extends TestCase
                 'shipping_method' => 'luggage',
                 'entry_point' => 'queen_alia_international_airport',
             ]],
+            'traveler_equipment_acknowledged' => '1',
         ]));
 
         $application = Application::query()->latest('id')->firstOrFail();

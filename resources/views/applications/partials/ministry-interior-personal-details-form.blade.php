@@ -343,7 +343,7 @@
                     </label>
                     <div class="d-flex flex-wrap gap-2 justify-content-end mt-4">
                         <button type="button" class="btn btn-outline-secondary" data-ministry-urgent-cancel>
-                            {{ __('app.applications.cancel_send_action') }}
+                            {{ __('app.applications.submit_confirm_cancel') }}
                         </button>
                         <button type="button" class="btn btn-primary" data-ministry-urgent-confirm disabled>
                             {{ __('app.applications.submit_confirm_confirm') }}

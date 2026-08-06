@@ -855,9 +855,12 @@ class ApplicationController extends Controller
             data_get($application?->metadata, 'annex.ministry_interior_personal_details', []),
         );
 
-        $signedRows = collect($rows)
-            ->filter(fn (array $row): bool => MinistryInteriorPersonalDetailsData::hasSubmittedData($row)
-                || MinistryInteriorPersonalDetailsData::isConfirmed($row))
+        $hasStartedRows = collect($rows)->contains(
+            fn (array $row): bool => MinistryInteriorPersonalDetailsData::hasSubmittedData($row)
+                || MinistryInteriorPersonalDetailsData::isConfirmed($row)
+        );
+
+        $signedRows = ($hasStartedRows ? collect($rows) : collect())
             ->values()
             ->map(function (array $row, int $index) use ($existingRows, $user): array {
                 $confirmed = MinistryInteriorPersonalDetailsData::isConfirmed($row);
@@ -2226,13 +2229,16 @@ class ApplicationController extends Controller
                 'nullable',
                 Rule::in(['normal', 'urgent']),
             ],
-            'ministry_interior_personal_details_request.urgent_fee_accepted' => $hasSubmittedRows && $requestType === 'urgent'
+            'ministry_interior_personal_details_request.urgent_fee_accepted' => $requestType === 'urgent'
                 ? ['accepted']
                 : ['nullable', 'boolean'],
         ];
 
         foreach ($rows as $index => $row) {
-            $requiresDetails = MinistryInteriorPersonalDetailsData::hasSubmittedData($row);
+            // Once one personal-details record is started, every added record must
+            // be complete. This prevents blank or partial invitees from being
+            // silently discarded while another record is saved.
+            $requiresDetails = $hasSubmittedRows;
             $prefix = 'ministry_interior_personal_details.'.$index;
             $legacyRow = blank(data_get($row, 'nationality_category'))
                 && filled(data_get($row, 'current_full_name'));
@@ -2271,7 +2277,7 @@ class ApplicationController extends Controller
                 $prefix.'.travel_document_type' => [
                     Rule::requiredIf($requiresDetails && ! $legacyRow && $nationalityCategory === 'travel_document'),
                     'nullable',
-                    Rule::in(['foreign_travel_document', 'passport', 'palestinian_refugee_syrian_passport']),
+                    Rule::in(MinistryInteriorPersonalDetailsData::TRAVEL_DOCUMENT_TYPES),
                 ],
                 $prefix.'.current_nationality' => [
                     Rule::requiredIf($requiresDetails && ($legacyRow || $nationalityCategory !== 'travel_document')),
@@ -2658,7 +2664,24 @@ class ApplicationController extends Controller
      */
     private function draftApplicationValidationRules(array $rules): array
     {
+        $strictStartedFormPrefixes = [
+            'ministry_interior_personal_details',
+            'equipment_travelers',
+            'imported_equipment',
+            'traveler_equipment_acknowledged',
+            'shipping_equipment_acknowledged',
+            'airport_filming_',
+            'airport_people',
+            'governmental_scenes',
+        ];
+
         foreach ($rules as $attribute => $attributeRules) {
+            // Optional project-needs forms may remain empty, but once started
+            // they must not persist partial records, even on a parent draft.
+            if (Str::startsWith($attribute, $strictStartedFormPrefixes)) {
+                continue;
+            }
+
             $relaxedRules = [];
 
             foreach ($attributeRules as $rule) {

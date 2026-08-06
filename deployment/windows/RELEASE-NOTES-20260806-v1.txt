@@ -1,0 +1,34 @@
+RFC e-Permit visa personal-details release 20260806-v1
+=====================================================
+
+This release applies the Royal Film Commission and Ministry of Interior review
+notes to the Personal Details Form for Visa Issuance.
+
+Changes
+-------
+
+- Shows the urgent-request fee notice immediately when an applicant selects an
+  urgent request and requires explicit acceptance before continuing.
+- Updates the individual-number guidance in Arabic and English.
+- Replaces the former travel-document choices with the nine approved travel
+  document holder categories.
+- Requires the residence expiry date and residence evidence when the country of
+  residence differs from the applicant's effective nationality.
+- Prevents started project-needs forms and added personal-detail rows from being
+  saved while incomplete; optional forms remain optional until they are started.
+- Corrects the urgent-warning cancel button so it displays the localized
+  Arabic/English label instead of a raw translation key.
+- Restores Jordanian personal-number retrieval through the approved CSPD masked
+  lookup while retaining PSD lookup for other supported nationality categories.
+
+Server deployment
+-----------------
+
+The deployment script preserves the real server .env and uploaded storage.
+No database migration or new environment variable is introduced by this release.
+
+Verification
+------------
+
+- Complete automated test suite: 303 tests passed with 3,167 assertions.
+- PHP formatting and diff validation passed.

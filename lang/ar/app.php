@@ -732,7 +732,7 @@ return [
             'lookup_unavailable' => 'تعذر استرجاع معلومات الفرد حالياً. يرجى المحاولة لاحقاً.',
             'important_note' => 'ملاحظة هامة: تعبئة كافة البيانات بشكل واضح ومقروء وقابل للإرسال وعلى مسؤولية الجهة مقدمة الطلب.',
             'residence_document_notice' => 'صورة عن إقامة المستدعى له من البلد المقيم فيه لمدة لا تقل عن 6 أشهر إذا كان يقيم في بلد لا يحمل جنسيتها',
-            'personal_number_help' => 'هو رقم يتم منحه لكل شخص يدخل إلى الأردن لأول مرة، ويتكون من 10 أرقام.',
+            'personal_number_help' => 'هو رقم يتم منحه لكل شخص يدخل إلى الأردن لأول مرة، ويتكون من 10 أرقام إذا زار الأردن سابقاً.',
             'confirm_label' => 'أقر بأن جميع البيانات الواردة أعلاه صحيحة وكاملة.',
             'sections' => [
                 'personal' => 'المعلومات الشخصية',
@@ -811,9 +811,15 @@ return [
                     'travel_document' => 'حملة وثائق السفر',
                 ],
                 'travel_document_type' => [
-                    'foreign_travel_document' => 'وثيقة سفر أجنبية',
-                    'passport' => 'جواز سفر',
-                    'palestinian_refugee_syrian_passport' => 'جواز سفر سوري للاجئ فلسطيني',
+                    'arab_travel_document' => 'حملة وثائق سفر عربية',
+                    'non_arab_travel_document' => 'حملة وثائق سفر غير عربية',
+                    'palestinian_syrian_travel_document' => 'فلسطيني يحمل وثيقة سفر سورية',
+                    'palestinian_iraqi_travel_document' => 'فلسطيني يحمل وثيقة سفر عراقية',
+                    'palestinian_qatari_travel_document' => 'فلسطيني يحمل وثيقة سفر قطرية',
+                    'palestinian_lebanese_travel_document' => 'فلسطيني يحمل وثيقة سفر لبنانية',
+                    'palestinian_libyan_travel_document' => 'فلسطيني يحمل وثيقة سفر ليبية',
+                    'palestinian_egyptian_travel_document' => 'فلسطيني يحمل وثيقة سفر مصرية',
+                    'palestinian_yemeni_travel_document' => 'فلسطيني يحمل وثيقة سفر يمنية',
                 ],
                 'marital_status' => [
                     'single' => 'أعزب / عزباء',

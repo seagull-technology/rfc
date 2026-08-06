@@ -95,21 +95,20 @@
                             const requestType = editor.querySelector('[name="ministry_interior_personal_details_request[type]"]:checked');
                             const urgentWarning = editor.querySelector('[data-ministry-urgent-warning]');
                             const urgent = requestType?.value === 'urgent';
-                            const hasStartedRows = rows().some(rowHasContent);
 
-                            setRequired(urgentAcceptance, urgent && hasStartedRows);
-                            if (urgentAcceptance && (!urgent || !hasStartedRows)) urgentAcceptance.checked = false;
+                            setRequired(urgentAcceptance, urgent);
+                            if (urgentAcceptance && !urgent) urgentAcceptance.checked = false;
                             if (urgentConfirm) {
                                 urgentConfirm.disabled = !urgentAcceptance?.checked;
                                 urgentConfirm.classList.toggle('disabled', !urgentAcceptance?.checked);
                             }
-                            if (urgentWarning) urgentWarning.hidden = !urgent || !hasStartedRows || !urgentAcceptance?.checked;
+                            if (urgentWarning) urgentWarning.hidden = !urgent || !urgentAcceptance?.checked;
 
                             const urgentModalIsOpen = urgentModal && !urgentModal.hidden;
 
-                            if (urgent && hasStartedRows && !urgentAcceptance?.checked && promptForConfirmation) {
+                            if (urgent && !urgentAcceptance?.checked && promptForConfirmation) {
                                 setUrgentModalVisible(true);
-                            } else if (!urgent || !hasStartedRows || (urgentAcceptance?.checked && !urgentModalIsOpen)) {
+                            } else if (!urgent || (urgentAcceptance?.checked && !urgentModalIsOpen)) {
                                 setUrgentModalVisible(false);
                             }
                         };
@@ -185,7 +184,7 @@
                             const currentNationality = rowControl(row, 'current_nationality');
                             const originalNationality = rowControl(row, 'original_nationality');
                             const travelDocumentHolder = category?.value === 'travel_document';
-                            const started = rowHasContent(row);
+                            const started = rows().some(rowHasContent);
                             const currentSection = row.querySelector('[data-ministry-current-nationality]');
                             const originalSection = row.querySelector('[data-ministry-original-nationality]');
 
@@ -464,15 +463,14 @@
                             rowsContainer.addEventListener(eventName, (event) => {
                                 const row = event.target.closest('[data-ministry-personal-details-row]');
                                 if (row) {
-                                    syncRow(row);
-                                    syncUrgency();
+                                    refresh();
                                 }
                             });
                         });
 
                         editor.closest('form')?.addEventListener('submit', (event) => {
                             const requestType = editor.querySelector('[name="ministry_interior_personal_details_request[type]"]:checked');
-                            if (rows().some(rowHasContent) && requestType?.value === 'urgent' && !urgentAcceptance?.checked) {
+                            if (requestType?.value === 'urgent' && !urgentAcceptance?.checked) {
                                 event.preventDefault();
                                 syncUrgency({ promptForConfirmation: true });
                                 return;

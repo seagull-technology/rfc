@@ -8,6 +8,23 @@ use Illuminate\Support\Arr;
 final class MinistryInteriorPersonalDetails
 {
     /**
+     * Travel-document holder categories approved for the visa details form.
+     *
+     * @var array<int, string>
+     */
+    public const TRAVEL_DOCUMENT_TYPES = [
+        'arab_travel_document',
+        'non_arab_travel_document',
+        'palestinian_syrian_travel_document',
+        'palestinian_iraqi_travel_document',
+        'palestinian_qatari_travel_document',
+        'palestinian_lebanese_travel_document',
+        'palestinian_libyan_travel_document',
+        'palestinian_egyptian_travel_document',
+        'palestinian_yemeni_travel_document',
+    ];
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public static function rows(mixed $value): array

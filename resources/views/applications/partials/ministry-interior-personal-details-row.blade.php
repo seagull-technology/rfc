@@ -14,11 +14,7 @@
     $nationalityCategory = (string) $detailValue('nationality_category');
     $personalNumberLabel = __('app.applications.ministry_interior_personal_details.fields.individual_number');
     $travelDocumentHolder = $nationalityCategory === 'travel_document';
-    $travelDocumentTypeOptions = [
-        'foreign_travel_document',
-        'passport',
-        'palestinian_refugee_syrian_passport',
-    ];
+    $travelDocumentTypeOptions = \App\Support\MinistryInteriorPersonalDetails::TRAVEL_DOCUMENT_TYPES;
     $effectiveNationality = (string) ($travelDocumentHolder
         ? $detailValue('original_nationality')
         : $detailValue('current_nationality'));

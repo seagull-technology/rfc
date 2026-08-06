@@ -16,6 +16,7 @@ use App\Services\AuthorityApprovalNotificationService;
 use App\Support\ApplicationWorkflowRegistry;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
@@ -698,13 +699,14 @@ class ApprovalRoutingTest extends TestCase
         $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
             'project_name' => 'Customs Equipment Shoot',
             'imported_equipment' => [[
-                'item' => 'Stabilized camera crane',
-                'serial_number' => 'CRANE-1001',
-                'quantity' => 1,
-                'origin_country' => 'Germany',
-                'entry_point' => 'Queen Alia Airport',
+                'transport_group' => 'shipping',
+                'shipping_company_name' => 'Jordan Freight',
+                'invoice_number' => 'INV-1001',
                 'arrival_date' => '2026-05-01',
+                'customs_center' => 'queen_alia_international_airport',
+                'attachment' => $this->fakePdf('equipment-invoice.pdf'),
             ]],
+            'shipping_equipment_acknowledged' => '1',
         ]));
 
         $application = Application::query()->where('project_name', 'Customs Equipment Shoot')->firstOrFail();
@@ -753,13 +755,24 @@ class ApprovalRoutingTest extends TestCase
         $this->actingAs($applicant)->post(route('applications.store'), $this->applicationPayload([
             'project_name' => 'Camera Category Routing',
             'imported_equipment' => [[
+                'transport_group' => 'traveler',
                 'item' => 'Cinema camera',
                 'serial_number' => 'CAM-1',
+                'traveler_name' => 'Camera Operator',
                 'quantity' => 1,
+                'unit_value' => 25000,
                 'classification' => 'camera_equipment',
-                'shipping_method' => 'shipping',
                 'entry_point' => 'queen_alia_international_airport',
             ]],
+            'equipment_travelers' => [[
+                'traveler_name' => 'Camera Operator',
+                'arrival_date' => '2026-05-01',
+                'arrival_flight_number' => 'RJ101',
+                'departure_date' => '2026-05-15',
+                'departure_flight_number' => 'RJ102',
+                'passport_image' => UploadedFile::fake()->image('camera-operator-passport.jpg'),
+            ]],
+            'traveler_equipment_acknowledged' => '1',
         ]));
 
         $application = Application::query()->where('project_name', 'Camera Category Routing')->firstOrFail();
