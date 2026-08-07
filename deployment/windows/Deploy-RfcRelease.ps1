@@ -83,6 +83,14 @@ function Assert-PhpSecurityConfiguration {
     }
 }
 
+function Show-PhpPerformanceWarning {
+    $opcacheEnabled = [string] (& $PhpExe -r "echo (extension_loaded('Zend OPcache') && (bool) ini_get('opcache.enable')) ? '1' : '0';")
+
+    if ($LASTEXITCODE -ne 0 -or $opcacheEnabled.Trim() -ne "1") {
+        Write-Warning "PHP OPcache is not enabled. Deployment can continue, but PHP responses will be slower until OPcache is enabled in C:\php\php.ini and the IIS application pool is restarted."
+    }
+}
+
 function Start-RfcSite {
     $lastError = $null
 
@@ -188,6 +196,7 @@ if (-not (Test-Path $PhpExe)) {
 }
 
 Assert-PhpSecurityConfiguration
+Show-PhpPerformanceWarning
 
 if (-not (Test-Path $ArchivePath)) {
     throw "Release archive was not found: $ArchivePath"

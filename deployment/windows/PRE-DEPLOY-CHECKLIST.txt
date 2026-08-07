@@ -118,13 +118,22 @@ Before running the deployment:
    HasPrivateKey must be True before creating the IIS HTTPS binding.
 6. Confirm C: has enough free space for the new release and one full application backup.
 7. Confirm C:\php\php.ini contains expose_php=Off, display_errors=Off, and
-   log_errors=On. Verify the effective PHP configuration with:
+   log_errors=On. For production performance, also confirm Zend OPcache is
+   enabled. Verify the effective PHP configuration with:
 
      C:\php\php.exe -r "echo ini_get('expose_php') ? 'FAIL' : 'OK';"
+     C:\php\php.exe -r "echo (extension_loaded('Zend OPcache') && (bool) ini_get('opcache.enable')) ? 'OPCACHE OK' : 'OPCACHE DISABLED';"
 
    It must print OK. The deployment script will stop before extracting the
-   release if PHP version disclosure is still enabled.
-8. Run PowerShell as Administrator.
+   release if PHP version disclosure is still enabled and will warn when
+   OPcache is disabled.
+8. Confirm IIS static and dynamic compression are installed. Run PowerShell as
+   Administrator if they are missing:
+
+     Enable-WindowsOptionalFeature -Online `
+       -FeatureName IIS-HttpCompressionStatic,IIS-HttpCompressionDynamic `
+       -All -NoRestart
+9. Run PowerShell as Administrator.
 
 The release must be built with production dependencies only:
 
@@ -140,8 +149,8 @@ manifest under the private local disk at storage\app\private\security-evidence.
 Deployment command example:
 
   Set-ExecutionPolicy -Scope Process Bypass
-  C:\Deploy\rfc-offline-release-20260804-v1\Deploy-RfcRelease.ps1 `
-    -ArchivePath C:\Deploy\rfc-offline-release-20260804-v1\rfc-app.tar.gz
+  C:\Deploy\rfc-offline-release-20260807-v1\Deploy-RfcRelease.ps1 `
+    -ArchivePath C:\Deploy\rfc-offline-release-20260807-v1\rfc-app.tar.gz
 
 The script preserves .env and storage, applies migrations, refreshes permissions and
 reference lookups without changing existing Super Admin/RFC passwords, swaps the

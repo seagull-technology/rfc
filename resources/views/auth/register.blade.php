@@ -1,4 +1,7 @@
-@extends('layouts.auth', ['title' => __('app.auth.register_title')])
+@extends('layouts.auth', [
+    'title' => __('app.auth.register_title'),
+    'usesFlatpickr' => true,
+])
 
 @push('styles')
     @include('auth.partials.registration-styles')
@@ -593,6 +596,38 @@
             }
 
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+            const setupRegistrationTabs = function () {
+                const tabLinks = document.querySelectorAll('.registration-tabs [data-bs-toggle="tab"]');
+                const tabPanels = document.querySelectorAll('.registration-form-panel > .tab-pane');
+
+                tabLinks.forEach(function (tabLink) {
+                    tabLink.addEventListener('click', function (event) {
+                        event.preventDefault();
+
+                        const targetSelector = tabLink.getAttribute('href');
+                        const targetPanel = targetSelector ? document.querySelector(targetSelector) : null;
+
+                        if (!targetPanel) {
+                            return;
+                        }
+
+                        tabLinks.forEach(function (link) {
+                            const isActive = link === tabLink;
+                            link.classList.toggle('active', isActive);
+                            link.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                        });
+
+                        tabPanels.forEach(function (panel) {
+                            const isActive = panel === targetPanel;
+                            panel.classList.toggle('active', isActive);
+                            panel.classList.toggle('show', isActive);
+                        });
+                    });
+                });
+            };
+
+            setupRegistrationTabs();
 
             const firstError = function (payload, fallback) {
                 if (payload && payload.errors) {

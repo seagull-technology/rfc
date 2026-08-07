@@ -96,6 +96,41 @@ class SecurityHardeningTest extends TestCase
         $this->assertTrue(File::isFile(public_path('images/rfc-logo-white.png')));
     }
 
+    public function test_authentication_pages_only_load_the_runtime_they_need(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+
+        $loginContent = $this->get(route('login'))->assertOk()->getContent();
+        $registerContent = $this->get(route('register'))->assertOk()->getContent();
+
+        foreach ([
+            'js/libs.min.js',
+            'js/external.min.js',
+            'js/dashboard.js',
+            'js/widgetcharts.js',
+            'js/sidebar.js',
+            'js/chart-custom.js',
+            'js/select2.js',
+            'js/countdown.js',
+            'css/all.min.css',
+            'css/select2.min.css',
+            'fonts/Phosphor-Bold.css',
+            'fonts/Phosphor-Fill.css',
+            'fonts/Phosphor-Duotone.css',
+        ] as $unusedAsset) {
+            $this->assertStringNotContainsString($unusedAsset, $loginContent);
+            $this->assertStringNotContainsString($unusedAsset, $registerContent);
+        }
+
+        $this->assertStringNotContainsString('js/flatpickr.min.js', $loginContent);
+        $this->assertStringNotContainsString('css/flatpickr.min.css', $loginContent);
+        $this->assertStringContainsString('js/flatpickr.min.js', $registerContent);
+        $this->assertStringContainsString('css/flatpickr.min.css', $registerContent);
+        $this->assertStringContainsString('images/Clapper.webp', $loginContent);
+        $this->assertStringContainsString('images/Clapper.gif', $loginContent);
+        $this->assertTrue(File::isFile(public_path('images/Clapper.webp')));
+    }
+
     public function test_untrusted_host_is_rejected_when_enforcement_is_enabled(): void
     {
         config([

@@ -7,14 +7,11 @@
     <title>{{ $title ?? __('app.meta.app_name') }}</title>
     <meta name="description" content="{{ __('app.meta.app_name') }}">
     <link rel="shortcut icon" href="{{ asset('images/favicon.ico') }}">
-    <link rel="stylesheet" href="{{ asset('css/all.min.css') }}?v=6.4.2">
     <link rel="stylesheet" href="{{ asset('fonts/phosphor.css') }}">
-    <link rel="stylesheet" href="{{ asset('fonts/Phosphor-Bold.css') }}">
-    <link rel="stylesheet" href="{{ asset('fonts/Phosphor-Fill.css') }}">
-    <link rel="stylesheet" href="{{ asset('fonts/Phosphor-Duotone.css') }}">
     <link rel="stylesheet" href="{{ asset('css/libs.min.css') }}">
-    <link rel="stylesheet" href="{{ asset('css/select2.min.css') }}">
-    <link rel="stylesheet" href="{{ asset('css/flatpickr.min.css') }}">
+    @if ($usesFlatpickr ?? false)
+        <link rel="stylesheet" href="{{ asset('css/flatpickr.min.css') }}">
+    @endif
     <link rel="stylesheet" href="{{ asset('css/streamit.min.css') }}?v=5.4.0">
     <link rel="stylesheet" href="{{ asset('css/custom.min.css') }}?v=5.4.0">
     <link rel="stylesheet" href="{{ asset('css/dashboard-custom.min.css') }}?v=5.4.0">
@@ -29,7 +26,10 @@
     <div id="loading">
         <div class="loader simple-loader">
             <div class="loader-body ">
-                <img src="{{ asset('images/Clapper.gif') }}" alt="loader" class="image-loader img-fluid" />
+                <picture>
+                    <source srcset="{{ asset('images/Clapper.webp') }}" type="image/webp">
+                    <img src="{{ asset('images/Clapper.gif') }}" alt="loader" class="image-loader img-fluid" />
+                </picture>
             </div>
         </div>
     </div>
@@ -64,22 +64,9 @@
             window.setTimeout(releaseLoader, 1800);
         })();
     </script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/flatpickr.min.js') }}?v=5.4.0"></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/libs.min.js') }}"></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/slider-tabs.js') }}"></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/lodash.min.js') }}"></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/utility.min.js') }}"></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/setting.min.js') }}"></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/setting-init.js') }}"></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/external.min.js') }}"></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/widgetcharts.js') }}?v=5.4.0" defer></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/dashboard.js') }}?v=5.4.0" defer></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/streamit.js') }}?v=5.4.2" defer></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/sidebar.js') }}?v=5.4.0" defer></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/chart-custom.js') }}?v=5.4.0" defer></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/select2.js') }}?v=5.4.0" defer></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/flatpickr.js') }}?v=5.4.0" defer></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/countdown.js') }}?v=5.4.0" defer></script>
+    @if ($usesFlatpickr ?? false)
+        <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/flatpickr.min.js') }}?v=5.4.0"></script>
+    @endif
     @include('layouts.partials.form-submit-state')
     @stack('scripts')
 </body>

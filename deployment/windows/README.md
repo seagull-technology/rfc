@@ -33,7 +33,7 @@ C:\inetpub\rfc\public
 Run PowerShell as Administrator:
 
 ```powershell
-Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebServerRole,IIS-WebServer,IIS-CGI,IIS-DefaultDocument,IIS-StaticContent,IIS-HttpErrors,IIS-HttpLogging,IIS-RequestFiltering -All
+Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebServerRole,IIS-WebServer,IIS-CGI,IIS-DefaultDocument,IIS-StaticContent,IIS-HttpErrors,IIS-HttpLogging,IIS-RequestFiltering,IIS-HttpCompressionStatic,IIS-HttpCompressionDynamic -All
 ```
 
 Install PHP into `C:\php`, then enable these extensions in `C:\php\php.ini`:
@@ -54,6 +54,14 @@ date.timezone=Asia/Amman
 expose_php=Off
 display_errors=Off
 log_errors=On
+zend_extension=opcache
+opcache.enable=1
+opcache.memory_consumption=192
+opcache.interned_strings_buffer=16
+opcache.max_accelerated_files=20000
+opcache.validate_timestamps=0
+realpath_cache_size=4096K
+realpath_cache_ttl=600
 ```
 
 Confirm PHP:
@@ -64,7 +72,9 @@ C:\php\php.exe -r "echo ini_get('expose_php') ? 'FAIL' : 'OK';"
 ```
 
 The second command must print `OK`. The deployment script also rejects a PHP
-runtime that exposes its version.
+runtime that exposes its version. It warns, but does not stop deployment, when
+PHP OPcache is not enabled. Restart the IIS application pool after changing
+`php.ini` so FastCGI loads the new settings.
 
 ## Extract The Application
 

@@ -1,0 +1,49 @@
+RFC e-Permit authentication performance release 20260807-v1
+============================================================
+
+This release reduces authentication-page load time without changing the
+approved design, loader behavior, localization, or authentication flows.
+
+Changes
+-------
+
+- Removes dashboard, chart, sidebar, Select2, theme, and unused icon assets
+  from login, OTP, password-reset, and registration pages.
+- Loads the Flatpickr date picker only on the registration page that uses it.
+- Keeps registration tabs working with a small native implementation instead
+  of loading the complete dashboard JavaScript bundle.
+- Adds a lossless animated WebP version of the existing 88-frame loader while
+  retaining the original GIF as a browser fallback.
+- Enables 30-day caching for static files and requests IIS/Apache compression.
+- Reduces the measured login first-load payload by approximately 2.46 MB
+  (about 51 percent) and removes 22 unnecessary asset requests.
+
+Server performance prerequisites
+--------------------------------
+
+For the IIS server to apply response compression, enable the static and dynamic
+compression Windows features before or after deployment. Run PowerShell as
+Administrator:
+
+  Enable-WindowsOptionalFeature -Online `
+    -FeatureName IIS-HttpCompressionStatic,IIS-HttpCompressionDynamic `
+    -All -NoRestart
+
+PHP OPcache should also be enabled in C:\php\php.ini. The deployment script
+prints a warning when it cannot detect an enabled OPcache configuration.
+
+Server deployment
+-----------------
+
+The deployment script preserves the real server .env and uploaded storage.
+No database migration or new environment variable is introduced by this
+release. The script rebuilds Laravel's production configuration and view
+caches after swapping the release.
+
+Verification
+------------
+
+- Complete automated test suite: 304 tests passed with 3,202 assertions.
+- Login and registration pages were visually verified in the browser.
+- Registration tab switching and Flatpickr isolation were verified.
+- IIS web.config XML and repository diff validation passed.
