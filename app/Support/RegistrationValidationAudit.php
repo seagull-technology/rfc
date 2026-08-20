@@ -10,8 +10,12 @@ final class RegistrationValidationAudit
     /**
      * @param  array<string, mixed>  $errors
      */
-    public static function record(Request $request, array $errors, string $stage = 'request_validation'): void
-    {
+    public static function record(
+        Request $request,
+        array $errors,
+        string $stage = 'request_validation',
+        ?string $uploadReason = null,
+    ): void {
         if (! self::isRegistrationSubmission($request)) {
             return;
         }
@@ -19,15 +23,21 @@ final class RegistrationValidationAudit
         $fields = array_keys($errors);
         sort($fields);
 
-        Log::warning('Registration validation rejected', [
+        $context = [
             'route' => self::safeRouteName($request),
             'registration_type' => self::safeRegistrationType($request),
             'stage' => $stage,
             'fields' => $fields,
-        ]);
+        ];
+
+        if ($stage === 'upload_inspection' && self::isSafeUploadReason($uploadReason)) {
+            $context['reason'] = $uploadReason;
+        }
+
+        Log::warning('Registration validation rejected', $context);
     }
 
-    private static function isRegistrationSubmission(Request $request): bool
+    public static function isRegistrationSubmission(Request $request): bool
     {
         if (! $request->isMethod('post')) {
             return false;
@@ -65,5 +75,18 @@ final class RegistrationValidationAudit
         return in_array($registrationType, ['student', 'company', 'ngo', 'school'], true)
             ? $registrationType
             : 'unknown';
+    }
+
+    private static function isSafeUploadReason(?string $reason): bool
+    {
+        return in_array($reason, [
+            'upload_failed',
+            'invalid_size',
+            'invalid_extension',
+            'unreadable',
+            'mime_mismatch',
+            'signature_mismatch',
+            'active_content',
+        ], true);
     }
 }

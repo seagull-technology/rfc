@@ -17,16 +17,25 @@ class ValidateUploadedFiles
     public function handle(Request $request, Closure $next): Response
     {
         foreach ($this->flattenFiles($request->allFiles()) as $attribute => $file) {
-            if ($this->inspector->inspect($file) !== null) {
+            $rejectionReason = $this->inspector->inspect($file);
+
+            if ($rejectionReason !== null) {
                 RegistrationValidationAudit::record(
                     $request,
                     [$attribute => []],
                     'upload_inspection',
+                    $rejectionReason,
                 );
 
-                throw ValidationException::withMessages([
-                    $attribute => __('validation.secure_upload'),
+                $exception = ValidationException::withMessages([
+                    $attribute => $this->rejectionMessage($rejectionReason),
                 ]);
+
+                if (RegistrationValidationAudit::isRegistrationSubmission($request)) {
+                    $exception->redirectTo($this->registrationFormUrl($request));
+                }
+
+                throw $exception;
             }
         }
 
@@ -52,5 +61,29 @@ class ValidateUploadedFiles
         }
 
         return $flattened;
+    }
+
+    private function rejectionMessage(string $reason): string
+    {
+        $key = in_array($reason, [
+            'upload_failed',
+            'invalid_size',
+            'invalid_extension',
+            'unreadable',
+            'mime_mismatch',
+            'signature_mismatch',
+            'active_content',
+        ], true) ? $reason : 'generic';
+
+        return __("validation.secure_upload_reasons.{$key}");
+    }
+
+    private function registrationFormUrl(Request $request): string
+    {
+        $locale = strtolower((string) $request->segment(1));
+        $supportedLocales = array_keys((array) config('laravellocalization.supportedLocales', []));
+        $prefix = in_array($locale, $supportedLocales, true) ? "/{$locale}" : '';
+
+        return url("{$prefix}/register");
     }
 }

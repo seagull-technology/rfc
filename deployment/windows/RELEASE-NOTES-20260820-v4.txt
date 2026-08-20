@@ -1,0 +1,49 @@
+RFC e-Permit registration upload feedback release 20260820-v4
+=============================================================
+
+This release includes all v3 changes and supersedes v3 for production.
+
+Confirmed production cause
+--------------------------
+
+The production upload-security middleware rejected registration_document.
+Because the security policy intentionally sends no Referer header, Laravel's
+generic middleware validation redirect fell back to the application root,
+which then redirected the applicant to sign-in and hid the upload error.
+
+Changes
+-------
+
+- Sends rejected registration uploads back to the correct localized
+  registration form even when the request has no Referer header.
+- Preserves safe non-password form input and displays the document error next
+  to the registration document field.
+- Provides safe, actionable Arabic and English messages for incomplete,
+  oversized, mismatched, unreadable, or active-content files.
+- Records only a non-sensitive rejection reason code in the security log; it
+  never logs filenames, document contents, email addresses, or phone numbers.
+- Keeps active-content and forged-file protections enabled. Applicants can
+  flatten/print a PDF or upload a JPG/PNG scan when a source document contains
+  active or embedded content.
+
+Required server preparation
+---------------------------
+
+Keep these values in C:\php\php.ini:
+
+  upload_max_filesize=10M
+  post_max_size=16M
+
+Keep this value in C:\inetpub\rfc\.env:
+
+  TRUSTED_PROXIES=10.0.40.81
+
+No database migration or new secret is introduced by this release.
+
+Verification
+------------
+
+- Complete automated test suite: 312 tests passed with 3,254 assertions.
+- Production-equivalent Arabic no-Referer upload rejection passed.
+- Secure upload inspection, localized messages, HTTPS proxy handling, and the
+  dedicated success confirmation page all passed.

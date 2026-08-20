@@ -532,11 +532,16 @@ class AuthFlowTest extends TestCase
 
         Log::spy();
 
-        $this->from(route('register'))->post(route('register.store'), [
+        $response = $this->post(route('register.store'), [
             'registration_type' => 'company',
             'registration_document' => $activePdf,
-        ])->assertRedirect(route('register'))
-            ->assertSessionHasErrors('registration_document');
+        ]);
+
+        $response
+            ->assertRedirect(route('register'))
+            ->assertSessionHasErrors([
+                'registration_document' => 'The document contains active or embedded content. Upload a flattened/printed PDF or a JPG/PNG scan instead.',
+            ]);
 
         Log::shouldHaveReceived('warning')
             ->once()
@@ -546,9 +551,29 @@ class AuthFlowTest extends TestCase
                 return $message === 'Registration validation rejected'
                     && ($context['stage'] ?? null) === 'upload_inspection'
                     && ($context['fields'] ?? null) === ['registration_document']
+                    && ($context['reason'] ?? null) === 'active_content'
                     && is_string($encodedContext)
                     && ! str_contains($encodedContext, $fileName);
             });
+    }
+
+    public function test_arabic_registration_upload_rejection_returns_to_the_form_without_a_referer(): void
+    {
+        $this->refreshApplicationWithLocale('ar');
+
+        $activePdf = UploadedFile::fake()->createWithContent(
+            'active-company-document.pdf',
+            "%PDF-1.7\n1 0 obj\n<< /OpenAction 2 0 R /JavaScript true >>\nendobj\n%%EOF",
+        );
+
+        $this->post(route('register.store'), [
+            'registration_type' => 'company',
+            'registration_document' => $activePdf,
+        ])->assertRedirect(route('register'))
+            ->assertSessionHas('_old_input.registration_type', 'company')
+            ->assertSessionHasErrors([
+                'registration_document' => 'يحتوي المستند على محتوى نشط أو مضمّن. يرجى رفع نسخة PDF مسطحة/مطبوعة أو صورة ممسوحة بصيغة JPG أو PNG.',
+            ]);
     }
 
     public function test_company_registration_page_accepts_one_to_ten_digit_national_ids(): void
