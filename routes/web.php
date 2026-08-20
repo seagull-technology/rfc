@@ -93,6 +93,7 @@ Route::group([
             ->name('otp.resend');
 
         Route::get('/register', [RegisterController::class, 'index'])->name('register');
+        Route::view('/register/submitted', 'auth.registration-submitted')->name('register.submitted');
         Route::post('/register', [RegisterController::class, 'store'])->middleware('throttle:registration')->name('register.store');
         Route::post('/register/company/lookup', CompanyLookupController::class)->middleware('throttle:registration-lookup')->name('register.company.lookup');
         Route::post('/register/student/lookup', StudentLookupController::class)->middleware('throttle:registration-lookup')->name('register.student.lookup');

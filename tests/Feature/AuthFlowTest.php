@@ -65,8 +65,7 @@ class AuthFlowTest extends TestCase
         ]);
 
         $response
-            ->assertRedirect(route('login'))
-            ->assertSessionHas('status', 'Your account has been submitted for review. We will notify you by email and SMS once it is approved, rejected, or requires additional information.');
+            ->assertRedirect(route('register.submitted'));
 
         $user = User::query()->where('email', 'ali@example.com')->firstOrFail();
         $entity = Entity::query()->where('national_id', '9876543210')->firstOrFail();
@@ -118,6 +117,17 @@ class AuthFlowTest extends TestCase
         $this->assertDatabaseMissing('users', [
             'email' => 'unchecked@example.com',
         ]);
+    }
+
+    public function test_registration_submitted_page_shows_durable_confirmation(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+
+        $this->get(route('register.submitted'))
+            ->assertOk()
+            ->assertSeeText('Your registration was submitted successfully')
+            ->assertSeeText('RFC will review your information and uploaded documents.')
+            ->assertSeeText('Go to sign in');
     }
 
     public function test_student_lookup_uses_mohe_undergraduate_last_semester_when_gsb_is_configured(): void
@@ -349,7 +359,7 @@ class AuthFlowTest extends TestCase
             'student_lookup_verified' => '1',
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
-        ])->assertRedirect(route('login'));
+        ])->assertRedirect(route('register.submitted'));
 
         $response = $this->from(route('login'))->post(route('login.store'), [
             'identifier' => 'pending-student@example.com',
@@ -392,8 +402,7 @@ class AuthFlowTest extends TestCase
         ]);
 
         $response
-            ->assertRedirect(route('login'))
-            ->assertSessionHas('status', 'Your account has been submitted for review. We will notify you by email and SMS once it is approved, rejected, or requires additional information.');
+            ->assertRedirect(route('register.submitted'));
 
         $entity = Entity::query()->where('registration_no', '2000011122')->firstOrFail();
         $user = User::query()->where('email', 'info@futurefilms.test')->firstOrFail();
@@ -1160,8 +1169,7 @@ class AuthFlowTest extends TestCase
         ]);
 
         $response
-            ->assertRedirect(route('login'))
-            ->assertSessionHas('status', 'Your account has been submitted for review. We will notify you by email and SMS once it is approved, rejected, or requires additional information.');
+            ->assertRedirect(route('register.submitted'));
 
         $entity = Entity::query()->where('registration_no', $registrationNumber)->firstOrFail();
         $user = User::query()->where('email', $email)->firstOrFail();

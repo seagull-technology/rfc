@@ -155,8 +155,7 @@ class RegisterController extends Controller
         $request->session()->forget(StudentRegistrationLookupService::SESSION_KEY);
 
         return redirect()
-            ->route('login')
-            ->with('status', __('app.auth.account_under_review'));
+            ->route('register.submitted');
     }
 
     private function storeCompany(
@@ -249,8 +248,7 @@ class RegisterController extends Controller
         $request->session()->forget(CompanyRegistrationLookupService::SESSION_KEY);
 
         return redirect()
-            ->route('login')
-            ->with('status', __('app.auth.account_under_review'));
+            ->route('register.submitted');
     }
 
     private function storeOrganizationLike(
@@ -321,8 +319,7 @@ class RegisterController extends Controller
         });
 
         return redirect()
-            ->route('login')
-            ->with('status', __('app.auth.account_under_review'));
+            ->route('register.submitted');
     }
 
     /**
