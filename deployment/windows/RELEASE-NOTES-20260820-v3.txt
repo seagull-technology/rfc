@@ -1,0 +1,41 @@
+RFC e-Permit registration confirmation release 20260820-v3
+==========================================================
+
+This release includes every v2 infrastructure correction and supersedes v2
+for the production registration workflow.
+
+Changes
+-------
+
+- Redirects every successful student, company, NGO, and school registration
+  to a dedicated bilingual confirmation page.
+- Displays the success result without relying on a one-request session flash
+  message, so a successful registration can no longer appear as a silent
+  redirect to the login page.
+- Gives the applicant a clear next-step message and an explicit sign-in link.
+- Retains the cached reverse-proxy trust correction and the PHP upload-limit
+  deployment guard introduced in v2.
+
+Required server preparation
+---------------------------
+
+Keep these values in C:\php\php.ini:
+
+  upload_max_filesize=10M
+  post_max_size=16M
+
+Keep this value in C:\inetpub\rfc\.env:
+
+  TRUSTED_PROXIES=10.0.40.81
+
+The deployment script preserves the real server .env and uploaded storage. No
+database migration or new secret is introduced by this release.
+
+Verification
+------------
+
+- Complete automated test suite: 311 tests passed with 3,249 assertions.
+- Student, company, NGO, and school success redirects passed.
+- The dedicated confirmation view compiled and rendered successfully.
+- Authentication, localization, proxy, upload security, and formatting checks
+  passed.

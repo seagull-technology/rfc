@@ -154,8 +154,8 @@ manifest under the private local disk at storage\app\private\security-evidence.
 Deployment command example:
 
   Set-ExecutionPolicy -Scope Process Bypass
-  C:\Deploy\rfc-offline-release-20260820-v2\Deploy-RfcRelease.ps1 `
-    -ArchivePath C:\Deploy\rfc-offline-release-20260820-v2\rfc-app.tar.gz
+  C:\Deploy\rfc-offline-release-20260820-v3\Deploy-RfcRelease.ps1 `
+    -ArchivePath C:\Deploy\rfc-offline-release-20260820-v3\rfc-app.tar.gz
 
 The script preserves .env and storage, applies migrations, refreshes permissions and
 reference lookups without changing existing Super Admin/RFC passwords, swaps the
