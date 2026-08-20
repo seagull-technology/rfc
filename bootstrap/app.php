@@ -5,10 +5,12 @@ use App\Http\Middleware\BlockSecurityProbePaths;
 use App\Http\Middleware\EnforceTrustedHosts;
 use App\Http\Middleware\PrivateCacheHeaders;
 use App\Http\Middleware\SetPermissionsEntityContext;
+use App\Http\Middleware\TrustConfiguredProxies;
 use App\Http\Middleware\ValidateUploadedFiles;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\View;
 use Mcamara\LaravelLocalization\Middleware\LaravelLocalizationRedirectFilter;
@@ -28,6 +30,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->replace(
+            TrustProxies::class,
+            TrustConfiguredProxies::class,
+        );
+
         $middleware->append([
             EnforceTrustedHosts::class,
             BlockSecurityProbePaths::class,
@@ -35,20 +42,6 @@ return Application::configure(basePath: dirname(__DIR__))
             PrivateCacheHeaders::class,
             ValidateUploadedFiles::class,
         ]);
-
-        $trustedProxies = trim((string) env('TRUSTED_PROXIES'));
-
-        if ($trustedProxies !== '') {
-            $middleware->trustProxies(
-                at: in_array($trustedProxies, ['*', '**'], true)
-                    ? $trustedProxies
-                    : array_map('trim', explode(',', $trustedProxies)),
-                headers: Request::HEADER_X_FORWARDED_FOR
-                    | Request::HEADER_X_FORWARDED_HOST
-                    | Request::HEADER_X_FORWARDED_PORT
-                    | Request::HEADER_X_FORWARDED_PROTO,
-            );
-        }
 
         $middleware->alias([
             'localize' => LaravelLocalizationRoutes::class,

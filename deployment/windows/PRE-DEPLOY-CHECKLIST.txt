@@ -18,7 +18,7 @@ Before running the deployment:
    APP_URL=https://filmjordan.jo
    ASSET_URL=https://filmjordan.jo
    APP_TIMEZONE=Asia/Amman
-   TRUSTED_PROXIES=
+   TRUSTED_PROXIES=10.0.40.81
    TRUSTED_HOSTS=filmjordan.jo
    TRUSTED_HOSTS_ENFORCE=true
    SECURITY_HEADERS_ENABLED=true
@@ -94,9 +94,10 @@ Before running the deployment:
    HTTP 200 and a token; HTTP 400 is a provider credential/account response,
    not a network-access failure.
 5. Confirm APP_URL, ASSET_URL, and SANAD_REDIRECT_URI use the final HTTPS public
-   host. Leave TRUSTED_PROXIES empty for direct IIS/NAT traffic. If IT confirms
-   that a reverse proxy terminates HTTPS before IIS, set its exact internal IP
-   or CIDR instead. Confirm the proxy strips the generic Forwarded header and
+   host. The current RFC IIS logs identify 10.0.40.81 as the reverse proxy, so
+   keep TRUSTED_PROXIES=10.0.40.81 unless IT changes that topology. Leave it
+   empty only for direct IIS/NAT traffic. Confirm the proxy strips the generic
+   Forwarded header and
    emits only filmjordan.jo in any X-Forwarded-Host header; IIS and Laravel both
    reject other forwarded hosts.
 
@@ -117,16 +118,20 @@ Before running the deployment:
 
    HasPrivateKey must be True before creating the IIS HTTPS binding.
 6. Confirm C: has enough free space for the new release and one full application backup.
-7. Confirm C:\php\php.ini contains expose_php=Off, display_errors=Off, and
-   log_errors=On. For production performance, also confirm Zend OPcache is
-   enabled. Verify the effective PHP configuration with:
+7. Confirm C:\php\php.ini contains expose_php=Off, display_errors=Off,
+   log_errors=On, upload_max_filesize=10M, and post_max_size=16M. The upload
+   limits must cover the application's 10 MB registration document and optional
+   2 MB logo. For production performance, also confirm Zend OPcache is enabled.
+   Verify the effective PHP configuration with:
 
      C:\php\php.exe -r "echo ini_get('expose_php') ? 'FAIL' : 'OK';"
+     C:\php\php.exe -r "echo 'upload_max_filesize='.ini_get('upload_max_filesize').PHP_EOL.'post_max_size='.ini_get('post_max_size');"
      C:\php\php.exe -r "echo (extension_loaded('Zend OPcache') && (bool) ini_get('opcache.enable')) ? 'OPCACHE OK' : 'OPCACHE DISABLED';"
 
-   It must print OK. The deployment script will stop before extracting the
-   release if PHP version disclosure is still enabled and will warn when
-   OPcache is disabled.
+   The security check must print OK and the upload values must be at least 10M
+   and 16M. The deployment script will stop before extracting the release if
+   PHP version disclosure is enabled or upload limits are too small, and will
+   warn when OPcache is disabled.
 8. Confirm IIS static and dynamic compression are installed. Run PowerShell as
    Administrator if they are missing:
 
@@ -149,8 +154,8 @@ manifest under the private local disk at storage\app\private\security-evidence.
 Deployment command example:
 
   Set-ExecutionPolicy -Scope Process Bypass
-  C:\Deploy\rfc-offline-release-20260820-v1\Deploy-RfcRelease.ps1 `
-    -ArchivePath C:\Deploy\rfc-offline-release-20260820-v1\rfc-app.tar.gz
+  C:\Deploy\rfc-offline-release-20260820-v2\Deploy-RfcRelease.ps1 `
+    -ArchivePath C:\Deploy\rfc-offline-release-20260820-v2\rfc-app.tar.gz
 
 The script preserves .env and storage, applies migrations, refreshes permissions and
 reference lookups without changing existing Super Admin/RFC passwords, swaps the

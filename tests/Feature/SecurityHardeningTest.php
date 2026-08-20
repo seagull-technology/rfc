@@ -171,6 +171,31 @@ class SecurityHardeningTest extends TestCase
         ])->get('http://rfc.test/sign-in')->assertBadRequest();
     }
 
+    public function test_trusted_proxy_setting_survives_configuration_caching(): void
+    {
+        $bootstrap = File::get(base_path('bootstrap/app.php'));
+        $proxyMiddleware = File::get(app_path('Http/Middleware/TrustConfiguredProxies.php'));
+        $securityConfig = File::get(config_path('security.php'));
+
+        $this->assertStringContainsString('TrustConfiguredProxies::class', $bootstrap);
+        $this->assertStringNotContainsString("env('TRUSTED_PROXIES')", $bootstrap);
+        $this->assertStringContainsString("config('security.trusted_proxies', [])", $proxyMiddleware);
+        $this->assertStringContainsString("env('TRUSTED_PROXIES', '')", $securityConfig);
+        $this->assertArrayHasKey('trusted_proxies', config('security'));
+    }
+
+    public function test_windows_deployment_rejects_php_upload_limits_below_registration_requirements(): void
+    {
+        $deploymentScript = File::get(base_path('deployment/windows/Deploy-RfcRelease.ps1'));
+        $deploymentGuide = File::get(base_path('deployment/windows/README.md'));
+
+        $this->assertStringContainsString('Assert-PhpUploadConfiguration', $deploymentScript);
+        $this->assertStringContainsString('$uploadBytes -lt 10MB', $deploymentScript);
+        $this->assertStringContainsString('$postBytes -lt 16MB', $deploymentScript);
+        $this->assertStringContainsString('upload_max_filesize=10M', $deploymentGuide);
+        $this->assertStringContainsString('post_max_size=16M', $deploymentGuide);
+    }
+
     public function test_known_security_probe_paths_are_blocked_with_inert_headers(): void
     {
         foreach (['/_boost/browser-logs', '/latest/meta-data', '/computeMetadata/v1', '/.env'] as $path) {

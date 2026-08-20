@@ -1,0 +1,46 @@
+RFC e-Permit registration infrastructure release 20260820-v2
+=============================================================
+
+This release supersedes 20260820-v1 after production diagnostics identified
+two server-specific causes of the company registration failure.
+
+Changes
+-------
+
+- Reads TRUSTED_PROXIES from Laravel's cached configuration through a
+  dedicated proxy middleware, so HTTPS forwarding remains active after
+  `php artisan config:cache`.
+- Configures the known RFC reverse proxy address as 10.0.40.81 in the Windows
+  production example and deployment checklist.
+- Prevents validation redirects from being generated as HTTP when IIS receives
+  HTTPS traffic from the trusted reverse proxy.
+- Adds a deployment precheck requiring PHP upload_max_filesize of at least 10M
+  and post_max_size of at least 16M.
+- Documents the PHP upload settings required for the 10 MB registration
+  document and optional 2 MB logo.
+
+Required server preparation
+---------------------------
+
+Before running the deployment script, update C:\php\php.ini:
+
+  upload_max_filesize=10M
+  post_max_size=16M
+
+Restart the RFC IIS application pool after editing php.ini. Confirm the server
+.env contains:
+
+  TRUSTED_PROXIES=10.0.40.81
+
+The deployment script preserves the real server .env and uploaded storage. No
+database migration or new secret is introduced by this release.
+
+Verification
+------------
+
+- Complete automated test suite: 310 tests passed with 3,249 assertions.
+- Production configuration-cache simulation retained the trusted proxy while
+  direct env() access correctly returned null.
+- Forwarded HTTPS request and validation redirect behavior passed.
+- Authentication, registration, upload security, and PHP formatting checks
+  passed.

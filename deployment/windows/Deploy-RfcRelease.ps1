@@ -83,6 +83,50 @@ function Assert-PhpSecurityConfiguration {
     }
 }
 
+function Convert-PhpIniSizeToBytes {
+    param([string] $Value)
+
+    $normalized = $Value.Trim()
+
+    if ($normalized -notmatch "^(\d+(?:\.\d+)?)\s*([KMG]?)$") {
+        throw "Unsupported PHP size value: $Value"
+    }
+
+    $multiplier = switch ($Matches[2].ToUpperInvariant()) {
+        "K" { 1KB }
+        "M" { 1MB }
+        "G" { 1GB }
+        default { 1 }
+    }
+
+    return [int64] [Math]::Floor(([double] $Matches[1]) * $multiplier)
+}
+
+function Assert-PhpUploadConfiguration {
+    $settings = [string] (& $PhpExe -r "echo ini_get('upload_max_filesize') . '|' . ini_get('post_max_size');")
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not inspect the PHP upload configuration with $PhpExe."
+    }
+
+    $values = $settings.Trim().Split("|")
+
+    if ($values.Count -ne 2) {
+        throw "Could not parse PHP upload_max_filesize and post_max_size."
+    }
+
+    $uploadBytes = Convert-PhpIniSizeToBytes $values[0]
+    $postBytes = Convert-PhpIniSizeToBytes $values[1]
+
+    if ($uploadBytes -lt 10MB) {
+        throw "PHP upload_max_filesize must be at least 10M so valid registration documents are not rejected."
+    }
+
+    if ($postBytes -lt 16MB) {
+        throw "PHP post_max_size must be at least 16M so a registration document and optional logo fit in one request."
+    }
+}
+
 function Show-PhpPerformanceWarning {
     $opcacheEnabled = [string] (& $PhpExe -r "echo (extension_loaded('Zend OPcache') && (bool) ini_get('opcache.enable')) ? '1' : '0';")
 
@@ -196,6 +240,7 @@ if (-not (Test-Path $PhpExe)) {
 }
 
 Assert-PhpSecurityConfiguration
+Assert-PhpUploadConfiguration
 Show-PhpPerformanceWarning
 
 if (-not (Test-Path $ArchivePath)) {

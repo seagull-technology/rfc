@@ -5,6 +5,10 @@ $trustedHosts = array_values(array_filter(array_map(
     static fn (string $host): string => strtolower(trim($host)),
     explode(',', (string) env('TRUSTED_HOSTS', $appHost ?: 'localhost')),
 )));
+$trustedProxies = array_values(array_filter(array_map(
+    static fn (string $proxy): string => trim($proxy),
+    explode(',', (string) env('TRUSTED_PROXIES', '')),
+)));
 $localExternalUrlHosts = in_array(env('APP_ENV'), ['local', 'testing'], true) ? 'example.com' : '';
 $localOutboundUrlHosts = in_array(env('APP_ENV'), ['local', 'testing'], true) ? ',example.com' : '';
 $parseHostList = static fn (string $hosts): array => array_values(array_unique(array_filter(array_map(
@@ -13,6 +17,8 @@ $parseHostList = static fn (string $hosts): array => array_values(array_unique(a
 ))));
 
 return [
+    'trusted_proxies' => $trustedProxies,
+
     'trusted_hosts' => [
         'enforce' => filter_var(
             env('TRUSTED_HOSTS_ENFORCE', env('APP_ENV') === 'production'),

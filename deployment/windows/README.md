@@ -54,6 +54,8 @@ date.timezone=Asia/Amman
 expose_php=Off
 display_errors=Off
 log_errors=On
+upload_max_filesize=10M
+post_max_size=16M
 zend_extension=opcache
 opcache.enable=1
 opcache.memory_consumption=192
@@ -69,12 +71,14 @@ Confirm PHP:
 ```powershell
 C:\php\php.exe -v
 C:\php\php.exe -r "echo ini_get('expose_php') ? 'FAIL' : 'OK';"
+C:\php\php.exe -r "echo 'upload_max_filesize='.ini_get('upload_max_filesize').PHP_EOL.'post_max_size='.ini_get('post_max_size');"
 ```
 
-The second command must print `OK`. The deployment script also rejects a PHP
-runtime that exposes its version. It warns, but does not stop deployment, when
-PHP OPcache is not enabled. Restart the IIS application pool after changing
-`php.ini` so FastCGI loads the new settings.
+The security command must print `OK`, and the upload command must print at
+least `10M` and `16M`. The deployment script rejects a PHP runtime that exposes
+its version or cannot accept the application's registration uploads. It warns,
+but does not stop deployment, when PHP OPcache is not enabled. Restart the IIS
+application pool after changing `php.ini` so FastCGI loads the new settings.
 
 ## Extract The Application
 
