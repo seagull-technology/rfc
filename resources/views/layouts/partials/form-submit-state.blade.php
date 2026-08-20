@@ -27,4 +27,4 @@
         loadingLabel: @js(__('app.submitting')),
     };
 </script>
-<script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/form-submit-state.js') }}?v=1.0.0" defer></script>
+<script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/form-submit-state.js') }}?v=1.1.0" defer></script>

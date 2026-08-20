@@ -289,6 +289,7 @@ return [
         'account_created' => 'Your account has been created. Please sign in to continue.',
         'organization_account_created' => 'Your organization account has been created. Please sign in to continue.',
         'account_under_review' => 'Your account has been submitted for review. We will notify you by email and SMS once it is approved, rejected, or requires additional information.',
+        'registration_submit_timeout' => 'We could not confirm the server response. Review the form before trying again.',
         'registered_phone_fallback' => 'your registered phone',
         'sms_otp_message' => 'Your RFC verification code is :code. It expires in 5 minutes.',
         'organization_lookup_errors' => [

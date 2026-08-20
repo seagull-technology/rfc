@@ -57,8 +57,11 @@
 
                                     <div class="tab-content registration-form-panel" id="myTabContent-3">
                                         <div class="tab-pane fade {{ $activeRegistrationType === 'student' ? 'show active' : '' }}" id="home-justify" role="tabpanel" aria-labelledby="home-tab-justify">
-                                            <form method="POST" action="{{ route('register.store') }}" id="register-form-student" data-register-form="student" data-student-lookup-url="{{ route('register.student.lookup') }}" enctype="multipart/form-data">
+                                            <form method="POST" action="{{ route('register.store') }}" id="register-form-student" data-register-form="student" data-student-lookup-url="{{ route('register.student.lookup') }}" data-submit-timeout-ms="30000" enctype="multipart/form-data">
                                                 @csrf
+                                                <div class="alert alert-danger d-none" role="alert" tabindex="-1" data-registration-submit-timeout>
+                                                    {{ __('app.auth.registration_submit_timeout') }}
+                                                </div>
                                                 <input type="hidden" name="registration_type" value="student">
                                                 <input type="hidden" name="student_lookup_verified" value="{{ $studentLookupCompleted ? '1' : '0' }}" data-student-lookup-verified>
 
@@ -183,7 +186,7 @@
                                                             <div class="col-md-6">
                                                                 <div class="mb-3">
                                                                     <label class="form-label">{{ __('app.auth.email') }}</label>
-                                                                    <input type="email" name="email" class="form-control @error('email') is-invalid @enderror" placeholder="{{ __('app.auth.student_email_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('email') : '' }}" data-student-account-input @if($studentLookupCompleted) required @endif>
+                                                                    <input type="email" name="email" class="form-control @error('email') is-invalid @enderror" placeholder="{{ __('app.auth.student_email_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('email') : '' }}" data-student-account-input data-student-account-required @if($studentLookupCompleted) required @endif>
                                                                     @error('email')
                                                                         <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                     @enderror
@@ -193,7 +196,7 @@
                                                             <div class="col-md-6">
                                                                 <div class="mb-3">
                                                                     <label class="form-label">{{ __('app.auth.mobile_number') }}</label>
-                                                                    <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror" placeholder="{{ __('app.auth.phone_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('phone') : '' }}" inputmode="numeric" pattern="\d{10}" maxlength="10" data-student-account-input data-student-account-field="phone" @if($studentLookupCompleted) required @endif>
+                                                                    <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror" placeholder="{{ __('app.auth.phone_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('phone') : '' }}" inputmode="numeric" pattern="\d{10}" maxlength="10" data-student-account-input data-student-account-required data-student-account-field="phone" @if($studentLookupCompleted) required @endif>
                                                                     @error('phone')
                                                                         <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                     @enderror
@@ -203,7 +206,7 @@
                                                             <div class="col-md-6">
                                                                 <div class="mb-3">
                                                                     <label for="student-address" class="form-label">{{ __('app.auth.address_labels.student') }}</label>
-                                                                    <input id="student-address" type="text" name="address" class="form-control @error('address') is-invalid @enderror" placeholder="{{ __('app.auth.address_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('address') : '' }}" autocomplete="street-address" data-student-account-input @if($studentLookupCompleted) required @endif>
+                                                                    <input id="student-address" type="text" name="address" class="form-control @error('address') is-invalid @enderror" placeholder="{{ __('app.auth.address_placeholder') }}" value="{{ old('registration_type') === 'student' ? old('address') : '' }}" autocomplete="street-address" data-student-account-input data-student-account-required @if($studentLookupCompleted) required @endif>
                                                                     @error('address')
                                                                         <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                     @enderror
@@ -225,7 +228,7 @@
                                                                 <div class="mb-3">
                                                                     <label class="form-label">{{ __('app.auth.password_label') }}</label>
                                                                     <div class="registration-password-control">
-                                                                        <input type="password" name="password" class="form-control @error('password') is-invalid @enderror" placeholder="{{ __('app.auth.password_placeholder') }}" data-password-strength data-student-account-input @if($studentLookupCompleted) required @endif>
+                                                                        <input type="password" name="password" class="form-control @error('password') is-invalid @enderror" placeholder="{{ __('app.auth.password_placeholder') }}" data-password-strength data-student-account-input data-student-account-required @if($studentLookupCompleted) required @endif>
                                                                         <button type="button" class="registration-password-toggle" data-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
                                                                             <i class="ph ph-eye-slash"></i>
                                                                         </button>
@@ -241,7 +244,7 @@
                                                                 <div class="mb-3">
                                                                     <label class="form-label">{{ __('app.auth.confirm_password') }}</label>
                                                                     <div class="registration-password-control">
-                                                                        <input type="password" name="password_confirmation" class="form-control" placeholder="{{ __('app.auth.password_placeholder') }}" data-student-account-input @if($studentLookupCompleted) required @endif>
+                                                                        <input type="password" name="password_confirmation" class="form-control" placeholder="{{ __('app.auth.password_placeholder') }}" data-student-account-input data-student-account-required @if($studentLookupCompleted) required @endif>
                                                                         <button type="button" class="registration-password-toggle" data-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
                                                                             <i class="ph ph-eye-slash"></i>
                                                                         </button>
@@ -260,8 +263,11 @@
 
                                         @foreach (['company', 'ngo', 'school'] as $type)
                                             <div class="tab-pane fade {{ $activeRegistrationType === $type ? 'show active' : '' }}" id="{{ $registrationTypes[$type]['tab_id'] }}" role="tabpanel" aria-labelledby="{{ $registrationTypes[$type]['tab_link_id'] }}">
-                                                <form method="POST" action="{{ route('register.store') }}" enctype="multipart/form-data" id="register-form-{{ $type }}" data-register-form="{{ $type }}" @if($type === 'company') data-company-lookup-url="{{ route('register.company.lookup') }}" @endif>
+                                                <form method="POST" action="{{ route('register.store') }}" enctype="multipart/form-data" id="register-form-{{ $type }}" data-register-form="{{ $type }}" data-submit-timeout-ms="30000" @if($type === 'company') data-company-lookup-url="{{ route('register.company.lookup') }}" @endif>
                                                     @csrf
+                                                    <div class="alert alert-danger d-none" role="alert" tabindex="-1" data-registration-submit-timeout>
+                                                        {{ __('app.auth.registration_submit_timeout') }}
+                                                    </div>
                                                     <input type="hidden" name="registration_type" value="{{ $type }}">
                                                     @if ($type === 'company')
                                                         <input type="hidden" name="company_lookup_verified" value="{{ $companyLookupCompleted ? '1' : '0' }}" data-company-lookup-verified>
@@ -351,7 +357,7 @@
                                                                     <div class="col-md-6">
                                                                         <div class="mb-3">
                                                                             <label class="form-label">{{ __('app.auth.email') }}</label>
-                                                                            <input type="email" name="email" class="form-control @error('email') is-invalid @enderror" placeholder="{{ __('app.auth.entity_email_placeholders.company') }}" value="{{ old('registration_type') === 'company' ? old('email') : '' }}" data-company-account-input @if($companyLookupCompleted) required @endif>
+                                                                            <input type="email" name="email" class="form-control @error('email') is-invalid @enderror" placeholder="{{ __('app.auth.entity_email_placeholders.company') }}" value="{{ old('registration_type') === 'company' ? old('email') : '' }}" data-company-account-input data-company-account-required @if($companyLookupCompleted) required @endif>
                                                                             @error('email')
                                                                                 <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                             @enderror
@@ -361,7 +367,7 @@
                                                                     <div class="col-md-6">
                                                                         <div class="mb-3">
                                                                             <label class="form-label">{{ __('app.auth.mobile_number') }}</label>
-                                                                            <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror" placeholder="{{ __('app.auth.phone_placeholder') }}" value="{{ old('registration_type') === 'company' ? old('phone') : '' }}" inputmode="numeric" pattern="\d{10}" maxlength="10" data-company-account-input @if($companyLookupCompleted) required @endif>
+                                                                            <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror" placeholder="{{ __('app.auth.phone_placeholder') }}" value="{{ old('registration_type') === 'company' ? old('phone') : '' }}" inputmode="numeric" pattern="\d{10}" maxlength="10" data-company-account-input data-company-account-required @if($companyLookupCompleted) required @endif>
                                                                             @error('phone')
                                                                                 <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                             @enderror
@@ -371,7 +377,7 @@
                                                                     <div class="col-md-6">
                                                                         <div class="mb-3">
                                                                             <label for="company-address" class="form-label">{{ __('app.auth.address_labels.company') }}</label>
-                                                                            <input id="company-address" type="text" name="address" class="form-control @error('address') is-invalid @enderror" placeholder="{{ __('app.auth.address_placeholder') }}" value="{{ old('registration_type') === 'company' ? old('address') : '' }}" autocomplete="street-address" data-company-account-input @if($companyLookupCompleted) required @endif>
+                                                                            <input id="company-address" type="text" name="address" class="form-control @error('address') is-invalid @enderror" placeholder="{{ __('app.auth.address_placeholder') }}" value="{{ old('registration_type') === 'company' ? old('address') : '' }}" autocomplete="street-address" data-company-account-input data-company-account-required @if($companyLookupCompleted) required @endif>
                                                                             @error('address')
                                                                                 <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                             @enderror
@@ -382,7 +388,7 @@
                                                                         <label for="registration-document-company" class="form-label custom-file-input">
                                                                             {{ __('app.auth.document_labels.company') }}
                                                                         </label>
-                                                                        <input class="form-control @error('registration_document') is-invalid @enderror" type="file" id="registration-document-company" name="registration_document" data-company-account-input @if($companyLookupCompleted) required @endif>
+                                                                        <input class="form-control @error('registration_document') is-invalid @enderror" type="file" id="registration-document-company" name="registration_document" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" data-company-account-input data-company-account-required @if($companyLookupCompleted) required @endif>
                                                                         @error('registration_document')
                                                                             <div class="invalid-feedback d-block">{{ $message }}</div>
                                                                         @enderror
@@ -411,7 +417,7 @@
                                                                         <div class="mb-3">
                                                                             <label class="form-label">{{ __('app.auth.password_label') }}</label>
                                                                             <div class="registration-password-control">
-                                                                                <input type="password" name="password" class="form-control @error('password') is-invalid @enderror" placeholder="{{ __('app.auth.password_placeholder') }}" data-password-strength data-company-account-input @if($companyLookupCompleted) required @endif>
+                                                                                <input type="password" name="password" class="form-control @error('password') is-invalid @enderror" placeholder="{{ __('app.auth.password_placeholder') }}" data-password-strength data-company-account-input data-company-account-required @if($companyLookupCompleted) required @endif>
                                                                                 <button type="button" class="registration-password-toggle" data-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
                                                                                     <i class="ph ph-eye-slash"></i>
                                                                                 </button>
@@ -427,7 +433,7 @@
                                                                         <div class="mb-3">
                                                                             <label class="form-label">{{ __('app.auth.confirm_password') }}</label>
                                                                             <div class="registration-password-control">
-                                                                                <input type="password" name="password_confirmation" class="form-control" placeholder="{{ __('app.auth.password_placeholder') }}" data-company-account-input @if($companyLookupCompleted) required @endif>
+                                                                                <input type="password" name="password_confirmation" class="form-control" placeholder="{{ __('app.auth.password_placeholder') }}" data-company-account-input data-company-account-required @if($companyLookupCompleted) required @endif>
                                                                                 <button type="button" class="registration-password-toggle" data-password-toggle aria-label="{{ __('app.auth.show_password') }}" title="{{ __('app.auth.show_password') }}">
                                                                                     <i class="ph ph-eye-slash"></i>
                                                                                 </button>
@@ -835,7 +841,7 @@
 
                 const setAccountRequired = function (isRequired) {
                     accountInputs.forEach(function (input) {
-                        input.required = isRequired;
+                        input.required = isRequired && input.hasAttribute('data-student-account-required');
                     });
                 };
 
@@ -1048,7 +1054,7 @@
 
                 const setAccountRequired = function (isRequired) {
                     accountInputs.forEach(function (input) {
-                        input.required = isRequired;
+                        input.required = isRequired && input.hasAttribute('data-company-account-required');
                     });
                 };
 
@@ -1198,37 +1204,15 @@
             setupCompanyLookup();
 
             forms.forEach(function (form) {
-                const type = form.dataset.registerForm;
-                const submitButton = document.querySelector('[data-register-submit="' + type + '"]');
-
-                if (!submitButton) {
-                    console.error('Register page initialization failed: submit button missing for type:', type);
-                    return;
-                }
-
-                const submitForm = function (source) {
-                    console.log('Register submission requested from:', source, 'type:', type);
-
-                    if (typeof form.reportValidity === 'function' && !form.reportValidity()) {
-                        console.warn('Register form validation blocked submission for type:', type);
-                        return;
-                    }
-
-                    if (typeof form.requestSubmit === 'function') {
-                        form.requestSubmit(submitButton);
-                        return;
-                    }
-
-                    form.submit();
-                };
-
-                submitButton.addEventListener('click', function (event) {
-                    event.preventDefault();
-                    submitForm('button-click');
-                });
+                const timeoutMessage = form.querySelector('[data-registration-submit-timeout]');
 
                 form.addEventListener('submit', function () {
-                    console.log('Register form submit event fired for type:', type);
+                    timeoutMessage?.classList.add('d-none');
+                });
+
+                form.addEventListener('rfc:submit-timeout', function () {
+                    timeoutMessage?.classList.remove('d-none');
+                    timeoutMessage?.focus();
                 });
             });
         });

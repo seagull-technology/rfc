@@ -11,6 +11,7 @@ use App\Services\RoleAssignmentService;
 use App\Services\StudentRegistrationLookupService;
 use App\Support\PasswordPolicy;
 use App\Support\PhoneNumber;
+use App\Support\RegistrationValidationAudit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -37,21 +38,27 @@ class RegisterController extends Controller
         StudentRegistrationLookupService $studentLookupService,
         CompanyRegistrationLookupService $companyLookupService,
     ): RedirectResponse {
-        $request->validate([
-            'registration_type' => ['required', Rule::in(array_keys($this->registrationTypes()))],
-        ]);
+        try {
+            $request->validate([
+                'registration_type' => ['required', Rule::in(array_keys($this->registrationTypes()))],
+            ]);
 
-        $registrationType = (string) $request->input('registration_type');
+            $registrationType = (string) $request->input('registration_type');
 
-        if ($registrationType === 'student') {
-            return $this->storeStudent($request, $roleAssignmentService, $studentLookupService);
+            if ($registrationType === 'student') {
+                return $this->storeStudent($request, $roleAssignmentService, $studentLookupService);
+            }
+
+            if ($registrationType === 'company') {
+                return $this->storeCompany($request, $roleAssignmentService, $companyLookupService);
+            }
+
+            return $this->storeOrganizationLike($request, $roleAssignmentService, $registrationType);
+        } catch (ValidationException $exception) {
+            RegistrationValidationAudit::record($request, $exception->errors());
+
+            throw $exception;
         }
-
-        if ($registrationType === 'company') {
-            return $this->storeCompany($request, $roleAssignmentService, $companyLookupService);
-        }
-
-        return $this->storeOrganizationLike($request, $roleAssignmentService, $registrationType);
     }
 
     private function storeStudent(

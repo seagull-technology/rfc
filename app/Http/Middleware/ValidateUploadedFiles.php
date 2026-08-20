@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Support\DocumentUploadInspector;
+use App\Support\RegistrationValidationAudit;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -17,6 +18,12 @@ class ValidateUploadedFiles
     {
         foreach ($this->flattenFiles($request->allFiles()) as $attribute => $file) {
             if ($this->inspector->inspect($file) !== null) {
+                RegistrationValidationAudit::record(
+                    $request,
+                    [$attribute => []],
+                    'upload_inspection',
+                );
+
                 throw ValidationException::withMessages([
                     $attribute => __('validation.secure_upload'),
                 ]);

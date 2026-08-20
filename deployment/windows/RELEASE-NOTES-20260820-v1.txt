@@ -1,0 +1,37 @@
+RFC e-Permit registration reliability release 20260820-v1
+==========================================================
+
+This release fixes registration submissions that could remain in a loading
+state after the server rejected incomplete or invalid form data.
+
+Changes
+-------
+
+- Uses the browser's native registration form submission flow.
+- Keeps optional student and company logo uploads optional after government
+  lookup data is loaded.
+- Restricts the company registration document picker to the supported PDF,
+  JPEG, and PNG formats.
+- Restores the registration submit button after 30 seconds if the browser
+  cannot confirm a server response and displays a translated retry message.
+- Records validation failures in the Laravel log using field names and safe
+  registration metadata only; submitted personal data and filenames are not
+  logged.
+- Updates the shared form submit-state asset version so browsers receive the
+  corrected script immediately after deployment.
+
+Server deployment
+-----------------
+
+The deployment script preserves the real server .env and uploaded storage.
+No database migration or new environment variable is introduced by this
+release. The script rebuilds Laravel's production configuration and view
+caches after swapping the release.
+
+Verification
+------------
+
+- Complete automated test suite: 307 tests passed with 3,235 assertions.
+- Focused authentication and security suites passed.
+- PHP formatting, JavaScript syntax, Blade compilation, and repository diff
+  validation passed.

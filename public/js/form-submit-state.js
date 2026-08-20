@@ -145,6 +145,7 @@
             submitterContent: null,
             submitterMinWidth: '',
             submitterMinHeight: '',
+            timeoutId: null,
         };
 
         preserveSubmitterOverrides(form, submitter, state);
@@ -159,6 +160,19 @@
         form.setAttribute('aria-busy', 'true');
         formStates.set(form, state);
 
+        const timeoutMs = Number.parseInt(form.dataset.submitTimeoutMs || '', 10);
+
+        if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+            state.timeoutId = window.setTimeout(function () {
+                if (!formStates.has(form)) {
+                    return;
+                }
+
+                restore(form);
+                form.dispatchEvent(new CustomEvent('rfc:submit-timeout', { bubbles: true }));
+            }, timeoutMs);
+        }
+
         return true;
     };
 
@@ -167,6 +181,10 @@
 
         if (!state) {
             return;
+        }
+
+        if (state.timeoutId !== null) {
+            window.clearTimeout(state.timeoutId);
         }
 
         state.hiddenInput?.remove();

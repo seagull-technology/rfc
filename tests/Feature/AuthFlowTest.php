@@ -14,6 +14,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\ViewErrorBag;
@@ -439,6 +440,106 @@ class AuthFlowTest extends TestCase
         $this->assertStringContainsString("input.addEventListener('pointerdown', initializePicker);", $content);
         $this->assertStringContainsString('js/flatpickr.min.js', $content);
         $this->assertStringContainsString('css/flatpickr.min.css', $content);
+    }
+
+    public function test_registration_page_uses_native_submission_and_preserves_optional_logo_fields(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+
+        $content = $this->get(route('register'))->assertOk()->getContent();
+
+        $this->assertSame(4, substr_count($content, 'data-submit-timeout-ms="30000"'));
+        $this->assertSame(4, substr_count($content, 'tabindex="-1" data-registration-submit-timeout'));
+        $this->assertStringContainsString('data-student-account-required', $content);
+        $this->assertStringContainsString('data-company-account-required', $content);
+        $this->assertStringContainsString(
+            "input.required = isRequired && input.hasAttribute('data-student-account-required');",
+            $content,
+        );
+        $this->assertStringContainsString(
+            "input.required = isRequired && input.hasAttribute('data-company-account-required');",
+            $content,
+        );
+        $this->assertSame(4, preg_match_all('/<input[^>]+name="logo"[^>]*>/', $content, $logoInputs));
+
+        foreach ($logoInputs[0] as $logoInput) {
+            $this->assertStringNotContainsString('account-required', $logoInput);
+        }
+
+        $this->assertStringNotContainsString('form.requestSubmit(submitButton)', $content);
+        $this->assertStringNotContainsString("submitButton.addEventListener('click'", $content);
+        $this->assertStringContainsString("form.addEventListener('rfc:submit-timeout'", $content);
+
+        $submitStateScript = file_get_contents(public_path('js/form-submit-state.js'));
+
+        $this->assertIsString($submitStateScript);
+        $this->assertStringContainsString('form.dataset.submitTimeoutMs', $submitStateScript);
+        $this->assertStringContainsString("new CustomEvent('rfc:submit-timeout'", $submitStateScript);
+        $this->assertStringContainsString('window.clearTimeout(state.timeoutId)', $submitStateScript);
+    }
+
+    public function test_registration_validation_audit_logs_only_safe_field_metadata(): void
+    {
+        $email = 'private-registration@example.com';
+        $phone = '0797777777';
+
+        Log::spy();
+
+        $this->from(route('register'))->post(route('register.store'), [
+            'registration_type' => 'company',
+            'email' => $email,
+            'phone' => $phone,
+        ])->assertRedirect(route('register'))
+            ->assertSessionHasErrors([
+                'registration_number',
+                'address',
+                'registration_document',
+                'company_lookup_verified',
+                'password',
+            ]);
+
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->withArgs(function (string $message, array $context) use ($email, $phone): bool {
+                $encodedContext = json_encode($context);
+
+                return $message === 'Registration validation rejected'
+                    && ($context['route'] ?? null) === 'register.store'
+                    && ($context['registration_type'] ?? null) === 'company'
+                    && in_array('registration_document', $context['fields'] ?? [], true)
+                    && is_string($encodedContext)
+                    && ! str_contains($encodedContext, $email)
+                    && ! str_contains($encodedContext, $phone);
+            });
+    }
+
+    public function test_registration_upload_rejection_is_audited_without_file_details(): void
+    {
+        $fileName = 'private-company-document.pdf';
+        $activePdf = UploadedFile::fake()->createWithContent(
+            $fileName,
+            "%PDF-1.7\n1 0 obj\n<< /OpenAction 2 0 R /JavaScript true >>\nendobj\n%%EOF",
+        );
+
+        Log::spy();
+
+        $this->from(route('register'))->post(route('register.store'), [
+            'registration_type' => 'company',
+            'registration_document' => $activePdf,
+        ])->assertRedirect(route('register'))
+            ->assertSessionHasErrors('registration_document');
+
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->withArgs(function (string $message, array $context) use ($fileName): bool {
+                $encodedContext = json_encode($context);
+
+                return $message === 'Registration validation rejected'
+                    && ($context['stage'] ?? null) === 'upload_inspection'
+                    && ($context['fields'] ?? null) === ['registration_document']
+                    && is_string($encodedContext)
+                    && ! str_contains($encodedContext, $fileName);
+            });
     }
 
     public function test_company_registration_page_accepts_one_to_ten_digit_national_ids(): void
