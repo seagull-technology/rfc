@@ -11,6 +11,7 @@ use App\Support\AdminApplicantResponseState;
 use App\Support\AdminWorkflowState;
 use App\Support\CsvExport;
 use App\Support\NotificationRecipients;
+use App\Support\UploadedFileStorage;
 use App\Support\WorkflowMessageMetadata;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -157,7 +158,7 @@ class ScoutingRequestManagementController extends Controller
         $attachmentMime = null;
 
         if ($request->file('attachment')) {
-            $attachmentPath = $request->file('attachment')->store('scouting-correspondence/'.$record->getKey(), 'local');
+            $attachmentPath = UploadedFileStorage::store($request->file('attachment'), 'scouting-correspondence/'.$record->getKey());
             $attachmentName = $request->file('attachment')->getClientOriginalName();
             $attachmentMime = $request->file('attachment')->getClientMimeType();
         }

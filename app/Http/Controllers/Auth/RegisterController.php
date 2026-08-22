@@ -12,6 +12,7 @@ use App\Services\StudentRegistrationLookupService;
 use App\Support\PasswordPolicy;
 use App\Support\PhoneNumber;
 use App\Support\RegistrationValidationAudit;
+use App\Support\UploadedFileStorage;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -367,7 +368,7 @@ class RegisterController extends Controller
 
     private function storeRegistrationDocument(UploadedFile $document, string $registrationType): string
     {
-        return $document->store('registration-documents/'.$registrationType, 'local');
+        return UploadedFileStorage::store($document, 'registration-documents/'.$registrationType);
     }
 
     /**
@@ -401,7 +402,7 @@ class RegisterController extends Controller
         }
 
         return [
-            'logo_path' => $logo->store('registration-logos/'.$registrationType, 'local'),
+            'logo_path' => UploadedFileStorage::store($logo, 'registration-logos/'.$registrationType),
             'logo_name' => $logo->getClientOriginalName(),
             'logo_mime' => $logo->getClientMimeType(),
             'logo_size' => $logo->getSize(),

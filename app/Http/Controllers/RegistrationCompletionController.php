@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Entity;
 use App\Models\User;
 use App\Support\PhoneNumber;
+use App\Support\UploadedFileStorage;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -179,12 +180,12 @@ class RegistrationCompletionController extends Controller
 
     private function storeRegistrationDocument(UploadedFile $document, string $registrationType): string
     {
-        return $document->store('registration-documents/'.$registrationType, 'local');
+        return UploadedFileStorage::store($document, 'registration-documents/'.$registrationType);
     }
 
     private function storeRegistrationLogo(UploadedFile $logo, string $registrationType): string
     {
-        return $logo->store('registration-logos/'.$registrationType, 'local');
+        return UploadedFileStorage::store($logo, 'registration-logos/'.$registrationType);
     }
 
     /**

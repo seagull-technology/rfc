@@ -14,6 +14,7 @@ use App\Support\EntityLogo;
 use App\Support\PasswordPolicy;
 use App\Support\PhoneNumber;
 use App\Support\ProfileChangeRequests;
+use App\Support\UploadedFileStorage;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -304,7 +305,7 @@ class ProfileController extends Controller
                     Storage::disk('local')->delete($previousLogoPath);
                 }
 
-                $metadata['logo_path'] = $logo->store('registration-logos/'.$entity->registration_type, 'local');
+                $metadata['logo_path'] = UploadedFileStorage::store($logo, 'registration-logos/'.$entity->registration_type);
                 $metadata['logo_name'] = $logo->getClientOriginalName();
                 $metadata['logo_mime'] = $logo->getClientMimeType();
                 $metadata['logo_size'] = $logo->getSize();

@@ -17,6 +17,7 @@ use App\Support\ApplicationCorrectionSections;
 use App\Support\AuthorityApprovalSignal;
 use App\Support\CsvExport;
 use App\Support\NotificationRecipients;
+use App\Support\UploadedFileStorage;
 use App\Support\WorkflowMessageMetadata;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -256,7 +257,7 @@ class ApplicationInboxController extends Controller
 
             $file = $request->file('response_attachment');
             $approvalData += [
-                'response_attachment_path' => $file->store('authority-approval-books/'.$record->getKey(), 'local'),
+                'response_attachment_path' => UploadedFileStorage::store($file, 'authority-approval-books/'.$record->getKey()),
                 'response_attachment_name' => $file->getClientOriginalName(),
                 'response_attachment_mime_type' => $file->getClientMimeType(),
                 'response_attachment_size' => $file->getSize(),
@@ -286,7 +287,7 @@ class ApplicationInboxController extends Controller
                         'section_key' => $item['section_key'],
                         'section_label' => ApplicationCorrectionSections::label($item['section_key']),
                         'details' => $item['details'],
-                        'attachment_path' => $file?->store('authority-change-requests/'.$record->getKey(), 'local'),
+                        'attachment_path' => $file ? UploadedFileStorage::store($file, 'authority-change-requests/'.$record->getKey()) : null,
                         'attachment_name' => $file?->getClientOriginalName(),
                         'attachment_mime_type' => $file?->getClientMimeType(),
                         'attachment_size' => $file?->getSize(),
@@ -453,7 +454,7 @@ class ApplicationInboxController extends Controller
         $attachmentMime = null;
 
         if ($request->file('attachment')) {
-            $attachmentPath = $request->file('attachment')->store('application-correspondence/'.$record->getKey(), 'local');
+            $attachmentPath = UploadedFileStorage::store($request->file('attachment'), 'application-correspondence/'.$record->getKey());
             $attachmentName = $request->file('attachment')->getClientOriginalName();
             $attachmentMime = $request->file('attachment')->getClientMimeType();
         }

@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Notifications\InboxMessageNotification;
 use App\Support\NotificationPresenter;
 use App\Support\NotificationRecipients;
+use App\Support\UploadedFileStorage;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -54,7 +55,7 @@ class ContactCenterController extends Controller
         $attachmentMime = null;
 
         if ($request->file('attachment')) {
-            $attachmentPath = $request->file('attachment')->store('contact-center-messages', 'local');
+            $attachmentPath = UploadedFileStorage::store($request->file('attachment'), 'contact-center-messages');
             $attachmentName = $request->file('attachment')->getClientOriginalName();
             $attachmentMime = $request->file('attachment')->getClientMimeType();
         }

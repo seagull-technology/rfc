@@ -28,6 +28,7 @@ use App\Support\JordanBusinessDays;
 use App\Support\LocationSupportRequirements;
 use App\Support\MinistryInteriorPersonalDetails as MinistryInteriorPersonalDetailsData;
 use App\Support\NotificationRecipients;
+use App\Support\UploadedFileStorage;
 use App\Support\WorkflowMessageMetadata;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -566,7 +567,7 @@ class ApplicationController extends Controller
         ]);
 
         $file = $validated['file'];
-        $path = $file->store('application-documents/'.$record->getKey(), 'local');
+        $path = UploadedFileStorage::store($file, 'application-documents/'.$record->getKey());
 
         $record->documents()->create([
             'uploaded_by_user_id' => $user->getKey(),
@@ -646,7 +647,7 @@ class ApplicationController extends Controller
         $attachmentMime = null;
 
         if ($request->file('attachment')) {
-            $attachmentPath = $request->file('attachment')->store('application-correspondence/'.$record->getKey(), 'local');
+            $attachmentPath = UploadedFileStorage::store($request->file('attachment'), 'application-correspondence/'.$record->getKey());
             $attachmentName = $request->file('attachment')->getClientOriginalName();
             $attachmentMime = $request->file('attachment')->getClientMimeType();
         }
@@ -3212,7 +3213,7 @@ class ApplicationController extends Controller
                         $file = $attachment['file'] ?? null;
 
                         if ($file instanceof UploadedFile) {
-                            $path = $file->store('application-annex/ministry-interior-personal-details', 'local');
+                            $path = UploadedFileStorage::store($file, 'application-annex/ministry-interior-personal-details');
 
                             if (filled($existingPath) && $existingPath !== $path) {
                                 Storage::disk('local')->delete((string) $existingPath);
@@ -3308,7 +3309,7 @@ class ApplicationController extends Controller
                 $file = $row['passport_image'] ?? null;
 
                 if ($file instanceof UploadedFile) {
-                    $path = $file->store('application-annex/equipment-traveler-passports', 'local');
+                    $path = UploadedFileStorage::store($file, 'application-annex/equipment-traveler-passports');
                     $passportMetadata = [
                         'passport_image_path' => $path,
                         'passport_image_name' => $file->getClientOriginalName(),
@@ -3455,7 +3456,7 @@ class ApplicationController extends Controller
         $file = $row['attachment'] ?? null;
 
         if ($file instanceof UploadedFile) {
-            $path = $file->store('application-annex/imported-equipment', 'local');
+            $path = UploadedFileStorage::store($file, 'application-annex/imported-equipment');
 
             return [
                 'attachment_path' => $path,
@@ -3485,7 +3486,7 @@ class ApplicationController extends Controller
         $file = $validated['work_content_summary_attachment'] ?? null;
 
         if ($file instanceof UploadedFile) {
-            $path = $file->store('application-annex/work-content-summaries', 'local');
+            $path = UploadedFileStorage::store($file, 'application-annex/work-content-summaries');
 
             return [
                 'attachment_path' => $path,
@@ -3718,7 +3719,7 @@ class ApplicationController extends Controller
                     $file = $row['passport_image'] ?? null;
 
                     if ($file instanceof UploadedFile) {
-                        $path = $file->store('application-annex/cast-crew-passports', 'local');
+                        $path = UploadedFileStorage::store($file, 'application-annex/cast-crew-passports');
                         $passportMetadata = [
                             'passport_image_path' => $path,
                             'passport_image_name' => $file->getClientOriginalName(),

@@ -6,9 +6,11 @@ use App\Rules\SafeExternalUrl;
 use App\Rules\SafeExternalUrlOrText;
 use App\Support\ApprovedOutboundUrl;
 use App\Support\DocumentUploadInspector;
+use App\Support\UploadedFileStorage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Tests\TestCase;
 use ZipArchive;
@@ -367,6 +369,34 @@ class SecurityHardeningTest extends TestCase
 
         try {
             $this->assertNull(app(DocumentUploadInspector::class)->inspect($file));
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    public function test_uploaded_file_storage_uses_the_windows_pathname_when_realpath_is_unavailable(): void
+    {
+        Storage::fake('local');
+        $path = tempnam(sys_get_temp_dir(), 'rfc-upload-');
+
+        $this->assertIsString($path);
+        $contents = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF";
+        file_put_contents($path, $contents);
+
+        $file = new class($path, 'company-document.pdf', 'application/pdf', null, true) extends UploadedFile
+        {
+            public function getRealPath(): string|false
+            {
+                return false;
+            }
+        };
+
+        try {
+            $storedPath = UploadedFileStorage::store($file, 'registration-documents/company');
+
+            $this->assertStringStartsWith('registration-documents/company/', $storedPath);
+            Storage::disk('local')->assertExists($storedPath);
+            $this->assertSame($contents, Storage::disk('local')->get($storedPath));
         } finally {
             @unlink($path);
         }

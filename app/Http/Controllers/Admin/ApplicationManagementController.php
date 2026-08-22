@@ -23,6 +23,7 @@ use App\Support\AdminApplicantResponseState;
 use App\Support\AdminWorkflowState;
 use App\Support\CsvExport;
 use App\Support\NotificationRecipients;
+use App\Support\UploadedFileStorage;
 use App\Support\WorkflowMessageMetadata;
 use Illuminate\Support\Collection;
 use Illuminate\Database\Eloquent\Builder;
@@ -497,7 +498,7 @@ class ApplicationManagementController extends Controller
         $letterMime = $record->final_letter_mime_type;
 
         if ($request->file('final_letter')) {
-            $letterPath = $request->file('final_letter')->store('application-final-decisions/'.$record->getKey(), 'local');
+            $letterPath = UploadedFileStorage::store($request->file('final_letter'), 'application-final-decisions/'.$record->getKey());
             $letterName = $request->file('final_letter')->getClientOriginalName();
             $letterMime = $request->file('final_letter')->getClientMimeType();
 
@@ -823,7 +824,7 @@ class ApplicationManagementController extends Controller
         $attachmentMime = null;
 
         if ($request->file('attachment')) {
-            $attachmentPath = $request->file('attachment')->store('application-correspondence/'.$record->getKey(), 'local');
+            $attachmentPath = UploadedFileStorage::store($request->file('attachment'), 'application-correspondence/'.$record->getKey());
             $attachmentName = $request->file('attachment')->getClientOriginalName();
             $attachmentMime = $request->file('attachment')->getClientMimeType();
         }
