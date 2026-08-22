@@ -72,8 +72,8 @@ class DocumentUploadInspector
             return 'active_content';
         }
 
-        foreach ($this->decodedPdfStreams($contents) as $stream) {
-            if ($this->containsActivePdfContent($stream)) {
+        foreach ($this->decodedPdfObjectStreams($contents) as $stream) {
+            if ($this->containsActivePdfSyntax($stream)) {
                 return 'active_content';
             }
         }
@@ -176,20 +176,36 @@ class DocumentUploadInspector
 
     private function containsActivePdfContent(string $contents): bool
     {
-        $normalized = preg_replace_callback(
-            '/#([0-9a-f]{2})/i',
-            static fn (array $match): string => chr((int) hexdec($match[1])),
+        $syntax = preg_replace(
+            '/stream(?:\r\n|\r|\n).*?(?:\r\n|\r|\n)endstream/s',
+            "stream\nendstream",
             $contents,
         ) ?? $contents;
 
+        return $this->containsActivePdfSyntax($syntax);
+    }
+
+    private function containsActivePdfSyntax(string $contents): bool
+    {
+        $normalized = $this->normalizePdfNames($contents);
+
         return preg_match(
-            '/(\/JavaScript\b|\/JS\b|\/OpenAction\b|\/AA\b|\/Launch\b|\/EmbeddedFiles?\b|\/RichMedia\b|\/XFA\b|\/Encrypt\b|\/URI\b|\/SubmitForm\b|\/ImportData\b|\/GoToR\b|javascript\s*:)/i',
+            '/(\/JavaScript\b|\/AA\b|\/Launch\b|\/EmbeddedFiles?\b|\/RichMedia\b|\/XFA\b|\/Encrypt\b|\/SubmitForm\b|\/ImportData\b|\/GoToR\b|\/S\s*\/Named\b(?:(?!>>).){0,512}\/N\s*\/Print\b|javascript\s*:)/is',
             $normalized,
         ) === 1;
     }
 
+    private function normalizePdfNames(string $contents): string
+    {
+        return preg_replace_callback(
+            '/#([0-9a-f]{2})/i',
+            static fn (array $match): string => chr((int) hexdec($match[1])),
+            $contents,
+        ) ?? $contents;
+    }
+
     /** @return list<string> */
-    private function decodedPdfStreams(string $contents): array
+    private function decodedPdfObjectStreams(string $contents): array
     {
         preg_match_all(
             '/stream(?:\r\n|\r|\n)(.*?)(?:\r\n|\r|\n)endstream/s',
@@ -204,7 +220,8 @@ class DocumentUploadInspector
             $offset = (int) $match[0][1];
             $dictionary = substr($contents, max(0, $offset - 4096), min(4096, $offset));
 
-            if (! str_contains($dictionary, '/FlateDecode')) {
+            if (! str_contains($dictionary, '/FlateDecode')
+                || preg_match('/\/Type\s*\/ObjStm\b/i', $this->normalizePdfNames($dictionary)) !== 1) {
                 continue;
             }
 

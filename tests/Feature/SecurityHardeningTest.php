@@ -331,11 +331,23 @@ class SecurityHardeningTest extends TestCase
         );
         $activePdf = UploadedFile::fake()->createWithContent(
             'active.pdf',
-            "%PDF-1.4\n1 0 obj\n<< /OpenAction 2 0 R /JavaScript (alert(1)) >>\nendobj\n%%EOF",
+            "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /OpenAction 2 0 R >>\nendobj\n2 0 obj\n<< /S /JavaScript /JS (alert(1)) >>\nendobj\n%%EOF",
         );
 
         $this->assertNull($inspector->inspect($safePdf));
         $this->assertSame('active_content', $inspector->inspect($activePdf));
+    }
+
+    public function test_pdf_inspector_accepts_safe_links_view_destinations_and_stream_bytes(): void
+    {
+        $safePdf = UploadedFile::fake()->createWithContent(
+            'safe-linked.pdf',
+            "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /OpenAction [3 0 R /FitH null] >>\nendobj\n"
+            ."2 0 obj\n<< /Subtype /Link /A << /S /URI /URI (https://example.com) >> >>\nendobj\n"
+            ."3 0 obj\n<< /Length 18 >>\nstream\nordinary /jS bytes\nendstream\nendobj\n%%EOF",
+        );
+
+        $this->assertNull(app(DocumentUploadInspector::class)->inspect($safePdf));
     }
 
     public function test_upload_inspector_uses_the_windows_pathname_when_realpath_is_unavailable(): void
@@ -362,10 +374,10 @@ class SecurityHardeningTest extends TestCase
 
     public function test_pdf_inspector_rejects_active_content_hidden_in_a_compressed_stream(): void
     {
-        $payload = gzcompress('<< /S /JavaScript /JS (app.alertMsg("unsafe")) >>');
+        $payload = gzcompress('2 0 << /S /JavaScript /JS (app.alertMsg("unsafe")) >>');
         $pdf = UploadedFile::fake()->createWithContent(
             'compressed-active.pdf',
-            "%PDF-1.7\n1 0 obj\n<< /Filter /FlateDecode /Length ".strlen($payload)." >>\nstream\n{$payload}\nendstream\nendobj\n%%EOF",
+            "%PDF-1.7\n1 0 obj\n<< /Type /ObjStm /N 1 /First 4 /Filter /FlateDecode /Length ".strlen($payload)." >>\nstream\n{$payload}\nendstream\nendobj\n%%EOF",
         );
 
         $this->assertSame('active_content', app(DocumentUploadInspector::class)->inspect($pdf));
