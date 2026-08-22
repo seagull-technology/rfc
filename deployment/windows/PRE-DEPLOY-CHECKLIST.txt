@@ -50,7 +50,7 @@ Before running the deployment:
    GSB_CCD_COMPANY_METHOD=GET
    GSB_MIT_SERVICES_ENABLED=true
    GSB_MIT_SERVICES_PATH=/porg-g2g/g2g/api/Registry/getIndividualRegistry
-   GSB_MIT_SERVICES_METHOD=POST
+   GSB_MIT_SERVICES_METHOD=GET
    GSB_CSPD_MASKED_ENABLED=true
    GSB_CSPD_MASKED_PATH=/porg-g2g/g2g/masked/api/person-info
    GSB_CSPD_MASKED_METHOD=GET

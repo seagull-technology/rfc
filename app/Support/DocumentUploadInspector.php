@@ -30,9 +30,9 @@ class DocumentUploadInspector
             return 'invalid_extension';
         }
 
-        $path = $file->getRealPath();
+        $path = $this->readablePath($file);
 
-        if (! is_string($path) || ! is_file($path)) {
+        if ($path === null) {
             return 'unreadable';
         }
 
@@ -243,6 +243,22 @@ class DocumentUploadInspector
         $contents = file_get_contents($path, false, null, 0, strlen($prefix));
 
         return is_string($contents) && hash_equals($prefix, $contents);
+    }
+
+    private function readablePath(UploadedFile $file): ?string
+    {
+        $paths = [
+            $file->getRealPath(),
+            $file->getPathname(),
+        ];
+
+        foreach ($paths as $path) {
+            if (is_string($path) && $path !== '' && is_file($path) && is_readable($path)) {
+                return $path;
+            }
+        }
+
+        return null;
     }
 
     private function isTiff(string $path): bool

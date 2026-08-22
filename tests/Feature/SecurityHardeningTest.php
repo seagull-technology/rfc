@@ -338,6 +338,28 @@ class SecurityHardeningTest extends TestCase
         $this->assertSame('active_content', $inspector->inspect($activePdf));
     }
 
+    public function test_upload_inspector_uses_the_windows_pathname_when_realpath_is_unavailable(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'rfc-upload-');
+
+        $this->assertIsString($path);
+        file_put_contents($path, "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF");
+
+        $file = new class($path, 'company-document.pdf', 'application/pdf', null, true) extends UploadedFile
+        {
+            public function getRealPath(): string|false
+            {
+                return false;
+            }
+        };
+
+        try {
+            $this->assertNull(app(DocumentUploadInspector::class)->inspect($file));
+        } finally {
+            @unlink($path);
+        }
+    }
+
     public function test_pdf_inspector_rejects_active_content_hidden_in_a_compressed_stream(): void
     {
         $payload = gzcompress('<< /S /JavaScript /JS (app.alertMsg("unsafe")) >>');

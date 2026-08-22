@@ -40,7 +40,6 @@ return Application::configure(basePath: dirname(__DIR__))
             BlockSecurityProbePaths::class,
             AddSecurityHeaders::class,
             PrivateCacheHeaders::class,
-            ValidateUploadedFiles::class,
         ]);
 
         $middleware->alias([
@@ -56,10 +55,12 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->web(append: [
             SetPermissionsEntityContext::class,
+            ValidateUploadedFiles::class,
         ]);
 
         $middleware->api(append: [
             SetPermissionsEntityContext::class,
+            ValidateUploadedFiles::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

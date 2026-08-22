@@ -549,6 +549,7 @@ class AuthFlowTest extends TestCase
                 $encodedContext = json_encode($context);
 
                 return $message === 'Registration validation rejected'
+                    && ($context['route'] ?? null) === 'register.store'
                     && ($context['stage'] ?? null) === 'upload_inspection'
                     && ($context['fields'] ?? null) === ['registration_document']
                     && ($context['reason'] ?? null) === 'active_content'
@@ -672,7 +673,7 @@ class AuthFlowTest extends TestCase
 
         Http::fake([
             'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/companies/CompanybyNo/66677' => Http::response(['data' => []]),
-            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getIndividualRegistry' => Http::response([
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getIndividualRegistry*' => Http::response([
                 'status' => 200,
                 'message' => 'Success',
                 'data' => [
@@ -706,8 +707,8 @@ class AuthFlowTest extends TestCase
             ->assertJsonPath('meta.source', 'gsb_mit_services')
             ->assertJsonCount(2, 'meta.attempts');
 
-        Http::assertSent(fn ($request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getIndividualRegistry'
+        Http::assertSent(fn ($request): bool => $request->method() === 'GET'
+            && str_starts_with($request->url(), 'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getIndividualRegistry?')
             && $request['nationalNo'] === '66677');
     }
 
@@ -720,7 +721,7 @@ class AuthFlowTest extends TestCase
 
         Http::fake([
             'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/companies/CompanybyNo/99999' => Http::response([], 404),
-            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getIndividualRegistry' => Http::response([], 404),
+            'https://api-gateway.stg.gsb.gov.jo:9443/porg-g2g/g2g/api/Registry/getIndividualRegistry*' => Http::response([], 404),
         ]);
 
         $this->postJson(route('register.company.lookup'), [
@@ -1166,7 +1167,7 @@ class AuthFlowTest extends TestCase
         config()->set('services.gsb.services.mit_services.enabled', true);
         config()->set('services.gsb.services.mit_services.base_url', 'https://api-gateway.stg.gsb.gov.jo:9443');
         config()->set('services.gsb.services.mit_services.path', '/porg-g2g/g2g/api/Registry/getIndividualRegistry');
-        config()->set('services.gsb.services.mit_services.method', 'POST');
+        config()->set('services.gsb.services.mit_services.method', 'GET');
     }
 
     private function assertOrganizationRegistrationCreatesPendingAccount(
