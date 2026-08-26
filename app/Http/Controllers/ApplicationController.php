@@ -43,7 +43,6 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\RequiredIf;
 use Illuminate\View\View;
 use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -166,7 +165,7 @@ class ApplicationController extends Controller
         $this->mergeLockedApplicantProducerFields($request, $user, $entity);
         $this->mergeProductionTermsSigner($request, $user);
         $this->mergeMinistryInteriorPersonalDetailsSigner($request, $user);
-        $validated = $this->validateApplicationPayload($request, false, $entity, $user);
+        $validated = $this->validateApplicationPayload($request, $entity, $user);
         $requiresInternationalProject = $this->projectRequiresInternationalSection($validated, $entity, $user);
 
         $foreignProducerToInvite = null;
@@ -299,7 +298,7 @@ class ApplicationController extends Controller
         $this->mergeLockedApplicantProducerFields($request, $user, $entity);
         $this->mergeProductionTermsSigner($request, $user, $record);
         $this->mergeMinistryInteriorPersonalDetailsSigner($request, $user, $record);
-        $validated = $this->validateApplicationPayload($request, false, $entity, $user);
+        $validated = $this->validateApplicationPayload($request, $entity, $user, $record);
 
         $attributes = $this->applicationAttributes(
             $validated,
@@ -1651,16 +1650,27 @@ class ApplicationController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function validateApplicationPayload(Request $request, bool $requireComplete = false, ?Entity $entity = null, ?User $user = null): array
-    {
-        $rules = $this->applicationValidationRules($request, $entity, $user);
+    private function validateApplicationPayload(
+        Request $request,
+        ?Entity $entity = null,
+        ?User $user = null,
+        ?FilmApplication $application = null,
+    ): array {
+        $validator = Validator::make(
+            $request->all(),
+            $this->applicationValidationRules($request, $entity, $user),
+        );
 
-        if (! $requireComplete) {
-            $rules = $this->draftApplicationValidationRules($rules);
-            $rules['work_content_summary_synopsis'] = ['nullable', 'string', 'max:50000'];
-        }
+        $validator->after(function ($validator) use ($request, $user, $application): void {
+            $this->addCastCrewSubmissionValidationErrors(
+                $validator,
+                (array) data_get($request->all(), 'cast_crew', []),
+                $user?->getKey(),
+                (array) data_get($application?->metadata, 'annex.cast_crew', []),
+            );
+        });
 
-        return $this->normalizeApplicationPayload($request->validate($rules));
+        return $this->normalizeApplicationPayload($validator->validate());
     }
 
     private function validateApplicationForSubmission(FilmApplication $application): void
@@ -2185,7 +2195,7 @@ class ApplicationController extends Controller
         $validator->after(function ($validator) use ($request, $application): void {
             $this->addCastCrewSubmissionValidationErrors(
                 $validator,
-                (array) $request->input('cast_crew', []),
+                (array) data_get($request->all(), 'cast_crew', []),
                 $request->user()?->getKey(),
                 (array) data_get($application->metadata, 'annex.cast_crew', []),
             );
@@ -2657,102 +2667,6 @@ class ApplicationController extends Controller
         }
 
         return false;
-    }
-
-    /**
-     * @param  array<string, array<int, mixed>>  $rules
-     * @return array<string, array<int, mixed>>
-     */
-    private function draftApplicationValidationRules(array $rules): array
-    {
-        $strictStartedFormPrefixes = [
-            'ministry_interior_personal_details',
-            'equipment_travelers',
-            'imported_equipment',
-            'traveler_equipment_acknowledged',
-            'shipping_equipment_acknowledged',
-            'airport_filming_',
-            'airport_people',
-            'governmental_scenes',
-        ];
-
-        foreach ($rules as $attribute => $attributeRules) {
-            // Optional project-needs forms may remain empty, but once started
-            // they must not persist partial records, even on a parent draft.
-            if (Str::startsWith($attribute, $strictStartedFormPrefixes)) {
-                continue;
-            }
-
-            $relaxedRules = [];
-
-            foreach ($attributeRules as $rule) {
-                if ($rule === 'required') {
-                    if (! in_array('nullable', $relaxedRules, true)) {
-                        $relaxedRules[] = 'nullable';
-                    }
-
-                    continue;
-                }
-
-                if ($rule instanceof RequiredIf) {
-                    if (! in_array('nullable', $relaxedRules, true)) {
-                        $relaxedRules[] = 'nullable';
-                    }
-
-                    continue;
-                }
-
-                if ($rule === 'accepted') {
-                    if (! in_array('nullable', $relaxedRules, true)) {
-                        $relaxedRules[] = 'nullable';
-                    }
-
-                    if (! in_array('boolean', $relaxedRules, true)) {
-                        $relaxedRules[] = 'boolean';
-                    }
-
-                    continue;
-                }
-
-                if ($attribute === 'filming_locations.*.start_date' && $rule === 'after_or_equal:today') {
-                    continue;
-                }
-
-                if ($attribute === 'filming_locations.*.start_date' && $rule instanceof \Closure) {
-                    continue;
-                }
-
-                if ($attribute === 'filming_locations.*.support_requirements.*.date' && $rule instanceof \Closure) {
-                    continue;
-                }
-
-                if ($attribute === 'filming_locations.*.support_requirements.*.notes' && $rule instanceof SupportRequirementNotesRequired) {
-                    continue;
-                }
-
-                if ($attribute === 'location_support_requirements.*.shared_date' && $rule instanceof \Closure) {
-                    continue;
-                }
-
-                if ($attribute === 'location_support_requirements.*.assignments' && $rule instanceof \Closure) {
-                    continue;
-                }
-
-                if ($attribute === 'location_support_requirements.*.assignments.*.date' && $rule instanceof \Closure) {
-                    continue;
-                }
-
-                if ($attribute === 'location_support_requirements.*.notes' && $rule instanceof SupportRequirementNotesRequired) {
-                    continue;
-                }
-
-                $relaxedRules[] = $rule;
-            }
-
-            $rules[$attribute] = $relaxedRules;
-        }
-
-        return $rules;
     }
 
     /**

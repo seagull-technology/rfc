@@ -372,8 +372,8 @@ class ApprovalRoutingTest extends TestCase
                 'location_name' => 'Downtown Amman',
                 'address' => 'Downtown Amman map pin',
                 'location_type' => 'public_locations',
-                'start_date' => '2026-05-04',
-                'end_date' => '2026-05-05',
+                'start_date' => $filmingStart,
+                'end_date' => $filmingEnd,
             ]],
         ]));
 

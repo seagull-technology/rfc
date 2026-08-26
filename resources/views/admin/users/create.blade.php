@@ -28,44 +28,79 @@
                     </div>
                 </div>
                 <div class="card-body">
+                    @if ($errors->any())
+                        <div class="alert alert-danger" role="alert" data-user-create-validation-summary>
+                            <div class="fw-semibold">{{ __('app.admin.users.validation_summary') }}</div>
+                            <ul class="mb-0 mt-2">
+                                @foreach ($errors->all() as $error)
+                                    <li>{{ $error }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
+
                     <form method="POST" action="{{ route('admin.users.store') }}" class="row g-3">
                         @csrf
 
                         <div class="col-md-6">
                             <label for="name" class="form-label">{{ __('app.admin.users.name') }}</label>
-                            <input id="name" name="name" type="text" class="form-control" value="{{ old('name') }}" required>
+                            <input id="name" name="name" type="text" class="form-control @error('name') is-invalid @enderror" value="{{ old('name') }}" required>
+                            @error('name')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
                         </div>
                         <div class="col-md-6">
                             <label for="username" class="form-label">{{ __('app.auth.username') }}</label>
-                            <input id="username" name="username" type="text" class="form-control" value="{{ old('username') }}" required>
+                            <input id="username" name="username" type="text" class="form-control @error('username') is-invalid @enderror" value="{{ old('username') }}" required>
+                            @error('username')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
                         </div>
                         <div class="col-md-6">
                             <label for="email" class="form-label">{{ __('app.auth.email') }}</label>
-                            <input id="email" name="email" type="email" class="form-control" value="{{ old('email') }}" required>
+                            <input id="email" name="email" type="email" class="form-control @error('email') is-invalid @enderror" value="{{ old('email') }}" required>
+                            @error('email')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
                         </div>
                         <div class="col-md-6">
                             <label for="national_id" class="form-label">{{ __('app.auth.national_id') }}</label>
-                            <input id="national_id" name="national_id" type="text" class="form-control" value="{{ old('national_id') }}" required>
+                            <input id="national_id" name="national_id" type="text" class="form-control @error('national_id') is-invalid @enderror" value="{{ old('national_id') }}" required>
+                            @error('national_id')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
                         </div>
                         <div class="col-md-6">
                             <label for="phone" class="form-label">{{ __('app.auth.mobile_number') }}</label>
-                            <input id="phone" name="phone" type="text" class="form-control" value="{{ old('phone') }}" required>
+                            <input id="phone" name="phone" type="text" class="form-control @error('phone') is-invalid @enderror" value="{{ old('phone') }}" required>
+                            @error('phone')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
                         </div>
                         <div class="col-md-6">
                             <label for="job_title" class="form-label">{{ __('app.admin.entities.member_job_title') }}</label>
-                            <input id="job_title" name="job_title" type="text" class="form-control" value="{{ old('job_title') }}">
+                            <input id="job_title" name="job_title" type="text" class="form-control @error('job_title') is-invalid @enderror" value="{{ old('job_title') }}">
+                            @error('job_title')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
                         </div>
                         <div class="col-md-6">
                             <label for="password" class="form-label">{{ __('app.auth.password') }}</label>
-                            <input id="password" name="password" type="password" class="form-control" required>
+                            <input id="password" name="password" type="password" class="form-control @error('password') is-invalid @enderror" required>
+                            @error('password')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
                         </div>
                         <div class="col-md-6">
                             <label for="password_confirmation" class="form-label">{{ __('app.auth.confirm_password') }}</label>
-                            <input id="password_confirmation" name="password_confirmation" type="password" class="form-control" required>
+                            <input id="password_confirmation" name="password_confirmation" type="password" class="form-control @error('password_confirmation') is-invalid @enderror" required>
+                            @error('password_confirmation')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
                         </div>
                         <div class="col-md-6">
                             <label for="entity_id" class="form-label">{{ __('app.admin.users.initial_entity') }}</label>
-                            <select id="entity_id" name="entity_id" class="form-select select2-basic-single" required>
+                            <select id="entity_id" name="entity_id" class="form-select select2-basic-single @error('entity_id') is-invalid @enderror" required>
                                 <option value="">{{ __('app.admin.select_placeholder') }}</option>
                                 @foreach ($entities as $entity)
                                     <option value="{{ $entity->id }}" data-roles="{{ $entity->group->roles->pluck('name')->join(',') }}" @selected(old('entity_id') == $entity->id)>
@@ -73,21 +108,33 @@
                                     </option>
                                 @endforeach
                             </select>
+                            @error('entity_id')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
                         </div>
                         <div class="col-md-6">
                             <label for="roles" class="form-label">{{ __('app.admin.users.initial_roles') }}</label>
                             <div class="admin-role-picker-field is-disabled" data-role-picker-field>
-                                <select id="roles" name="roles[]" class="form-select select2-basic-multiple admin-role-picker-select" multiple required disabled data-placeholder="{{ __('app.admin.users.choose_entity_first') }}" data-active-placeholder="{{ __('app.admin.select_placeholder') }}" data-disabled-placeholder="{{ __('app.admin.users.choose_entity_first') }}" data-empty-placeholder="{{ __('app.admin.users.no_roles_for_entity') }}">
+                                <select id="roles" name="roles[]" class="form-select select2-basic-multiple admin-role-picker-select @error('roles') is-invalid @enderror" multiple required disabled data-placeholder="{{ __('app.admin.users.choose_entity_first') }}" data-active-placeholder="{{ __('app.admin.select_placeholder') }}" data-disabled-placeholder="{{ __('app.admin.users.choose_entity_first') }}" data-empty-placeholder="{{ __('app.admin.users.no_roles_for_entity') }}">
                                 </select>
                             </div>
+                            @error('roles')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
+                            @error('roles.*')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
                             <div class="form-text">{{ __('app.admin.users.roles_depend_on_entity') }}</div>
                         </div>
                         <div class="col-12">
                             <label for="is_primary" class="form-label">{{ __('app.admin.entities.member_primary') }}</label>
-                            <select id="is_primary" name="is_primary" class="form-select">
+                            <select id="is_primary" name="is_primary" class="form-select @error('is_primary') is-invalid @enderror">
                                 <option value="1" @selected(old('is_primary', '1') === '1')>{{ __('app.admin.yes') }}</option>
                                 <option value="0" @selected(old('is_primary') === '0')>{{ __('app.admin.no') }}</option>
                             </select>
+                            @error('is_primary')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
                         </div>
                         <div class="col-12">
                             <button class="btn btn-primary" type="submit">{{ __('app.admin.users.create_action') }}</button>

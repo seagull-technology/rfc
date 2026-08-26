@@ -293,24 +293,22 @@ class ApplicationWorkflowTest extends TestCase
             ->assertSeeText(__('app.applications.work_summary_instruction', ['min' => 5]));
 
         $this->actingAs($user)
+            ->from(route('applications.create'))
             ->post(route('applications.store'), $this->applicationPayload([
                 'work_content_summary_synopsis' => $this->arabicWorkContentSummary(4),
             ]))
-            ->assertRedirect();
-
-        $application = Application::query()->firstOrFail();
-
-        $this->actingAs($user)
-            ->post(route('applications.submit', $application))
+            ->assertRedirect(route('applications.create'))
             ->assertSessionHasErrors('work_content_summary_synopsis');
 
-        $this->assertSame('draft', $application->fresh()->status);
+        $this->assertDatabaseCount('applications', 0);
 
         $this->actingAs($user)
-            ->post(route('applications.update', $application), $this->applicationPayload([
+            ->post(route('applications.store'), $this->applicationPayload([
                 'work_content_summary_synopsis' => $this->arabicWorkContentSummary(5),
             ]))
-            ->assertRedirect(route('applications.show', $application));
+            ->assertSessionHasNoErrors();
+
+        $application = Application::query()->firstOrFail();
 
         $this->actingAs($user)
             ->post(route('applications.submit', $application))
@@ -434,7 +432,7 @@ class ApplicationWorkflowTest extends TestCase
             ]);
     }
 
-    public function test_final_submission_requires_complete_foreign_cast_crew_passport_data(): void
+    public function test_draft_save_requires_complete_foreign_cast_crew_passport_data(): void
     {
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
@@ -442,6 +440,7 @@ class ApplicationWorkflowTest extends TestCase
         [$user] = $this->createApplicantContext();
 
         $this
+            ->from(route('applications.create'))
             ->actingAs($user)
             ->post(route('applications.store'), $this->applicationPayload([
                 'cast_crew' => [[
@@ -453,18 +452,10 @@ class ApplicationWorkflowTest extends TestCase
                     'identity_number' => 'P1234567',
                 ]],
             ]))
-            ->assertRedirect();
-
-        $application = Application::query()->firstOrFail();
-
-        $this
-            ->actingAs($user)
-            ->from(route('applications.show', $application))
-            ->post(route('applications.submit', $application))
-            ->assertRedirect(route('applications.show', $application))
+            ->assertRedirect(route('applications.create'))
             ->assertSessionHasErrors('cast_crew.0.passport_image');
 
-        $this->assertSame('draft', $application->fresh()->status);
+        $this->assertDatabaseCount('applications', 0);
     }
 
     public function test_cast_crew_passports_follow_identity_and_ignore_forged_hidden_file_metadata(): void
@@ -499,7 +490,8 @@ class ApplicationWorkflowTest extends TestCase
                     ],
                 ],
             ]))
-            ->assertRedirect();
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
 
         $application = Application::query()->firstOrFail();
         $actorAPath = data_get($application->metadata, 'annex.cast_crew.0.passport_image_path');
@@ -531,6 +523,26 @@ class ApplicationWorkflowTest extends TestCase
                         'identity_number' => 'PASS-A',
                         'passport_image_path' => $actorAPath,
                     ],
+                ],
+            ]))
+            ->assertRedirect(route('applications.show', $application))
+            ->assertSessionHasNoErrors();
+
+        $application->refresh();
+        $crew = data_get($application->metadata, 'annex.cast_crew', []);
+
+        $this->assertSame('PASS-B', data_get($crew, '0.identity_number'));
+        $this->assertSame($actorBPath, data_get($crew, '0.passport_image_path'));
+        $this->assertSame('PASS-A', data_get($crew, '1.identity_number'));
+        $this->assertSame($actorAPath, data_get($crew, '1.passport_image_path'));
+        $this->assertCount(2, $crew);
+
+        $this
+            ->from(route('applications.edit', $application))
+            ->actingAs($user)
+            ->post(route('applications.update', $application), $this->applicationPayload([
+                'cast_crew' => [
+                    ...$crew,
                     [
                         'name' => 'Foreign Actor C',
                         'role' => 'Actor',
@@ -546,19 +558,10 @@ class ApplicationWorkflowTest extends TestCase
                     ],
                 ],
             ]))
-            ->assertRedirect(route('applications.show', $application))
-            ->assertSessionHasNoErrors();
+            ->assertRedirect(route('applications.edit', $application))
+            ->assertSessionHasErrors('cast_crew.2.passport_image');
 
-        $application->refresh();
-        $crew = data_get($application->metadata, 'annex.cast_crew', []);
-
-        $this->assertSame('PASS-B', data_get($crew, '0.identity_number'));
-        $this->assertSame($actorBPath, data_get($crew, '0.passport_image_path'));
-        $this->assertSame('PASS-A', data_get($crew, '1.identity_number'));
-        $this->assertSame($actorAPath, data_get($crew, '1.passport_image_path'));
-        $this->assertSame('PASS-C', data_get($crew, '2.identity_number'));
-        $this->assertNull(data_get($crew, '2.passport_image_path'));
-        $this->assertNull(data_get($crew, '2.passport_image_name'));
+        $this->assertCount(2, data_get($application->fresh()->metadata, 'annex.cast_crew', []));
     }
 
     public function test_jordanian_airport_person_identity_must_be_ten_digits(): void
@@ -784,14 +787,15 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertTrue($application->fresh()->foreignProducerDeclarationIsSigned());
     }
 
-    public function test_non_jordanian_project_requires_international_section_before_submission(): void
+    public function test_non_jordanian_project_requires_international_section_before_draft_save(): void
     {
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
 
         [$user] = $this->createApplicantContext();
 
-        $this
+        $invalidResponse = $this
+            ->from(route('applications.create'))
             ->actingAs($user)
             ->post(route('applications.store'), $this->applicationPayload([
                 'project_nationalities' => ['international'],
@@ -805,15 +809,11 @@ class ApplicationWorkflowTest extends TestCase
                 'international_liaison_name' => null,
                 'international_liaison_email' => null,
                 'international_liaison_mobile' => null,
+                'international_account_exists' => null,
             ]));
 
-        $application = Application::query()->firstOrFail();
-
-        $this
-            ->from(route('applications.show', $application))
-            ->actingAs($user)
-            ->post(route('applications.submit', $application))
-            ->assertRedirect(route('applications.show', $application))
+        $invalidResponse
+            ->assertRedirect(route('applications.create'))
             ->assertSessionHasErrors([
                 'international_producer_name',
                 'international_producer_nationality',
@@ -827,9 +827,11 @@ class ApplicationWorkflowTest extends TestCase
                 'international_account_exists',
             ]);
 
+        $this->assertDatabaseCount('applications', 0);
+
         $this
             ->actingAs($user)
-            ->post(route('applications.update', $application), $this->applicationPayload([
+            ->post(route('applications.store'), $this->applicationPayload([
                 'project_nationalities' => ['international'],
                 'international_producer_name' => 'Global Partner',
                 'international_producer_nationality' => 'non_jordanian',
@@ -842,7 +844,9 @@ class ApplicationWorkflowTest extends TestCase
                 'international_liaison_email' => 'liaison-submit@example.com',
                 'international_liaison_mobile' => '+962799000111',
             ]))
-            ->assertRedirect(route('applications.show', $application));
+            ->assertSessionHasNoErrors();
+
+        $application = Application::query()->firstOrFail();
 
         $this->assertNotEmpty(data_get($application->fresh()->metadata, 'international.account.user_id'));
 
@@ -952,64 +956,77 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertSame('submitted', $application->fresh()->status);
     }
 
-    public function test_applicant_can_save_incomplete_draft_but_cannot_submit_until_complete(): void
+    public function test_applicant_cannot_save_an_incomplete_draft(): void
     {
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
 
-        [$user, $entity] = $this->createApplicantContext();
+        [$user] = $this->createApplicantContext();
 
         $storeResponse = $this
+            ->from(route('applications.create'))
             ->actingAs($user)
             ->post(route('applications.store'), [
                 'project_name' => 'Partial Draft',
             ]);
 
-        $application = Application::query()->firstOrFail();
-
-        $storeResponse->assertRedirect(route('applications.show', $application));
-
-        $this->assertDatabaseHas('applications', [
-            'id' => $application->getKey(),
-            'entity_id' => $entity->getKey(),
-            'project_name' => 'Partial Draft',
-            'status' => 'draft',
-        ]);
-
-        $submitResponse = $this
-            ->from(route('applications.show', $application))
-            ->actingAs($user)
-            ->post(route('applications.submit', $application));
-
-        $submitResponse
-            ->assertRedirect(route('applications.show', $application))
+        $storeResponse
+            ->assertRedirect(route('applications.create'))
             ->assertSessionHasErrors([
                 'project_nationalities',
                 'work_category',
                 'release_method',
                 'planned_start_date',
+                'planned_end_date',
+                'schedule_phases',
                 'estimated_crew_count',
+                'director_name',
+                'director_nationality',
+                'director_email',
+                'production_terms_accepted',
+                'work_content_summary_synopsis',
+                'work_content_summary_confirmed',
                 'safety_guidelines_acknowledged',
             ]);
 
-        $this->assertSame('draft', $application->fresh()->status);
+        $this->assertDatabaseCount('applications', 0);
+    }
+
+    public function test_applicant_cannot_replace_a_complete_draft_with_incomplete_data(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext();
 
         $this
             ->actingAs($user)
-            ->post(route('applications.update', $application), $this->applicationPayload([
-                'project_name' => 'Completed Draft',
-            ]))
-            ->assertRedirect(route('applications.show', $application));
+            ->post(route('applications.store'), $this->applicationPayload())
+            ->assertSessionHasNoErrors();
 
-        $this
+        $application = Application::query()->firstOrFail();
+
+        $updateResponse = $this
+            ->from(route('applications.edit', $application))
             ->actingAs($user)
-            ->post(route('applications.submit', $application))
-            ->assertRedirect(route('applications.show', $application));
+            ->post(route('applications.update', $application), [
+                'project_name' => 'Incomplete Replacement',
+            ]);
+
+        $updateResponse
+            ->assertRedirect(route('applications.edit', $application))
+            ->assertSessionHasErrors([
+                'project_nationalities',
+                'work_category',
+                'planned_start_date',
+                'schedule_phases',
+                'director_name',
+            ]);
 
         $this->assertDatabaseHas('applications', [
             'id' => $application->getKey(),
-            'project_name' => 'Completed Draft',
-            'status' => 'submitted',
+            'project_name' => 'Desert Dreams',
+            'status' => 'draft',
         ]);
     }
 
@@ -1112,9 +1129,10 @@ class ApplicationWorkflowTest extends TestCase
                 'filming_locations' => [[
                     'governorate' => 'amman',
                     'location_name' => 'Petra Visitor Center',
+                    'address' => 'Petra Visitor Center',
                     'location_type' => 'petra',
-                    'start_date' => '2026-05-02',
-                    'end_date' => '2026-05-03',
+                    'start_date' => now()->addDays(30)->toDateString(),
+                    'end_date' => now()->addDays(31)->toDateString(),
                 ]],
             ]))
             ->assertRedirect(route('applications.create'))
@@ -1128,9 +1146,10 @@ class ApplicationWorkflowTest extends TestCase
                 'filming_locations' => [[
                     'governorate' => 'maan',
                     'location_name' => 'Petra Visitor Center',
+                    'address' => 'Petra Visitor Center',
                     'location_type' => 'petra',
-                    'start_date' => '2026-05-02',
-                    'end_date' => '2026-05-03',
+                    'start_date' => now()->addDays(30)->toDateString(),
+                    'end_date' => now()->addDays(31)->toDateString(),
                 ]],
             ]));
 
@@ -1182,7 +1201,7 @@ class ApplicationWorkflowTest extends TestCase
         $this->travelBack();
     }
 
-    public function test_filming_location_address_is_required_on_final_submit(): void
+    public function test_filming_location_address_is_required_before_draft_save(): void
     {
         $this->refreshApplicationWithLocale('en');
         $this->travelTo(Carbon::parse('2026-07-10 09:00:00'));
@@ -1191,6 +1210,7 @@ class ApplicationWorkflowTest extends TestCase
         [$user] = $this->createApplicantContext();
 
         $this
+            ->from(route('applications.create'))
             ->actingAs($user)
             ->post(route('applications.store'), $this->applicationPayload([
                 'filming_locations' => [[
@@ -1203,24 +1223,15 @@ class ApplicationWorkflowTest extends TestCase
                     'end_date' => '2026-08-12',
                 ]],
             ]))
-            ->assertRedirect()
-            ->assertSessionHasNoErrors();
-
-        $application = Application::query()->firstOrFail();
-
-        $this
-            ->from(route('applications.show', $application))
-            ->actingAs($user)
-            ->post(route('applications.submit', $application))
-            ->assertRedirect(route('applications.show', $application))
+            ->assertRedirect(route('applications.create'))
             ->assertSessionHasErrors('filming_locations.0.address');
 
-        $this->assertSame('draft', $application->fresh()->status);
+        $this->assertDatabaseCount('applications', 0);
 
         $this->travelBack();
     }
 
-    public function test_location_support_requirement_date_must_stay_inside_location_range(): void
+    public function test_location_support_requirement_date_must_stay_inside_location_range_before_draft_save(): void
     {
         $this->refreshApplicationWithLocale('en');
         $this->travelTo(Carbon::parse('2026-07-10 09:00:00'));
@@ -1229,6 +1240,7 @@ class ApplicationWorkflowTest extends TestCase
         [$user] = $this->createApplicantContext();
 
         $this
+            ->from(route('applications.create'))
             ->actingAs($user)
             ->post(route('applications.store'), $this->applicationPayload([
                 'filming_locations' => [[
@@ -1248,25 +1260,15 @@ class ApplicationWorkflowTest extends TestCase
                     ]],
                 ]],
             ]))
-            ->assertRedirect();
-
-        $application = Application::query()->firstOrFail();
-
-        $this
-            ->from(route('applications.show', $application))
-            ->actingAs($user)
-            ->post(route('applications.submit', $application))
-            ->assertRedirect(route('applications.show', $application))
+            ->assertRedirect(route('applications.create'))
             ->assertSessionHasErrors('filming_locations.0.support_requirements.0.date');
 
-        $application->refresh();
-
-        $this->assertSame('draft', $application->status);
+        $this->assertDatabaseCount('applications', 0);
 
         $this->travelBack();
     }
 
-    public function test_location_support_requirement_notes_are_required_before_submit_when_requirement_is_selected(): void
+    public function test_location_support_requirement_notes_are_required_before_draft_save_when_requirement_is_selected(): void
     {
         $this->refreshApplicationWithLocale('en');
         $this->travelTo(Carbon::parse('2026-07-10 09:00:00'));
@@ -1274,7 +1276,8 @@ class ApplicationWorkflowTest extends TestCase
 
         [$user] = $this->createApplicantContext();
 
-        $this
+        $invalidResponse = $this
+            ->from(route('applications.create'))
             ->actingAs($user)
             ->post(route('applications.store'), $this->applicationPayload([
                 'filming_locations' => [[
@@ -1294,22 +1297,17 @@ class ApplicationWorkflowTest extends TestCase
                         'notes' => '',
                     ]],
                 ]],
-            ]))
-            ->assertRedirect()
-            ->assertSessionDoesntHaveErrors();
+            ]));
 
-        $application = Application::query()->firstOrFail();
-
-        $this
-            ->from(route('applications.show', $application))
-            ->actingAs($user)
-            ->post(route('applications.submit', $application))
-            ->assertRedirect(route('applications.show', $application))
+        $invalidResponse
+            ->assertRedirect(route('applications.create'))
             ->assertSessionHasErrors('filming_locations.0.support_requirements.0.notes');
 
+        $this->assertDatabaseCount('applications', 0);
+
         $this
             ->actingAs($user)
-            ->post(route('applications.update', $application), $this->applicationPayload([
+            ->post(route('applications.store'), $this->applicationPayload([
                 'filming_locations' => [[
                     'governorate' => 'maan',
                     'location_name' => 'Wadi Rum Reserve',
@@ -1328,8 +1326,9 @@ class ApplicationWorkflowTest extends TestCase
                     ]],
                 ]],
             ]))
-            ->assertRedirect(route('applications.show', $application))
             ->assertSessionDoesntHaveErrors();
+
+        $application = Application::query()->firstOrFail();
 
         $this
             ->actingAs($user)
@@ -1537,7 +1536,7 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertSame('14:00', data_get($locations, '1.support_requirements.0.time_from'));
     }
 
-    public function test_shared_location_support_date_must_fit_every_selected_location(): void
+    public function test_shared_location_support_date_must_fit_every_selected_location_before_draft_save(): void
     {
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
@@ -1545,6 +1544,7 @@ class ApplicationWorkflowTest extends TestCase
         [$user] = $this->createApplicantContext();
 
         $this
+            ->from(route('applications.create'))
             ->actingAs($user)
             ->post(route('applications.store'), $this->applicationPayload([
                 'filming_locations' => [
@@ -1580,18 +1580,11 @@ class ApplicationWorkflowTest extends TestCase
                         ['location_key' => 'second_location', 'selected' => '1'],
                     ],
                 ]],
-            ]));
-
-        $application = Application::query()->firstOrFail();
-
-        $this
-            ->from(route('applications.show', $application))
-            ->actingAs($user)
-            ->post(route('applications.submit', $application))
-            ->assertRedirect(route('applications.show', $application))
+            ]))
+            ->assertRedirect(route('applications.create'))
             ->assertSessionHasErrors('location_support_requirements.0.shared_date');
 
-        $this->assertSame('draft', $application->fresh()->status);
+        $this->assertDatabaseCount('applications', 0);
     }
 
     public function test_location_type_approval_days_use_jordan_business_days(): void
@@ -1607,6 +1600,7 @@ class ApplicationWorkflowTest extends TestCase
         [$user] = $this->createApplicantContext();
 
         $this
+            ->from(route('applications.create'))
             ->actingAs($user)
             ->post(route('applications.store'), $this->applicationPayload([
                 'filming_locations' => [[
@@ -1619,20 +1613,14 @@ class ApplicationWorkflowTest extends TestCase
                     'end_date' => '2026-07-13',
                 ]],
             ]))
-            ->assertRedirect();
-
-        $application = Application::query()->firstOrFail();
-
-        $this
-            ->from(route('applications.show', $application))
-            ->actingAs($user)
-            ->post(route('applications.submit', $application))
-            ->assertRedirect(route('applications.show', $application))
+            ->assertRedirect(route('applications.create'))
             ->assertSessionHasErrors('filming_locations.0.start_date');
 
+        $this->assertDatabaseCount('applications', 0);
+
         $this
             ->actingAs($user)
-            ->post(route('applications.update', $application), $this->applicationPayload([
+            ->post(route('applications.store'), $this->applicationPayload([
                 'filming_locations' => [[
                     'governorate' => 'amman',
                     'location_name' => 'Historic Church',
@@ -1643,8 +1631,9 @@ class ApplicationWorkflowTest extends TestCase
                     'end_date' => '2026-07-14',
                 ]],
             ]))
-            ->assertRedirect(route('applications.show', $application))
             ->assertSessionHasNoErrors();
+
+        $application = Application::query()->firstOrFail();
 
         $this
             ->actingAs($user)
@@ -1720,6 +1709,7 @@ class ApplicationWorkflowTest extends TestCase
         [$user] = $this->createApplicantContext();
 
         $storeResponse = $this
+            ->from(route('applications.create'))
             ->actingAs($user)
             ->post(route('applications.store'), $this->applicationPayload([
                 'local_spend_estimate' => 175000,
@@ -1728,21 +1718,14 @@ class ApplicationWorkflowTest extends TestCase
                 ],
             ]));
 
-        $application = Application::query()->firstOrFail();
-
-        $storeResponse->assertRedirect(route('applications.show', $application));
-
-        $this
-            ->from(route('applications.show', $application))
-            ->actingAs($user)
-            ->post(route('applications.submit', $application))
-            ->assertRedirect(route('applications.show', $application))
+        $storeResponse
+            ->assertRedirect(route('applications.create'))
             ->assertSessionHasErrors([
                 'budget_items.jordanian_actors.units',
                 'budget_items.jordanian_actors.total',
             ]);
 
-        $this->assertSame('draft', $application->fresh()->status);
+        $this->assertDatabaseCount('applications', 0);
     }
 
     public function test_wrap_report_is_locked_until_wrap_end_date(): void
@@ -2159,27 +2142,23 @@ class ApplicationWorkflowTest extends TestCase
         ));
     }
 
-    public function test_applicant_cannot_submit_without_accepting_general_terms_and_conditions(): void
+    public function test_applicant_cannot_save_without_accepting_general_terms_and_conditions(): void
     {
         $this->refreshApplicationWithLocale('en');
         $this->seed(AccessControlSeeder::class);
 
         [$user] = $this->createApplicantContext();
 
-        $this->actingAs($user)->post(route('applications.store'), $this->applicationPayload([
-            'production_terms_accepted' => '0',
-        ]));
-
-        $application = Application::query()->firstOrFail();
-
         $this
-            ->from(route('applications.show', $application))
+            ->from(route('applications.create'))
             ->actingAs($user)
-            ->post(route('applications.submit', $application))
-            ->assertRedirect(route('applications.show', $application))
+            ->post(route('applications.store'), $this->applicationPayload([
+                'production_terms_accepted' => '0',
+            ]))
+            ->assertRedirect(route('applications.create'))
             ->assertSessionHasErrors('production_terms_accepted');
 
-        $this->assertSame('draft', $application->fresh()->status);
+        $this->assertDatabaseCount('applications', 0);
     }
 
     public function test_ministry_of_interior_personal_details_form_stores_authenticated_signature_and_is_displayed(): void
@@ -2644,7 +2623,7 @@ class ApplicationWorkflowTest extends TestCase
                 ['site_name' => 'Municipal archive', 'authority' => 'Greater Amman Municipality', 'scene_description' => 'Exterior establishing shot', 'filming_date' => '2026-05-05'],
             ],
             'governmental_scenes_confirmed' => '1',
-        ]));
+        ]))->assertSessionHasNoErrors();
 
         $application = Application::query()->firstOrFail();
 
@@ -6412,6 +6391,14 @@ class ApplicationWorkflowTest extends TestCase
             'international_producer_name' => 'Global Partner',
             'international_producer_nationality' => 'non_jordanian',
             'international_producer_company' => 'Global Films',
+            'international_producer_email' => 'global.producer@example.com',
+            'international_producer_profile_url' => 'https://example.com/global-producer',
+            'international_producer_address' => 'Amman',
+            'international_producer_website' => 'https://global-films.example.com',
+            'international_liaison_name' => 'Global Liaison',
+            'international_liaison_email' => 'global.liaison@example.com',
+            'international_liaison_mobile' => '+962799999999',
+            'international_account_exists' => '1',
             'filming_locations' => [[
                 'governorate' => 'maan',
                 'location_name' => 'Wadi Rum Reserve',

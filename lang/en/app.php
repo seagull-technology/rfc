@@ -3141,6 +3141,7 @@ return [
             'intro' => 'Create internal users, link them to entities, and grant the correct role for their entity context.',
             'create_title' => 'Create New User',
             'create_action' => 'Create user',
+            'validation_summary' => 'Review the highlighted fields and correct the errors before creating the user.',
             'created' => 'The user account has been created successfully.',
             'updated' => 'The user account has been updated successfully.',
             'status_updated' => 'The user status has been updated successfully.',

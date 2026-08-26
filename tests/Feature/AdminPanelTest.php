@@ -1233,6 +1233,43 @@ class AdminPanelTest extends TestCase
         ));
     }
 
+    public function test_create_user_form_displays_server_validation_errors(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+
+        $response = $this->actingAs($admin)
+            ->from(route('admin.users.create'))
+            ->post(route('admin.users.store'), [
+                'name' => 'Incomplete Security Test User',
+                'job_title' => 'Security Tester',
+            ]);
+
+        $response
+            ->assertRedirect(route('admin.users.create'))
+            ->assertSessionHasErrors([
+                'username',
+                'email',
+                'national_id',
+                'phone',
+                'password',
+                'entity_id',
+                'roles',
+            ]);
+
+        $page = $this->get(route('admin.users.create'));
+
+        $page
+            ->assertOk()
+            ->assertSee('data-user-create-validation-summary', false)
+            ->assertSeeText('Review the highlighted fields and correct the errors before creating the user.')
+            ->assertSeeText('The national ID field is required.')
+            ->assertSee('id="national_id"', false)
+            ->assertSee('is-invalid', false);
+    }
+
     public function test_super_admin_can_create_user_with_multiple_scoped_roles(): void
     {
         $this->refreshApplicationWithLocale('en');
