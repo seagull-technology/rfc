@@ -107,6 +107,26 @@ class AppServiceProvider extends ServiceProvider
             Limit::perHour(100)->by('registration-lookup-hourly-transport:'.$this->transportAddress($request)),
         ]);
 
+        RateLimiter::for('government-lookup', function (Request $request): array {
+            $userKey = (string) ($request->user()?->getAuthIdentifier() ?? 'guest');
+
+            return [
+                Limit::perMinute(10)->by('government-lookup-user:'.$userKey),
+                Limit::perHour(60)->by('government-lookup-hourly-user:'.$userKey),
+                Limit::perMinute(30)->by('government-lookup-ip:'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('content-submission', function (Request $request): array {
+            $userKey = (string) ($request->user()?->getAuthIdentifier() ?? 'guest');
+
+            return [
+                Limit::perMinute(10)->by('content-submission-user:'.$userKey),
+                Limit::perHour(30)->by('content-submission-hourly-user:'.$userKey),
+                Limit::perHour(120)->by('content-submission-ip:'.$request->ip()),
+            ];
+        });
+
         RateLimiter::for('authenticated-write', function (Request $request): Limit|array {
             if (in_array($request->method(), ['GET', 'HEAD', 'OPTIONS'], true)) {
                 return Limit::none();
@@ -115,8 +135,8 @@ class AppServiceProvider extends ServiceProvider
             $userKey = (string) ($request->user()?->getAuthIdentifier() ?? 'guest');
 
             return [
-                Limit::perMinute(60)->by('authenticated-write-user:'.$userKey),
-                Limit::perMinute(180)->by('authenticated-write-ip:'.$request->ip()),
+                Limit::perMinute(30)->by('authenticated-write-user:'.$userKey),
+                Limit::perMinute(120)->by('authenticated-write-ip:'.$request->ip()),
             ];
         });
     }

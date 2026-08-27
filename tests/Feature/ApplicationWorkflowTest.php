@@ -274,6 +274,29 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertSame('studio@applicant.test', data_get($application->metadata, 'producer.contact_email'));
     }
 
+    public function test_application_contact_fields_fall_back_to_verified_user_data_when_entity_values_are_blank(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        [$user] = $this->createApplicantContext([
+            'email' => 'verified-owner@example.test',
+            'phone' => '0798765432',
+        ], [
+            'email' => '   ',
+            'phone' => "\t",
+        ]);
+
+        $content = $this
+            ->actingAs($user)
+            ->get(route('applications.create'))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertMatchesRegularExpression('/name="contact_phone"[^>]*value="0798765432"[^>]*readonly/s', $content);
+        $this->assertMatchesRegularExpression('/name="contact_email"[^>]*value="verified-owner@example\.test"[^>]*readonly/s', $content);
+    }
+
     public function test_work_type_controls_work_content_summary_minimum_words(): void
     {
         $this->refreshApplicationWithLocale('en');

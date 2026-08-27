@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use App\Support\PasswordPolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
@@ -45,6 +46,85 @@ class SecurityBaselineTest extends TestCase
             $this->assertNotNull($route, "Missing route {$routeName}");
             $this->assertContains('throttle:authenticated-write', $route->gatherMiddleware());
         }
+    }
+
+    public function test_resource_intensive_routes_have_stricter_named_rate_limiters(): void
+    {
+        $required = [
+            'applications.personal-details.lookup' => 'throttle:government-lookup',
+            'applications.crew.identity.lookup' => 'throttle:government-lookup',
+            'applications.documents.store' => 'throttle:content-submission',
+            'applications.correspondence.store' => 'throttle:content-submission',
+            'scouting-requests.correspondence.store' => 'throttle:content-submission',
+            'authority.applications.correspondence.store' => 'throttle:content-submission',
+            'admin.applications.correspondence.store' => 'throttle:content-submission',
+            'admin.scouting-requests.correspondence.store' => 'throttle:content-submission',
+            'admin.contact-center.messages.store' => 'throttle:content-submission',
+        ];
+
+        foreach ($required as $routeName => $middleware) {
+            $route = Route::getRoutes()->getByName($routeName);
+
+            $this->assertNotNull($route, "Missing route {$routeName}");
+            $this->assertContains($middleware, $route->gatherMiddleware(), "Missing {$middleware} on {$routeName}");
+        }
+    }
+
+    public function test_account_management_routes_require_explicit_user_permissions(): void
+    {
+        $readRoutes = [
+            'admin.users.index',
+            'admin.users.show',
+        ];
+        $writeRoutes = [
+            'admin.users.create',
+            'admin.users.store',
+            'admin.users.update',
+            'admin.users.password',
+            'admin.users.status',
+            'admin.users.delete',
+            'admin.users.restore',
+            'admin.users.memberships.store',
+            'admin.users.memberships.roles.delete',
+        ];
+
+        foreach ($readRoutes as $routeName) {
+            $route = Route::getRoutes()->getByName($routeName);
+
+            $this->assertNotNull($route, "Missing route {$routeName}");
+            $this->assertContains('permission:users.view', $route->gatherMiddleware());
+        }
+
+        foreach ($writeRoutes as $routeName) {
+            $route = Route::getRoutes()->getByName($routeName);
+
+            $this->assertNotNull($route, "Missing route {$routeName}");
+            $this->assertContains('permission:users.manage', $route->gatherMiddleware());
+        }
+    }
+
+    public function test_user_serialization_never_exposes_password_material(): void
+    {
+        $user = User::factory()->create([
+            'password' => 'StrongPassword@123',
+            'remember_token' => 'sensitive-remember-token',
+        ]);
+
+        $serialized = $user->toArray();
+
+        $this->assertArrayNotHasKey('password', $serialized);
+        $this->assertArrayNotHasKey('remember_token', $serialized);
+        $this->assertStringNotContainsString('StrongPassword@123', json_encode($serialized, JSON_THROW_ON_ERROR));
+        $this->assertStringNotContainsString('sensitive-remember-token', json_encode($serialized, JSON_THROW_ON_ERROR));
+    }
+
+    public function test_public_swiper_bundle_is_not_the_vulnerable_legacy_release(): void
+    {
+        $bundle = file_get_contents(public_path('js/swiper-bundle.min.js'));
+
+        $this->assertIsString($bundle);
+        $this->assertStringContainsString('Swiper 12.1.2', $bundle);
+        $this->assertStringNotContainsString('Swiper 6.8.4', $bundle);
     }
 
     public function test_login_is_limited_per_identifier(): void

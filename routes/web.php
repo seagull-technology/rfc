@@ -143,10 +143,10 @@ Route::group([
 
         Route::get('/applications', [ApplicationController::class, 'index'])->name('applications.index');
         Route::post('/applications/personal-details/lookup', ApplicationPersonalDetailsLookupController::class)
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:government-lookup')
             ->name('applications.personal-details.lookup');
         Route::post('/applications/crew/identity-lookup', ApplicationCrewIdentityLookupController::class)
-            ->middleware('throttle:120,1')
+            ->middleware('throttle:government-lookup')
             ->name('applications.crew.identity.lookup');
         Route::get('/applications/{application}/annex/personal-details/{person}/attachments/{attachment}', ApplicationAnnexAttachmentController::class)
             ->name('applications.annex.personal-details.attachments.download');
@@ -159,9 +159,13 @@ Route::group([
         Route::post('/applications/{application}/annex', [ApplicationController::class, 'updateAnnex'])->name('applications.annex.update');
         Route::post('/applications/{application}/wrap-report', [ApplicationController::class, 'updateWrapReport'])->name('applications.wrap-report.update');
         Route::post('/applications/{application}/submit', [ApplicationController::class, 'submit'])->name('applications.submit');
-        Route::post('/applications/{application}/documents', [ApplicationController::class, 'storeDocument'])->name('applications.documents.store');
+        Route::post('/applications/{application}/documents', [ApplicationController::class, 'storeDocument'])
+            ->middleware('throttle:content-submission')
+            ->name('applications.documents.store');
         Route::get('/applications/{application}/documents/{document}/download', [ApplicationController::class, 'downloadDocument'])->name('applications.documents.download');
-        Route::post('/applications/{application}/correspondence', [ApplicationController::class, 'storeCorrespondence'])->name('applications.correspondence.store');
+        Route::post('/applications/{application}/correspondence', [ApplicationController::class, 'storeCorrespondence'])
+            ->middleware('throttle:content-submission')
+            ->name('applications.correspondence.store');
         Route::get('/applications/{application}/correspondence/{correspondence}/download', [ApplicationController::class, 'downloadCorrespondenceAttachment'])->name('applications.correspondence.download');
         Route::get('/applications/{application}/change-requests/{changeRequest}/attachment', [ApplicationController::class, 'downloadChangeRequestAttachment'])->name('applications.change-requests.attachment.download');
         Route::get('/applications/{application}/final-letter/download', [ApplicationController::class, 'downloadFinalLetter'])->name('applications.final-letter.download');
@@ -175,7 +179,9 @@ Route::group([
         Route::post('/scouting-requests/{scoutingRequest}/update', [ScoutingRequestController::class, 'update'])->name('scouting-requests.update');
         Route::post('/scouting-requests/{scoutingRequest}/submit', [ScoutingRequestController::class, 'submit'])->name('scouting-requests.submit');
         Route::get('/scouting-requests/{scoutingRequest}/story-file/download', [ScoutingRequestController::class, 'downloadStory'])->name('scouting-requests.story-file.download');
-        Route::post('/scouting-requests/{scoutingRequest}/correspondence', [ScoutingRequestController::class, 'storeCorrespondence'])->name('scouting-requests.correspondence.store');
+        Route::post('/scouting-requests/{scoutingRequest}/correspondence', [ScoutingRequestController::class, 'storeCorrespondence'])
+            ->middleware('throttle:content-submission')
+            ->name('scouting-requests.correspondence.store');
         Route::get('/scouting-requests/{scoutingRequest}/correspondence/{correspondence}/download', [ScoutingRequestController::class, 'downloadCorrespondenceAttachment'])->name('scouting-requests.correspondence.download');
 
         Route::prefix('/authority')
@@ -203,6 +209,7 @@ Route::group([
                     ->middleware('permission:applications.view.entity')
                     ->name('applications.change-requests.attachment.download');
                 Route::post('/applications/{application}/correspondence', [ApplicationInboxController::class, 'storeCorrespondence'])
+                    ->middleware('throttle:content-submission')
                     ->middleware('permission:applications.review')
                     ->name('applications.correspondence.store');
                 Route::get('/applications/{application}/documents/{document}/download', [ApplicationInboxController::class, 'downloadDocument'])
@@ -272,6 +279,7 @@ Route::group([
                     ->middleware('permission:applications.view.all')
                     ->name('applications.change-requests.attachment.download');
                 Route::post('/applications/{application}/correspondence', [ApplicationManagementController::class, 'storeCorrespondence'])
+                    ->middleware('throttle:content-submission')
                     ->middleware('permission:applications.review')
                     ->name('applications.correspondence.store');
                 Route::post('/applications/{application}/official-letters', [ApplicationManagementController::class, 'storeOfficialLetter'])
@@ -309,6 +317,7 @@ Route::group([
                     ->middleware('permission:applications.review')
                     ->name('scouting-requests.review');
                 Route::post('/scouting-requests/{scoutingRequest}/correspondence', [ScoutingRequestManagementController::class, 'storeCorrespondence'])
+                    ->middleware('throttle:content-submission')
                     ->middleware('permission:applications.review')
                     ->name('scouting-requests.correspondence.store');
                 Route::get('/scouting-requests/{scoutingRequest}/correspondence/{correspondence}/download', [ScoutingRequestManagementController::class, 'downloadCorrespondenceAttachment'])
@@ -322,6 +331,7 @@ Route::group([
                     ->middleware('permission:applications.view.all')
                     ->name('contact-center.index');
                 Route::post('/contact-center/messages', [AdminContactCenterController::class, 'store'])
+                    ->middleware('throttle:content-submission')
                     ->middleware('permission:applications.review')
                     ->name('contact-center.messages.store');
                 Route::get('/contact-center/messages/{message}/download', [AdminContactCenterController::class, 'download'])

@@ -796,9 +796,22 @@ class ApplicationController extends Controller
             'producer_name' => $user->name,
             'production_company_name' => $entity->displayName(),
             'contact_address' => data_get($entity->metadata, 'address'),
-            'contact_phone' => $entity->phone ?: $user->phone,
-            'contact_email' => $entity->email ?: $user->email,
+            'contact_phone' => $this->firstFilledContactValue($entity->phone, $user->phone),
+            'contact_email' => $this->firstFilledContactValue($entity->email, $user->email),
         ];
+    }
+
+    private function firstFilledContactValue(?string ...$values): ?string
+    {
+        foreach ($values as $value) {
+            $normalized = trim((string) $value);
+
+            if ($normalized !== '') {
+                return $normalized;
+            }
+        }
+
+        return null;
     }
 
     private function mergeLockedApplicantProducerFields(Request $request, User $user, Entity $entity): void
