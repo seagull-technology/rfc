@@ -115,6 +115,21 @@ class ProfileManagementTest extends TestCase
         $this->assertSame('pending', $changeRequest['status']);
         $this->assertSame('120000', data_get($entity->metadata, 'company_capital'));
         $this->assertSame('250000', data_get($changeRequest, 'fields.company_capital.requested'));
+        $this->assertArrayNotHasKey('registration_no', data_get($changeRequest, 'fields', []));
+
+        $metadata = $entity->metadata;
+        $metadata['profile_change_requests'][0]['fields']['registration_no'] = [
+            'label' => 'Registration number',
+            'current' => 'REG-10001',
+            'requested' => 'TAMPERED-REGISTRATION',
+        ];
+        $metadata['profile_change_requests'][0]['fields']['national_id'] = [
+            'label' => 'National ID',
+            'current' => 'NAT-10001',
+            'requested' => '9981051999',
+        ];
+        $entity->forceFill(['metadata' => $metadata])->save();
+        $changeRequest = data_get($entity->fresh()->metadata, 'profile_change_requests.0');
 
         $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
 
@@ -130,8 +145,20 @@ class ProfileManagementTest extends TestCase
         $reviewedRequest = collect(data_get($entity->metadata, 'profile_change_requests'))->first();
 
         $this->assertSame('250000', data_get($entity->metadata, 'company_capital'));
+        $this->assertSame('REG-10001', $entity->registration_no);
         $this->assertSame('approved', $reviewedRequest['status']);
+        $this->assertSame('NAT-10001', $entity->national_id);
+        $this->assertSame(['registration_no', 'national_id'], $reviewedRequest['ignored_locked_fields']);
         $this->assertSame('Approved after document check.', $reviewedRequest['review_note']);
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.entities.profile-change-requests.review', [$entity->getKey(), $changeRequest['id']]), [
+                'decision' => 'reject',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('profile_change_request');
+
+        $this->assertSame('approved', data_get($entity->fresh()->metadata, 'profile_change_requests.0.status'));
     }
 
     /**

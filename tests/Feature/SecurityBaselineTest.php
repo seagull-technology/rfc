@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Support\PasswordPolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -60,6 +62,12 @@ class SecurityBaselineTest extends TestCase
             'admin.applications.correspondence.store' => 'throttle:content-submission',
             'admin.scouting-requests.correspondence.store' => 'throttle:content-submission',
             'admin.contact-center.messages.store' => 'throttle:content-submission',
+            'admin.work-release-lookups.work-categories.store' => 'throttle:configuration-mutation',
+            'admin.work-release-lookups.work-categories.update' => 'throttle:configuration-mutation',
+            'admin.work-release-lookups.work-categories.status' => 'throttle:configuration-mutation',
+            'admin.work-release-lookups.release-methods.store' => 'throttle:configuration-mutation',
+            'admin.work-release-lookups.release-methods.update' => 'throttle:configuration-mutation',
+            'admin.work-release-lookups.release-methods.status' => 'throttle:configuration-mutation',
         ];
 
         foreach ($required as $routeName => $middleware) {
@@ -67,6 +75,29 @@ class SecurityBaselineTest extends TestCase
 
             $this->assertNotNull($route, "Missing route {$routeName}");
             $this->assertContains($middleware, $route->gatherMiddleware(), "Missing {$middleware} on {$routeName}");
+        }
+    }
+
+    public function test_sensitive_submission_limiters_block_before_ten_rapid_attempts(): void
+    {
+        $user = User::factory()->create();
+        $request = Request::create('/security-rate-limit-check', 'POST', server: [
+            'REMOTE_ADDR' => '203.0.113.64',
+        ]);
+        $request->setUserResolver(fn (): User => $user);
+
+        foreach (['registration', 'registration-lookup', 'government-lookup', 'content-submission', 'configuration-mutation'] as $limiterName) {
+            $limiter = RateLimiter::limiter($limiterName);
+
+            $this->assertNotNull($limiter, "Missing limiter {$limiterName}");
+            $limits = $limiter($request);
+            $minuteLimits = collect(is_array($limits) ? $limits : [$limits])
+                ->filter(fn ($limit): bool => $limit->decaySeconds === 60)
+                ->pluck('maxAttempts')
+                ->all();
+
+            $this->assertNotEmpty($minuteLimits, "Missing per-minute ceiling for {$limiterName}");
+            $this->assertLessThan(10, min($minuteLimits), "{$limiterName} permits ten rapid attempts");
         }
     }
 
@@ -208,6 +239,9 @@ class SecurityBaselineTest extends TestCase
             'session.http_only' => true,
             'session.same_site' => 'lax',
             'session.domain' => null,
+            'cache.limiter' => 'database',
+            'queue.default' => 'database',
+            'security.trusted_proxies' => ['10.0.40.81'],
             'filesystems.disks.local.serve' => false,
             'security.trusted_hosts.enforce' => true,
             'security.trusted_hosts.hosts' => ['filmjordan.jo'],
@@ -243,7 +277,45 @@ class SecurityBaselineTest extends TestCase
         $this->assertSame([], $evidence['template_asset_scan']['forbidden_runtime_urls']);
         $this->assertSame(0, $evidence['template_asset_scan']['unnonced_script_or_style_tags']);
         $this->assertContains('throttle:login', $evidence['route_controls']['login.store']);
+        $this->assertContains('throttle:content-submission', $evidence['route_controls']['admin.contact-center.messages.store']);
+        $this->assertArrayHasKey('session_cookie', $evidence['security_configuration']);
+        $this->assertSame(hash_file('sha256', public_path('js/lodash.min.js')), $evidence['source_integrity']['public/js/lodash.min.js']);
+        $this->assertTrue($evidence['verification_scope']['local_configuration_inventory_only']);
         $this->assertNotEmpty($evidence['sbom']['composer']);
         $this->assertNotEmpty($evidence['sbom']['npm']);
+    }
+
+    public function test_production_check_rejects_ineffective_rate_limit_storage_and_wildcard_proxies(): void
+    {
+        config(['cache.limiter' => 'array', 'security.trusted_proxies' => ['*']]);
+
+        $this->artisan('security:production-check')
+            ->expectsOutputToContain('The rate limiter must use a shared persistent cache store')
+            ->expectsOutputToContain('TRUSTED_PROXIES must contain only explicit proxy IP addresses')
+            ->assertFailed();
+    }
+
+    public function test_production_check_catches_a_missing_reported_message_rate_limiter(): void
+    {
+        $route = Route::getRoutes()->getByName('admin.contact-center.messages.store');
+        $route->setAction(array_merge($route->getAction(), [
+            'middleware' => array_values(array_filter(
+                $route->getAction('middleware'),
+                fn ($middleware) => $middleware !== 'throttle:content-submission',
+            )),
+        ]));
+
+        $this->artisan('security:production-check')
+            ->expectsOutputToContain('Route admin.contact-center.messages.store must use throttle:content-submission.')
+            ->assertFailed();
+    }
+
+    public function test_production_check_rejects_synchronous_password_recovery_delivery(): void
+    {
+        config(['queue.default' => 'sync']);
+
+        $this->artisan('security:production-check')
+            ->expectsOutputToContain('QUEUE_CONNECTION must use a durable asynchronous queue')
+            ->assertFailed();
     }
 }

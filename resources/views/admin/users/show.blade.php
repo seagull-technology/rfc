@@ -331,13 +331,16 @@
                                 <button class="btn btn-outline-success" type="submit">{{ __('app.admin.users.restore_action') }}</button>
                             </form>
                         @else
-                            <form method="POST" action="{{ route('admin.users.status', $user->getKey()) }}">
-                                @csrf
-                                <input type="hidden" name="status" value="{{ $user->status === 'active' ? 'inactive' : 'active' }}">
-                                <button class="btn btn-outline-warning" type="submit">
-                                    {{ $user->status === 'active' ? __('app.admin.users.deactivate_action') : __('app.admin.users.activate_action') }}
-                                </button>
-                            </form>
+                            @php($nextOperationalStatus = $user->status === 'active' ? 'inactive' : 'active')
+                            @if ($user->canChangeStatusOutsideRegistrationReview($nextOperationalStatus))
+                                <form method="POST" action="{{ route('admin.users.status', $user->getKey()) }}">
+                                    @csrf
+                                    <input type="hidden" name="status" value="{{ $nextOperationalStatus }}">
+                                    <button class="btn btn-outline-warning" type="submit">
+                                        {{ $user->status === 'active' ? __('app.admin.users.deactivate_action') : __('app.admin.users.activate_action') }}
+                                    </button>
+                                </form>
+                            @endif
                             <form method="POST" action="{{ route('admin.users.delete', $user->getKey()) }}">
                                 @csrf
                                 <button class="btn btn-outline-danger" type="submit">{{ __('app.admin.users.delete_action') }}</button>
@@ -511,7 +514,10 @@
                         </div>
                         <div class="col-md-6">
                             <label for="national_id" class="form-label">{{ __('app.admin.users.national_id') }}</label>
-                            <input id="national_id" name="national_id" type="text" class="form-control" value="{{ old('national_id', $user->national_id) }}">
+                            <input id="national_id" name="national_id" type="text" class="form-control" value="{{ $user->isImmutableRegistrationIdentityField('national_id') ? $user->national_id : old('national_id', $user->national_id) }}" @readonly($user->isImmutableRegistrationIdentityField('national_id'))>
+                            @if ($user->isImmutableRegistrationIdentityField('national_id'))
+                                <div class="form-text">{{ __('app.admin.users.registration_identity_locked') }}</div>
+                            @endif
                         </div>
                         <div class="col-md-6">
                             <label for="phone" class="form-label">{{ __('app.admin.users.phone') }}</label>
@@ -519,11 +525,18 @@
                         </div>
                         <div class="col-md-6">
                             <label for="status" class="form-label">{{ __('app.admin.users.status') }}</label>
-                            <select id="status" name="status" class="form-select" required>
+                            @php($registrationStatusLocked = $user->usesRegistrationWorkflow() && in_array($user->status, ['pending_review', 'needs_completion', 'rejected'], true))
+                            @if ($registrationStatusLocked)
+                                <input type="hidden" name="status" value="{{ $user->status }}">
+                            @endif
+                            <select id="status" name="{{ $registrationStatusLocked ? '' : 'status' }}" class="form-select" @disabled($registrationStatusLocked) required>
                                 @foreach (['active', 'inactive', 'pending_review', 'needs_completion', 'rejected'] as $status)
                                     <option value="{{ $status }}" @selected(old('status', $user->status) === $status)>{{ __('app.statuses.'.$status) }}</option>
                                 @endforeach
                             </select>
+                            @if ($registrationStatusLocked)
+                                <div class="form-text">{{ __('app.admin.users.registration_status_requires_entity_review') }}</div>
+                            @endif
                         </div>
                         <div class="col-12">
                             <button class="btn btn-danger" type="submit">{{ __('app.admin.users.update_action') }}</button>

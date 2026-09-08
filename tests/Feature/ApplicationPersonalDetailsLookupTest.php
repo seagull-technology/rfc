@@ -86,13 +86,13 @@ class ApplicationPersonalDetailsLookupTest extends TestCase
     {
         $user = User::factory()->create();
         $service = Mockery::mock(IndividualPersonalInfoLookupService::class);
-        $service->shouldReceive('lookup')->times(10)->andReturn([
+        $service->shouldReceive('lookup')->times(5)->andReturn([
             'ok' => true,
             'data' => ['full_name' => 'Test Person'],
         ]);
         $this->app->instance(IndividualPersonalInfoLookupService::class, $service);
 
-        foreach (range(1, 10) as $attempt) {
+        foreach (range(1, 5) as $attempt) {
             $this->actingAs($user)
                 ->postJson(route('applications.personal-details.lookup'), [
                     'nationality_category' => $attempt % 2 === 0 ? 'arab' : 'travel_document',

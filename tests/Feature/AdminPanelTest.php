@@ -21,6 +21,7 @@ use App\Notifications\Channels\SmsNotificationChannel;
 use App\Notifications\InboxMessageNotification;
 use App\Notifications\RegistrationApprovedNotification;
 use App\Notifications\RegistrationCompletionRequestedNotification;
+use App\Support\ProfileChangeRequests;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -1380,6 +1381,7 @@ class AdminPanelTest extends TestCase
             'name_en' => 'Film Student',
             'name_ar' => 'Film Student',
             'registration_no' => 'STU-300',
+            'national_id' => '2000000002',
             'registration_type' => 'student',
             'status' => 'active',
         ]);
@@ -1425,7 +1427,6 @@ class AdminPanelTest extends TestCase
         ]);
 
         $studentEntity->forceFill([
-            'national_id' => '2000000002',
             'email' => 'student-producer@example.com',
             'phone' => '0792000002',
         ])->save();
@@ -2509,6 +2510,9 @@ class AdminPanelTest extends TestCase
             'note' => 'First note',
         ])->assertRedirect(route('admin.entities.show', $entity));
 
+        $entity->refresh()->forceFill(['status' => 'pending_review'])->save();
+        $user->refresh()->forceFill(['status' => 'pending_review'])->save();
+
         $this->actingAs($admin)->post(route('admin.entities.review', $entity), [
             'decision' => 'approve',
             'note' => 'Second note',
@@ -2521,6 +2525,176 @@ class AdminPanelTest extends TestCase
         $this->assertCount(2, data_get($entity->metadata, 'review_history', []));
         $this->assertSame('First note', data_get($entity->metadata, 'review_history.0.note'));
         $this->assertSame('Second note', data_get($entity->metadata, 'review_history.1.note'));
+    }
+
+    public function test_resolved_registration_cannot_be_changed_by_a_stale_review_submission(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+        Notification::fake();
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $group = Group::query()->where('code', 'organizations')->firstOrFail();
+        $owner = User::factory()->create([
+            'status' => 'pending_review',
+            'registration_type' => 'ngo',
+        ]);
+        $entity = Entity::query()->create([
+            'group_id' => $group->getKey(),
+            'name_en' => 'Concurrent Review NGO',
+            'name_ar' => 'Concurrent Review NGO',
+            'registration_no' => 'CONCURRENT-100',
+            'status' => 'pending_review',
+            'registration_type' => 'ngo',
+        ]);
+        $entity->users()->attach($owner->getKey(), [
+            'is_primary' => true,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        $this->actingAs($admin)->post(route('admin.entities.review', $entity), [
+            'decision' => 'approve',
+            'note' => 'Approved by the first reviewer.',
+        ])->assertRedirect(route('admin.entities.show', $entity));
+
+        $this->actingAs($admin)
+            ->from(route('admin.entities.show', $entity))
+            ->post(route('admin.entities.review', $entity), [
+                'decision' => 'reject',
+                'note' => 'Stale second decision.',
+            ])
+            ->assertRedirect(route('admin.entities.show', $entity))
+            ->assertSessionHasErrors('decision');
+
+        $entity->refresh();
+        $this->assertSame('active', $entity->status);
+        $this->assertSame('active', $owner->fresh()->status);
+        $this->assertCount(1, data_get($entity->metadata, 'review_history', []));
+        $this->assertSame('approve', data_get($entity->metadata, 'review.decision'));
+    }
+
+    public function test_registration_identifiers_are_immutable_for_all_applicant_types(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        $admin = User::query()->where('email', 'superadmin@rfc.local')->firstOrFail();
+        $individuals = Group::query()->where('code', 'individuals')->firstOrFail();
+        $organizations = Group::query()->where('code', 'organizations')->firstOrFail();
+        $student = Entity::query()->create([
+            'group_id' => $individuals->getKey(),
+            'name_en' => 'Verified Student',
+            'name_ar' => 'Verified Student',
+            'national_id' => '9981051142',
+            'status' => 'active',
+            'registration_type' => 'student',
+        ]);
+        $company = Entity::query()->create([
+            'group_id' => $organizations->getKey(),
+            'name_en' => 'Verified Company',
+            'name_ar' => 'Verified Company',
+            'registration_no' => '101021035',
+            'status' => 'active',
+            'registration_type' => 'company',
+        ]);
+        $ngo = Entity::query()->create([
+            'group_id' => $organizations->getKey(),
+            'name_en' => 'Manual NGO',
+            'name_ar' => 'Manual NGO',
+            'registration_no' => 'NGO-OLD',
+            'status' => 'active',
+            'registration_type' => 'ngo',
+        ]);
+        $school = Entity::query()->create([
+            'group_id' => $organizations->getKey(),
+            'name_en' => 'Registered School',
+            'name_ar' => 'Registered School',
+            'registration_no' => 'SCHOOL-OLD',
+            'status' => 'active',
+            'registration_type' => 'school',
+        ]);
+
+        $entityPayload = static fn (Entity $record): array => [
+            'group_id' => $record->group_id,
+            'code' => $record->code,
+            'name_en' => $record->name_en,
+            'name_ar' => $record->name_ar,
+            'registration_no' => $record->registration_no,
+            'national_id' => $record->national_id,
+            'email' => $record->email,
+            'phone' => $record->phone,
+            'status' => $record->status,
+            'address' => '',
+            'description' => '',
+        ];
+
+        $this->actingAs($admin)
+            ->from(route('admin.entities.show', $student))
+            ->post(route('admin.entities.update', $student), [
+                ...$entityPayload($student),
+                'national_id' => '9981051143',
+            ])
+            ->assertSessionHasErrors('national_id');
+        $this->assertSame('9981051142', $student->fresh()->national_id);
+
+        $this->actingAs($admin)
+            ->from(route('admin.entities.show', $company))
+            ->post(route('admin.entities.update', $company), [
+                ...$entityPayload($company),
+                'registration_no' => '101021036',
+            ])
+            ->assertSessionHasErrors('registration_no');
+        $this->assertSame('101021035', $company->fresh()->registration_no);
+
+        $this->actingAs($admin)
+            ->from(route('admin.entities.show', $company))
+            ->post(route('admin.entities.status', $company), ['status' => 'rejected'])
+            ->assertSessionHasErrors('status');
+        $this->assertSame('active', $company->fresh()->status);
+
+        $this->actingAs($admin)
+            ->from(route('admin.entities.show', $ngo))
+            ->post(route('admin.entities.update', $ngo), [
+                ...$entityPayload($ngo),
+                'registration_no' => 'NGO-NEW',
+            ])
+            ->assertSessionHasErrors('registration_no');
+        $this->assertSame('NGO-OLD', $ngo->fresh()->registration_no);
+
+        $this->actingAs($admin)
+            ->from(route('admin.entities.show', $school))
+            ->post(route('admin.entities.update', $school), [
+                ...$entityPayload($school),
+                'registration_no' => 'SCHOOL-NEW',
+            ])
+            ->assertSessionHasErrors('registration_no');
+        $this->assertSame('SCHOOL-OLD', $school->fresh()->registration_no);
+
+        $this->assertFalse(ProfileChangeRequests::officialFields($student)['national_id']['mutable']);
+        $this->assertFalse(ProfileChangeRequests::officialFields($company)['registration_no']['mutable']);
+        $this->assertFalse(ProfileChangeRequests::officialFields($ngo)['registration_no']['mutable']);
+        $this->assertFalse(ProfileChangeRequests::officialFields($school)['registration_no']['mutable']);
+
+        $studentUser = User::factory()->create([
+            'username' => 'verified-student-user',
+            'national_id' => '9981051144',
+            'status' => 'active',
+            'registration_type' => 'student',
+        ]);
+
+        $this->actingAs($admin)
+            ->from(route('admin.users.show', $studentUser))
+            ->post(route('admin.users.update', $studentUser), [
+                'name' => $studentUser->name,
+                'username' => $studentUser->username,
+                'email' => $studentUser->email,
+                'national_id' => '9981051145',
+                'phone' => $studentUser->phone,
+                'status' => $studentUser->status,
+            ])
+            ->assertSessionHasErrors('national_id');
+        $this->assertSame('9981051144', $studentUser->fresh()->national_id);
     }
 
     public function test_review_decision_sends_completion_notification_with_signed_link(): void

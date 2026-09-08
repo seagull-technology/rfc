@@ -23,9 +23,28 @@ class GenerateSecurityEvidence extends Command
         $lockHashes = $this->fileHashes([
             'composer.lock',
             'package-lock.json',
+            'public/js/lodash.min.js',
+            'public/js/lodash.LICENSE.txt',
+            'scripts/sync-vendor-assets.mjs',
             'public/web.config',
+            'config/session.php',
+            'config/security.php',
+            'routes/web.php',
+            'app/Providers/AppServiceProvider.php',
             'app/Http/Middleware/AddSecurityHeaders.php',
             'app/Http/Middleware/EnforceTrustedHosts.php',
+            'app/Http/Middleware/ValidateCsrfToken.php',
+            'app/Http/Middleware/StartSession.php',
+            'app/Models/Concerns/ProtectsRegistrationIdentity.php',
+            'app/Models/Entity.php',
+            'app/Models/User.php',
+            'app/Http/Controllers/Admin/EntityManagementController.php',
+            'app/Http/Controllers/Admin/UserManagementController.php',
+            'app/Http/Controllers/Auth/LoginController.php',
+            'app/Http/Controllers/Auth/RegisterController.php',
+            'app/Http/Controllers/Auth/ForgotPasswordController.php',
+            'app/Http/Controllers/Auth/PasswordResetOtpController.php',
+            'app/Jobs/SendPasswordResetOtp.php',
             'app/Support/DocumentUploadInspector.php',
         ]);
         $fingerprint = hash('sha256', json_encode($lockHashes, JSON_UNESCAPED_SLASHES) ?: '');
@@ -44,6 +63,16 @@ class GenerateSecurityEvidence extends Command
             'security_configuration' => [
                 'trusted_hosts_enforced' => (bool) config('security.trusted_hosts.enforce'),
                 'trusted_hosts' => config('security.trusted_hosts.hosts', []),
+                'trusted_proxies' => config('security.trusted_proxies', []),
+                'session_cookie' => [
+                    'secure' => config('session.secure'),
+                    'http_only' => config('session.http_only'),
+                    'same_site' => config('session.same_site'),
+                    'domain' => config('session.domain'),
+                    'encrypted' => config('session.encrypt'),
+                ],
+                'rate_limit_store' => config('cache.limiter') ?: config('cache.default'),
+                'queue_connection' => config('queue.default'),
                 'csp_enforced' => (bool) config('security.headers.enabled')
                     && ! (bool) config('security.headers.csp_report_only'),
                 'hsts_enabled' => (bool) config('security.headers.hsts'),
@@ -55,6 +84,16 @@ class GenerateSecurityEvidence extends Command
                 'outbound_http_ports' => config('security.outbound_http.allowed_ports', []),
                 'upload_extensions' => config('security.uploads.allowed_extensions', []),
                 'upload_max_kilobytes' => config('security.uploads.max_kilobytes'),
+            ],
+            'verification_scope' => [
+                'local_configuration_inventory_only' => true,
+                'requires_external_verification' => [
+                    'Public TLS versions and cipher suites (V11)',
+                    'All edge-injected cookie attributes (V07, V08, V10, V12)',
+                    'Absence of DNS/HTTP callbacks through every proxy layer (V05)',
+                    'Rate limits shared by every production application node (V04)',
+                    'Queue worker delivery and neutral recovery response timing (V06)',
+                ],
             ],
             'route_controls' => $this->routeControls(),
             'template_asset_scan' => $this->templateAssetScan(),
@@ -116,6 +155,14 @@ class GenerateSecurityEvidence extends Command
             'register.company.lookup',
             'register.student.lookup',
             'register.organization.lookup',
+            'admin.contact-center.messages.store',
+            'admin.work-release-lookups.work-categories.store',
+            'admin.work-release-lookups.work-categories.update',
+            'admin.work-release-lookups.work-categories.status',
+            'admin.work-release-lookups.release-methods.store',
+            'admin.work-release-lookups.release-methods.update',
+            'admin.work-release-lookups.release-methods.status',
+            'admin.entities.review',
         ];
         $controls = [];
 

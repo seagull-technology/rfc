@@ -59,6 +59,21 @@ class CompanyEmployeeManagementTest extends TestCase
             ->assertSeeText('Company Creator')
             ->assertSeeText(__('app.company.employees.no_delete_hint'))
             ->assertDontSeeText('Delete');
+
+        $this->actingAs($owner)
+            ->postJson(route('company.employees.update', $employee), [
+                'name' => 'Reassigned Identity',
+                'national_id' => '9981051999',
+                'registration_type' => 'staff',
+                'phone' => $employee->phone,
+                'job_title' => 'Producer',
+                'role' => 'company_creator',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('national_id');
+
+        $this->assertSame('1234567890', $employee->fresh()->national_id);
+        $this->assertSame('Company Creator', $employee->fresh()->name);
     }
 
     public function test_legacy_primary_company_owner_without_role_can_access_company_users(): void

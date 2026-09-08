@@ -34,8 +34,7 @@ class EntityManagementController extends Controller
     public function __construct(
         private readonly RoleAssignmentService $roleAssignmentService,
         private readonly AuthorityApprovalNotificationService $authorityApprovalNotificationService,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): View
     {
@@ -92,8 +91,7 @@ class EntityManagementController extends Controller
             'reviewQueue' => Entity::query()
                 ->with(['group', 'users'])
                 ->whereNull('deleted_at')
-                ->whereIn('status', ['pending_review', 'needs_completion', 'rejected'])
-                ->orderByRaw("case when status = 'pending_review' then 0 when status = 'needs_completion' then 1 else 2 end")
+                ->where('status', 'pending_review')
                 ->orderByDesc('updated_at')
                 ->get(),
             'groups' => Group::query()
@@ -375,22 +373,38 @@ class EntityManagementController extends Controller
             'description' => ['nullable', 'string', 'max:5000'],
         ]);
 
-        $metadata = $record->metadata ?? [];
-        $metadata['address'] = $validated['address'] ?: null;
-        $metadata['description'] = $validated['description'] ?: null;
+        DB::transaction(function () use ($record, $validated): void {
+            $record = Entity::query()->withTrashed()->lockForUpdate()->findOrFail($record->getKey());
 
-        $record->forceFill([
-            'group_id' => $validated['group_id'],
-            'code' => $validated['code'] ?: null,
-            'name_en' => $validated['name_en'],
-            'name_ar' => $validated['name_ar'],
-            'registration_no' => $validated['registration_no'] ?: null,
-            'national_id' => $validated['national_id'] ?: null,
-            'email' => $validated['email'] ?: null,
-            'phone' => $validated['phone'] ?: null,
-            'status' => $validated['status'],
-            'metadata' => $metadata,
-        ])->save();
+            $this->ensureGovernmentIdentityUnchanged($record, $validated);
+
+            if ($record->usesRegistrationWorkflow() && $validated['status'] !== $record->status) {
+                throw ValidationException::withMessages([
+                    'status' => __('app.admin.entities.registration_status_requires_review'),
+                ]);
+            }
+
+            $metadata = $record->metadata ?? [];
+            $metadata['address'] = $validated['address'] ?: null;
+            $metadata['description'] = $validated['description'] ?: null;
+
+            $record->forceFill([
+                'group_id' => $validated['group_id'],
+                'code' => $validated['code'] ?: null,
+                'name_en' => $validated['name_en'],
+                'name_ar' => $validated['name_ar'],
+                'registration_no' => $record->isImmutableRegistrationIdentityField('registration_no')
+                    ? $record->registration_no
+                    : ($validated['registration_no'] ?: null),
+                'national_id' => $record->isImmutableRegistrationIdentityField('national_id')
+                    ? $record->national_id
+                    : ($validated['national_id'] ?: null),
+                'email' => $validated['email'] ?: null,
+                'phone' => $validated['phone'] ?: null,
+                'status' => $validated['status'],
+                'metadata' => $metadata,
+            ])->save();
+        });
 
         return redirect()
             ->route('admin.entities.show', $record->getKey())
@@ -405,11 +419,19 @@ class EntityManagementController extends Controller
         ]);
 
         DB::transaction(function () use ($record, $validated): void {
+            $record = Entity::query()->withTrashed()->lockForUpdate()->findOrFail($record->getKey());
+
+            if (! $record->canChangeStatusOutsideRegistrationReview($validated['status'])) {
+                throw ValidationException::withMessages([
+                    'status' => __('app.admin.entities.registration_status_requires_review'),
+                ]);
+            }
+
             $record->forceFill([
                 'status' => $validated['status'],
             ])->save();
 
-            foreach ($record->users as $user) {
+            foreach ($record->users()->lockForUpdate()->get() as $user) {
                 $user->forceFill([
                     'status' => $validated['status'],
                 ])->save();
@@ -460,10 +482,6 @@ class EntityManagementController extends Controller
 
     public function review(Request $request, string $entity): RedirectResponse
     {
-        $entity = $this->findEntity($entity);
-        $primaryOwner = $entity->users
-            ->sortByDesc(fn (User $user): int => (int) ($user->pivot?->is_primary ?? false))
-            ->first();
         $validated = $request->validate([
             'decision' => ['required', Rule::in(['approve', 'reject', 'needs_completion'])],
             'note' => ['nullable', 'string', 'max:2000'],
@@ -475,8 +493,19 @@ class EntityManagementController extends Controller
             default => 'needs_completion',
         };
 
-        DB::transaction(function () use ($entity, $request, $validated, $status): void {
-            $metadata = $entity->metadata ?? [];
+        $entity = DB::transaction(function () use ($entity, $request, $validated, $status): Entity {
+            $record = Entity::query()
+                ->withTrashed()
+                ->lockForUpdate()
+                ->findOrFail($entity);
+
+            if (! $record->isRegistrationReviewable()) {
+                throw ValidationException::withMessages([
+                    'decision' => __('app.admin.entities.registration_review_already_resolved'),
+                ]);
+            }
+
+            $metadata = $record->metadata ?? [];
             $reviewEntry = array_filter([
                 'decision' => $validated['decision'],
                 'note' => $validated['note'] ?? null,
@@ -491,29 +520,35 @@ class EntityManagementController extends Controller
             $metadata['review'] = $reviewEntry;
             $metadata['review_history'] = $history;
 
-            $entity->forceFill([
+            $record->forceFill([
                 'status' => $status,
                 'metadata' => $metadata,
             ])->save();
 
-            foreach ($entity->users as $user) {
+            foreach ($record->users()->lockForUpdate()->get() as $user) {
                 $user->forceFill([
                     'status' => $status,
                 ])->save();
             }
+
+            return $record->fresh(['group', 'users']);
         });
+
+        $primaryOwner = $entity->users
+            ->sortByDesc(fn (User $user): int => (int) ($user->pivot?->is_primary ?? false))
+            ->first();
 
         if ($primaryOwner) {
             if ($validated['decision'] === 'approve') {
                 $primaryOwner->notify(new RegistrationApprovedNotification(
-                    entity: $entity->fresh(),
+                    entity: $entity,
                     note: $validated['note'] ?? null,
                 ));
             }
 
             if (in_array($validated['decision'], ['needs_completion', 'reject'], true)) {
                 $primaryOwner->notify(new RegistrationCompletionRequestedNotification(
-                    entity: $entity->fresh(),
+                    entity: $entity,
                     decision: $validated['decision'],
                     note: $validated['note'] ?? null,
                 ));
@@ -527,34 +562,34 @@ class EntityManagementController extends Controller
 
     public function reviewProfileChangeRequest(Request $request, string $entity, string $requestKey): RedirectResponse
     {
-        $entity = $this->findEntity($entity);
-        $primaryOwner = $entity->users()
-            ->orderByDesc('entity_user.is_primary')
-            ->orderBy('users.name')
-            ->first();
         $validated = $request->validate([
             'decision' => ['required', Rule::in(['approve', 'reject'])],
             'note' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        $metadata = $entity->metadata ?? [];
-        $requests = collect((array) ($metadata['profile_change_requests'] ?? []))->values();
-        $requestIndex = $requests->search(fn (array $item): bool => ($item['id'] ?? null) === $requestKey);
-
-        if ($requestIndex === false || data_get($requests[$requestIndex], 'status') !== 'pending') {
-            return redirect()
-                ->route('admin.entities.show', $entity)
-                ->withErrors(['profile_change_request' => __('app.admin.entities.profile_change_missing')]);
-        }
-
-        $changeRequest = $requests[$requestIndex];
-
-        DB::transaction(function () use ($request, $entity, $validated, $requests, $requestIndex, $changeRequest): void {
+        $entity = DB::transaction(function () use ($request, $entity, $validated, $requestKey): Entity {
+            $entity = Entity::query()->lockForUpdate()->findOrFail($entity);
             $metadata = $entity->metadata ?? [];
+            $requests = collect((array) ($metadata['profile_change_requests'] ?? []))->values();
+            $requestIndex = $requests->search(fn (array $item): bool => ($item['id'] ?? null) === $requestKey);
+
+            if ($requestIndex === false || data_get($requests[$requestIndex], 'status') !== 'pending') {
+                throw ValidationException::withMessages([
+                    'profile_change_request' => __('app.admin.entities.profile_change_missing'),
+                ]);
+            }
+
+            $changeRequest = $requests[$requestIndex];
             $fields = (array) ($changeRequest['fields'] ?? []);
+            $appliedFields = $fields;
+            $ignoredLockedFields = [];
 
             if ($validated['decision'] === 'approve') {
-                [$columns, $metadataUpdates] = ProfileChangeRequests::splitApprovedPayload($fields);
+                $appliedFields = collect($fields)
+                    ->reject(fn (mixed $change, string $field): bool => $entity->isImmutableRegistrationIdentityField($field))
+                    ->all();
+                $ignoredLockedFields = array_keys(array_diff_key($fields, $appliedFields));
+                [$columns, $metadataUpdates] = ProfileChangeRequests::splitApprovedPayload($appliedFields);
 
                 $this->ensureOfficialChangeUniqueness($entity, $columns);
 
@@ -562,14 +597,13 @@ class EntityManagementController extends Controller
                     $metadata[$field] = $value;
                 }
 
-                $entity->forceFill([
-                    ...$columns,
-                    'metadata' => $metadata,
-                ])->save();
+                $entity->forceFill($columns);
             }
 
             $updatedRequest = [
                 ...$changeRequest,
+                'fields' => $appliedFields,
+                'ignored_locked_fields' => $ignoredLockedFields,
                 'status' => $validated['decision'] === 'approve' ? 'approved' : 'rejected',
                 'reviewed_at' => now()->toDateTimeString(),
                 'reviewed_by_user_id' => $request->user()?->getKey(),
@@ -577,13 +611,18 @@ class EntityManagementController extends Controller
                 'review_note' => $validated['note'] ?? null,
             ];
 
-            $freshMetadata = $entity->fresh()->metadata ?? [];
-            $freshRequests = collect((array) ($freshMetadata['profile_change_requests'] ?? $requests->all()))->values();
-            $freshRequests[$requestIndex] = $updatedRequest;
-            $freshMetadata['profile_change_requests'] = $freshRequests->values()->all();
+            $requests[$requestIndex] = $updatedRequest;
+            $metadata['profile_change_requests'] = $requests->values()->all();
 
-            $entity->forceFill(['metadata' => $freshMetadata])->save();
+            $entity->forceFill(['metadata' => $metadata])->save();
+
+            return $entity;
         });
+
+        $primaryOwner = $entity->users()
+            ->orderByDesc('entity_user.is_primary')
+            ->orderBy('users.name')
+            ->first();
 
         if ($primaryOwner) {
             $primaryOwner->notify(new InboxMessageNotification(
@@ -1003,6 +1042,25 @@ class EntityManagementController extends Controller
                             ? __('app.auth.registration_number')
                             : __('app.auth.organization_national_id'),
                     ]),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function ensureGovernmentIdentityUnchanged(Entity $entity, array $validated): void
+    {
+        foreach (['registration_no', 'national_id'] as $field) {
+            if (! $entity->isImmutableRegistrationIdentityField($field)) {
+                continue;
+            }
+
+            if (ProfileChangeRequests::normalizeValue($validated[$field] ?? null)
+                !== ProfileChangeRequests::normalizeValue($entity->{$field})) {
+                throw ValidationException::withMessages([
+                    $field => __('app.admin.entities.registration_identity_locked'),
                 ]);
             }
         }

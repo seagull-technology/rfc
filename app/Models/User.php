@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ProtectsRegistrationIdentity;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -18,7 +19,7 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasRoles, Notifiable, SoftDeletes;
+    use HasFactory, HasRoles, Notifiable, ProtectsRegistrationIdentity, SoftDeletes;
 
     protected string $guard_name = 'web';
 
@@ -240,6 +241,27 @@ class User extends Authenticatable
     public function isOperationallyActive(): bool
     {
         return ($this->status ?: 'active') === 'active';
+    }
+
+    public function usesRegistrationWorkflow(): bool
+    {
+        return in_array($this->registration_type, ['student', 'company', 'ngo', 'school'], true);
+    }
+
+    public function isImmutableRegistrationIdentityField(string $field): bool
+    {
+        return $this->usesRegistrationWorkflow()
+            && $field === 'national_id';
+    }
+
+    public function canChangeStatusOutsideRegistrationReview(string $newStatus): bool
+    {
+        if (! $this->usesRegistrationWorkflow()) {
+            return true;
+        }
+
+        return in_array($this->status, ['active', 'inactive'], true)
+            && in_array($newStatus, ['active', 'inactive'], true);
     }
 
     public function requiresAdminApprovalBeforeLogin(): bool

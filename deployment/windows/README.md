@@ -10,7 +10,7 @@ Copy these installers/packages to the server before starting:
 - Microsoft Visual C++ Redistributable required by the chosen PHP build.
 - MySQL 8 or MariaDB installer, unless a database server is already provided.
 - IIS URL Rewrite Module installer.
-- Optional: NSSM, if you want the queue worker as a Windows service.
+- NSSM (or an equivalent managed Windows service) for the required queue worker.
 
 Composer and Node.js are not required on the server when deploying the prepared release package, because `vendor/` and `public/build/` are included.
 
@@ -235,6 +235,11 @@ versioned JSON manifest is stored privately under
 dependency inventory, route controls, security configuration, and runtime-CDN
 template scan for the tested release.
 
+Before the security retest, complete [the public gateway and asset checks](SECURITY-RETEST.md).
+They cover TLS protocols/ciphers, BIG-IP cookie attributes, Host rejection before
+DNS/routing, outbound firewall rules, and replacement of cached JavaScript assets.
+The Laravel production check does not verify those infrastructure controls.
+
 After editing `.env`:
 
 ```powershell
@@ -256,7 +261,15 @@ Register-ScheduledTask -TaskName "RFC Laravel Scheduler" -Action $action -Trigge
 
 ## Queue Worker
 
-Preferred: install NSSM offline and create a service:
+A continuously running worker is required for production password-reset OTP
+messages. Recovery requests queue delivery so SMS provider latency cannot reveal
+whether an account exists on IIS. Set `QUEUE_CONNECTION=database` and
+`DB_QUEUE_RETRY_AFTER=180` in production `.env` (the reservation must outlast the
+120-second worker timeout), then rebuild the configuration cache. The standard
+migrations include the jobs and failed-jobs tables. Use a separate shared durable
+queue only if its worker and reservation/visibility timeout are configured too.
+
+Install NSSM offline and create a service:
 
 ```powershell
 nssm install RFCQueueWorker C:\php\php.exe "C:\inetpub\rfc\artisan queue:work --sleep=3 --tries=3 --timeout=120"
@@ -270,6 +283,15 @@ Temporary alternative while testing:
 cd C:\inetpub\rfc
 C:\php\php.exe artisan queue:work --sleep=3 --tries=3 --timeout=120
 ```
+
+After every deployment, confirm `RFCQueueWorker` is running with the deployed
+application path and can access the same database/configuration. The deployment
+script runs `queue:restart`; the service manager must restart the exited worker.
+Check `php artisan queue:failed` and worker logs. In an approved test account,
+request and receive a password-reset OTP, complete the reset, and ensure the
+queue drains. Also compare a nonexistent identifier: the HTTP acknowledgement
+must be identical and must not wait for SMS delivery. Never switch production to
+`sync` to work around a missing worker; restore the worker instead.
 
 ## GSB Connectivity Check
 

@@ -45,6 +45,27 @@ class SecurityHardeningTest extends TestCase
         $this->assertFalse($response->headers->has('Content-Security-Policy-Report-Only'));
     }
 
+    public function test_csrf_cookie_is_not_accessible_to_client_side_scripts(): void
+    {
+        $response = $this->get(route('login'));
+        $csrfCookie = collect($response->headers->getCookies())
+            ->first(fn ($cookie): bool => $cookie->getName() === 'XSRF-TOKEN');
+
+        $this->assertNotNull($csrfCookie);
+        $this->assertTrue($csrfCookie->isHttpOnly());
+        $this->assertSame('lax', $csrfCookie->getSameSite());
+    }
+
+    public function test_deployed_lodash_asset_uses_the_patched_release(): void
+    {
+        $lodash = File::get(public_path('js/lodash.min.js'));
+
+        $this->assertStringContainsString('Lodash 4.18.1', $lodash);
+        $this->assertGreaterThanOrEqual(2, substr_count($lodash, '4.18.1'));
+        $this->assertStringNotContainsString('Underscore.js 1.8.3', $lodash);
+        $this->assertTrue(File::isFile(public_path('js/lodash.LICENSE.txt')));
+    }
+
     public function test_rendered_login_assets_use_the_response_csp_nonce(): void
     {
         $this->refreshApplicationWithLocale('en');

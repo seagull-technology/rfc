@@ -94,14 +94,14 @@ class AppServiceProvider extends ServiceProvider
         ]);
 
         RateLimiter::for('registration', fn (Request $request): array => [
-            Limit::perMinute(10)->by('registration-ip:'.$request->ip()),
+            Limit::perMinute(5)->by('registration-ip:'.$request->ip()),
             Limit::perHour(40)->by('registration-hourly-ip:'.$request->ip()),
             Limit::perMinute(20)->by('registration-transport:'.$this->transportAddress($request)),
             Limit::perHour(100)->by('registration-hourly-transport:'.$this->transportAddress($request)),
         ]);
 
         RateLimiter::for('registration-lookup', fn (Request $request): array => [
-            Limit::perMinute(10)->by('registration-lookup-ip:'.$request->ip()),
+            Limit::perMinute(5)->by('registration-lookup-ip:'.$request->ip()),
             Limit::perHour(40)->by('registration-lookup-hourly-ip:'.$request->ip()),
             Limit::perMinute(20)->by('registration-lookup-transport:'.$this->transportAddress($request)),
             Limit::perHour(100)->by('registration-lookup-hourly-transport:'.$this->transportAddress($request)),
@@ -111,9 +111,9 @@ class AppServiceProvider extends ServiceProvider
             $userKey = (string) ($request->user()?->getAuthIdentifier() ?? 'guest');
 
             return [
-                Limit::perMinute(10)->by('government-lookup-user:'.$userKey),
+                Limit::perMinute(5)->by('government-lookup-user:'.$userKey),
                 Limit::perHour(60)->by('government-lookup-hourly-user:'.$userKey),
-                Limit::perMinute(30)->by('government-lookup-ip:'.$request->ip()),
+                Limit::perMinute(20)->by('government-lookup-ip:'.$request->ip()),
             ];
         });
 
@@ -121,9 +121,19 @@ class AppServiceProvider extends ServiceProvider
             $userKey = (string) ($request->user()?->getAuthIdentifier() ?? 'guest');
 
             return [
-                Limit::perMinute(10)->by('content-submission-user:'.$userKey),
+                Limit::perMinute(5)->by('content-submission-user:'.$userKey),
                 Limit::perHour(30)->by('content-submission-hourly-user:'.$userKey),
-                Limit::perHour(120)->by('content-submission-ip:'.$request->ip()),
+                Limit::perHour(60)->by('content-submission-ip:'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('configuration-mutation', function (Request $request): array {
+            $userKey = (string) ($request->user()?->getAuthIdentifier() ?? 'guest');
+
+            return [
+                Limit::perMinute(5)->by('configuration-mutation-user:'.$userKey),
+                Limit::perHour(30)->by('configuration-mutation-hourly-user:'.$userKey),
+                Limit::perHour(60)->by('configuration-mutation-ip:'.$request->ip()),
             ];
         });
 
@@ -147,7 +157,8 @@ class AppServiceProvider extends ServiceProvider
     private function hashedInput(Request $request, array $fields): string
     {
         foreach ($fields as $field) {
-            $value = trim(mb_strtolower((string) $request->input($field, '')));
+            $input = $request->input($field, '');
+            $value = is_scalar($input) ? trim(mb_strtolower((string) $input)) : '';
 
             if ($value !== '') {
                 return hash('sha256', $value);
@@ -159,12 +170,18 @@ class AppServiceProvider extends ServiceProvider
 
     private function pendingSubject(Request $request): string
     {
-        $subject = $request->session()->get('pending_auth_user_id')
-            ?? $request->session()->get('pending_password_reset_user_id')
-            ?? $request->session()->get('pending_password_reset_identifier')
-            ?? $request->session()->getId();
+        // Keep public recovery counters independent of account existence, including
+        // unknown identifiers; never use the shared sentinel user ID of zero.
+        if ($request->routeIs('password.otp.*') || (! $request->routeIs('otp.*')
+            && $request->session()->has('pending_password_reset_identifier'))) {
+            $subject = 'password-reset:'.mb_strtolower(trim((string) $request->session()
+                ->get('pending_password_reset_identifier', $request->session()->getId())));
+        } else {
+            $subject = 'login:'.($request->session()->get('pending_auth_user_id')
+                ?? $request->session()->getId());
+        }
 
-        return hash('sha256', (string) $subject);
+        return hash('sha256', $subject);
     }
 
     private function transportAddress(Request $request): string

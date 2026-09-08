@@ -6,15 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Services\CompanyRegistrationLookupService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 
 class CompanyLookupController extends Controller
 {
     public function __invoke(Request $request, CompanyRegistrationLookupService $lookupService): JsonResponse
     {
         $payload = $request->validate([
-            'registration_number' => ['required', 'regex:/^\d{1,10}$/', Rule::unique('entities', 'registration_no')],
+            'registration_number' => ['required', 'regex:/^\d{1,10}$/'],
         ], [
             'registration_number.regex' => __('app.auth.organization_national_id_digits'),
         ]);
@@ -24,8 +22,8 @@ class CompanyLookupController extends Controller
         if (! ($result['ok'] ?? false)) {
             return response()->json([
                 'ok' => false,
-                'error' => $result['error'],
-                'message' => __('app.auth.company_lookup_errors.'.Str::lower((string) ($result['error'] ?? 'not_found'))),
+                'error' => 'LOOKUP_FAILED',
+                'message' => __('app.auth.company_lookup_failed'),
             ], 422);
         }
 

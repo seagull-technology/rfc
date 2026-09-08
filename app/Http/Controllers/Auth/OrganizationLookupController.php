@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Services\OrganizationRegistrationLookupService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class OrganizationLookupController extends Controller
 {
@@ -23,19 +22,11 @@ class OrganizationLookupController extends Controller
         );
 
         if (! ($result['ok'] ?? false)) {
-            $status = match ($result['error'] ?? null) {
-                'SERVICE_DISABLED' => 503,
-                'REGISTRATION_MISMATCH' => 422,
-                default => 404,
-            };
-
             return response()->json([
                 'ok' => false,
-                'error' => $result['error'],
-                'message' => __('app.auth.organization_lookup_errors.'.Str::lower((string) ($result['error'] ?? 'not_found'))),
-                'registration_candidates' => $result['registration_candidates'] ?? [],
-                'technical_message' => $result['technical_message'] ?? null,
-            ], $status);
+                'error' => 'LOOKUP_FAILED',
+                'message' => __('app.auth.organization_lookup_failed'),
+            ], 422);
         }
 
         $request->session()->put(

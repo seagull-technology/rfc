@@ -25,7 +25,7 @@ class ProfileChangeRequests
     }
 
     /**
-     * @return array<string, array{label:string,current:?string,type:string}>
+     * @return array<string, array{label:string,current:?string,type:string,mutable?:bool}>
      */
     public static function officialFields(Entity $entity): array
     {
@@ -49,6 +49,7 @@ class ProfileChangeRequests
                     'label' => __('app.admin.users.national_id'),
                     'current' => $entity->national_id,
                     'type' => 'text',
+                    'mutable' => false,
                 ],
                 'birth_date' => [
                     'label' => __('app.auth.birth_date'),
@@ -78,18 +79,17 @@ class ProfileChangeRequests
             ];
         }
 
-        $fields = [
-            ...$fields,
-            'registration_no' => [
-                'label' => __('app.auth.registration_number'),
-                'current' => $entity->registration_no,
-                'type' => 'text',
-            ],
-            'national_id' => [
-                'label' => __('app.auth.organization_national_id'),
-                'current' => $entity->national_id,
-                'type' => 'text',
-            ],
+        $fields['registration_no'] = [
+            'label' => __('app.auth.registration_number'),
+            'current' => $entity->registration_no,
+            'type' => 'text',
+            'mutable' => ! $entity->isImmutableRegistrationIdentityField('registration_no'),
+        ];
+        $fields['national_id'] = [
+            'label' => __('app.auth.organization_national_id'),
+            'current' => $entity->national_id,
+            'type' => 'text',
+            'mutable' => ! $entity->isImmutableRegistrationIdentityField('national_id'),
         ];
 
         if ($entity->registration_type === 'company') {
@@ -130,7 +130,9 @@ class ProfileChangeRequests
             'company_capital' => ['nullable', 'numeric', 'min:0'],
         ];
 
-        return collect(array_keys(self::officialFields($entity)))
+        return collect(self::officialFields($entity))
+            ->filter(fn (array $definition): bool => (bool) ($definition['mutable'] ?? true))
+            ->keys()
             ->mapWithKeys(fn (string $field): array => [$field => $rules[$field] ?? ['nullable', 'string', 'max:255']])
             ->all();
     }
@@ -144,6 +146,10 @@ class ProfileChangeRequests
         $changes = [];
 
         foreach (self::officialFields($entity) as $field => $definition) {
+            if (! ($definition['mutable'] ?? true)) {
+                continue;
+            }
+
             $requested = self::normalizeValue($input[$field] ?? null);
             $current = self::normalizeValue($definition['current'] ?? null);
 

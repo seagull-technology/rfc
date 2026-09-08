@@ -74,11 +74,27 @@ class RegistrationCompletionTest extends TestCase
         $page
             ->assertOk()
             ->assertSeeText('Complete Registration')
-            ->assertSeeText('Update your registration details.');
+            ->assertSeeText('Update your registration details.')
+            ->assertSee('name="registration_number"', false)
+            ->assertSee('readonly', false);
+
+        $this->actingAs($user)
+            ->from(route('registration.completion.edit'))
+            ->post(route('registration.completion.update'), [
+                'entity_name' => 'Updated Review Company',
+                'registration_number' => 'COMP-201',
+                'email' => 'updated@company.test',
+                'phone' => '0793001999',
+                'address' => 'New address',
+            ])
+            ->assertRedirect(route('registration.completion.edit'))
+            ->assertSessionHasErrors('registration_number');
+
+        $this->assertSame('COMP-200', $entity->fresh()->registration_no);
 
         $response = $this->actingAs($user)->post(route('registration.completion.update'), [
             'entity_name' => 'Updated Review Company',
-            'registration_number' => 'COMP-201',
+            'registration_number' => 'COMP-200',
             'email' => 'updated@company.test',
             'phone' => '0793001999',
             'address' => 'New address',
@@ -95,7 +111,7 @@ class RegistrationCompletionTest extends TestCase
         $user->refresh();
 
         $this->assertSame('Updated Review Company', $entity->name_en);
-        $this->assertSame('COMP-201', $entity->registration_no);
+        $this->assertSame('COMP-200', $entity->registration_no);
         $this->assertSame('updated@company.test', $entity->email);
         $this->assertSame('962793001999', $entity->phone);
         $this->assertSame('pending_review', $entity->status);

@@ -5,13 +5,17 @@ use App\Http\Middleware\BlockSecurityProbePaths;
 use App\Http\Middleware\EnforceTrustedHosts;
 use App\Http\Middleware\PrivateCacheHeaders;
 use App\Http\Middleware\SetPermissionsEntityContext;
+use App\Http\Middleware\StartSession as ApplicationStartSession;
 use App\Http\Middleware\TrustConfiguredProxies;
+use App\Http\Middleware\ValidateCsrfToken as ApplicationValidateCsrfToken;
 use App\Http\Middleware\ValidateUploadedFiles;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken as FrameworkValidateCsrfToken;
 use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
+use Illuminate\Session\Middleware\StartSession as FrameworkStartSession;
 use Illuminate\Support\Facades\View;
 use Mcamara\LaravelLocalization\Middleware\LaravelLocalizationRedirectFilter;
 use Mcamara\LaravelLocalization\Middleware\LaravelLocalizationRoutes;
@@ -53,10 +57,16 @@ return Application::configure(basePath: dirname(__DIR__))
             'role_or_permission' => RoleOrPermissionMiddleware::class,
         ]);
 
-        $middleware->web(append: [
-            SetPermissionsEntityContext::class,
-            ValidateUploadedFiles::class,
-        ]);
+        $middleware->web(
+            append: [
+                SetPermissionsEntityContext::class,
+                ValidateUploadedFiles::class,
+            ],
+            replace: [
+                FrameworkStartSession::class => ApplicationStartSession::class,
+                FrameworkValidateCsrfToken::class => ApplicationValidateCsrfToken::class,
+            ],
+        );
 
         $middleware->api(append: [
             SetPermissionsEntityContext::class,

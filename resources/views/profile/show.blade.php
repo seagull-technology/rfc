@@ -280,6 +280,9 @@
                                                 {{ $definition['current'] ?: __('app.dashboard.not_available') }}
                                             @endif
                                         </strong>
+                                        @if (! ($definition['mutable'] ?? true))
+                                            <small class="text-muted d-block mt-1">{{ __('app.auth.registration_identity_locked') }}</small>
+                                        @endif
                                     </div>
                                 </div>
                             @endforeach
@@ -291,6 +294,7 @@
                             <form method="POST" action="{{ route('profile.official-change-request.store') }}" class="row g-3">
                                 @csrf
                                 @foreach ($profileOfficialFields as $field => $definition)
+                                    @continue(! ($definition['mutable'] ?? true))
                                     <div class="col-md-4">
                                         <label for="official_{{ $field }}" class="form-label">{{ $definition['label'] }}</label>
                                         @if ($definition['type'] === 'gender')

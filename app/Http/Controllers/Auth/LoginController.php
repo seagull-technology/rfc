@@ -9,6 +9,7 @@ use App\Services\OtpService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Timebox;
 use Illuminate\View\View;
 
 class LoginController extends Controller
@@ -33,38 +34,30 @@ class LoginController extends Controller
         ]);
         $identifier = trim((string) $credentials['identifier']);
 
-        $user = User::query()
-            ->where('email', $identifier)
-            ->orWhere('username', $identifier)
-            ->orWhere('national_id', $identifier)
-            ->orWhereHas('entities', function ($query) use ($identifier): void {
-                $query->where('registration_no', $identifier);
-            })
-            ->first();
+        $user = app(Timebox::class)->call(function () use ($credentials, $identifier): ?User {
+            $candidate = User::query()
+                ->where('email', $identifier)
+                ->orWhere('username', $identifier)
+                ->orWhere('national_id', $identifier)
+                ->orWhereHas('entities', function ($query) use ($identifier): void {
+                    $query->where('registration_no', $identifier);
+                })
+                ->first();
 
-        if (! $user || ! Hash::check($credentials['password'], $user->password)) {
+            if (! $candidate || ! Hash::check($credentials['password'], $candidate->password)) {
+                return null;
+            }
+
+            return $candidate->requiresPasswordSetup() || ! $candidate->canSignIn()
+                ? null
+                : $candidate;
+        }, 1_000_000);
+
+        if (! $user) {
             return back()
                 ->withInput($request->except('password'))
                 ->withErrors([
                     'identifier' => __('app.auth.invalid_credentials'),
-                ]);
-        }
-
-        if ($user->requiresPasswordSetup()) {
-            return back()
-                ->withInput($request->except('password'))
-                ->withErrors([
-                    'identifier' => __('app.auth.account_activation_required'),
-                ]);
-        }
-
-        if (! $user->canSignIn()) {
-            return back()
-                ->withInput($request->except('password'))
-                ->withErrors([
-                    'identifier' => $user->requiresAdminApprovalBeforeLogin()
-                        ? __('app.auth.approval_required_before_login')
-                        : __('app.auth.invalid_credentials'),
                 ]);
         }
 

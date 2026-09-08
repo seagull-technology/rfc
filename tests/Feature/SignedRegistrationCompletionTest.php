@@ -74,9 +74,23 @@ class SignedRegistrationCompletionTest extends TestCase
             ->assertSeeText('Complete Registration')
             ->assertSeeText('Please update your NGO information.');
 
-        $response = $this->post($signedUrl, [
+        $this->post($signedUrl, [
             'entity_name' => 'Updated NGO',
             'registration_number' => 'NGO-778',
+            'email' => 'ngo-updated@example.com',
+            'phone' => '0793555999',
+            'address' => 'Updated NGO address',
+            'description' => 'Updated NGO description',
+            'registration_document' => $this->fakePdf('ngo-license.pdf', 120),
+        ])
+            ->assertRedirect($signedUrl)
+            ->assertSessionHasErrors('registration_number');
+
+        $this->assertSame('NGO-777', $entity->fresh()->registration_no);
+
+        $response = $this->post($signedUrl, [
+            'entity_name' => 'Updated NGO',
+            'registration_number' => 'NGO-777',
             'email' => 'ngo-updated@example.com',
             'phone' => '0793555999',
             'address' => 'Updated NGO address',
@@ -92,7 +106,7 @@ class SignedRegistrationCompletionTest extends TestCase
         $user->refresh();
 
         $this->assertSame('Updated NGO', $entity->name_en);
-        $this->assertSame('NGO-778', $entity->registration_no);
+        $this->assertSame('NGO-777', $entity->registration_no);
         $this->assertSame('ngo-updated@example.com', $entity->email);
         $this->assertSame('962793555999', $entity->phone);
         $this->assertSame('pending_review', $entity->status);

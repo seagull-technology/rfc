@@ -313,16 +313,36 @@ class UserManagementController extends Controller
             'status' => ['required', Rule::in(['active', 'inactive', 'pending_review', 'needs_completion', 'rejected'])],
         ]);
 
-        $record->forceFill([
-            'name' => $validated['name'],
-            'username' => $validated['username'],
-            'email' => $validated['email'],
-            'national_id' => $validated['national_id'] ?: null,
-            'phone' => $validated['phone'] ?: null,
-            'status' => $validated['status'],
-        ]);
+        DB::transaction(function () use ($record, $validated): void {
+            $record = User::query()->withTrashed()->lockForUpdate()->findOrFail($record->getKey());
 
-        $record->save();
+            if ($record->isImmutableRegistrationIdentityField('national_id')
+                && trim((string) ($validated['national_id'] ?? '')) !== trim((string) $record->national_id)) {
+                throw ValidationException::withMessages([
+                    'national_id' => __('app.admin.users.registration_identity_locked'),
+                ]);
+            }
+
+            if ($validated['status'] !== $record->status
+                && ! $record->canChangeStatusOutsideRegistrationReview($validated['status'])) {
+                throw ValidationException::withMessages([
+                    'status' => __('app.admin.users.registration_status_requires_entity_review'),
+                ]);
+            }
+
+            $record->forceFill([
+                'name' => $validated['name'],
+                'username' => $validated['username'],
+                'email' => $validated['email'],
+                'national_id' => $record->isImmutableRegistrationIdentityField('national_id')
+                    ? $record->national_id
+                    : ($validated['national_id'] ?: null),
+                'phone' => $validated['phone'] ?: null,
+                'status' => $validated['status'],
+            ]);
+
+            $record->save();
+        });
 
         return redirect()
             ->route('admin.users.show', $record->getKey())
@@ -359,9 +379,20 @@ class UserManagementController extends Controller
             ]);
         }
 
-        $record->forceFill([
-            'status' => $validated['status'],
-        ])->save();
+        DB::transaction(function () use ($record, $validated): void {
+            $record = User::query()->withTrashed()->lockForUpdate()->findOrFail($record->getKey());
+
+            if ($validated['status'] !== $record->status
+                && ! $record->canChangeStatusOutsideRegistrationReview($validated['status'])) {
+                throw ValidationException::withMessages([
+                    'status' => __('app.admin.users.registration_status_requires_entity_review'),
+                ]);
+            }
+
+            $record->forceFill([
+                'status' => $validated['status'],
+            ])->save();
+        });
 
         return back()->with('status', __('app.admin.users.status_updated'));
     }

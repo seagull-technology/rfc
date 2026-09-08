@@ -138,11 +138,25 @@ Before running the deployment:
      Enable-WindowsOptionalFeature -Online `
        -FeatureName IIS-HttpCompressionStatic,IIS-HttpCompressionDynamic `
        -All -NoRestart
-9. Run PowerShell as Administrator.
+9. Complete deployment/windows/SECURITY-RETEST.md with the network owner before
+   the security retest. Confirm the public TLS terminator rejects TLS 1.0/1.1,
+   CBC and static-RSA suites; all gateway cookies have the required attributes;
+   untrusted Host inputs are rejected before DNS or routing; and egress is
+   restricted to the approved destinations. Application checks alone cannot
+   establish these results.
+10. Run PowerShell as Administrator.
 
 The release must be built with production dependencies only:
 
   composer install --no-dev --classmap-authoritative
+
+Build browser assets on the build machine with the locked npm dependencies:
+
+  npm run build
+  npm run vendor:check
+
+Include public/js/lodash.min.js and public/js/lodash.LICENSE.txt in the archive,
+retain the SHA-256 output, and clear gateway caches for the old JavaScript asset.
 
 The deployment script runs `php artisan security:production-check` before any
 database migration. It will reject debug mode, OTP debug fallback, insecure or
@@ -162,3 +176,10 @@ reference lookups without changing existing Super Admin/RFC passwords, swaps the
 application, rebuilds caches, and checks http://localhost/ar/sign-in.
 
 Do not delete the generated C:\inetpub\rfc-backup-* directory until UAT is complete.
+
+PASSWORD RECOVERY QUEUE (V06)
+- Configure QUEUE_CONNECTION=database (or an approved durable async queue).
+- Set DB_QUEUE_RETRY_AFTER=180 for the documented 120-second worker timeout.
+- Confirm the managed RFCQueueWorker service restarts after queue:restart.
+- Verify a controlled account receives its reset OTP and the queue drains.
+- Never use sync/deferred/background delivery in production.

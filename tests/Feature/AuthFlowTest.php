@@ -119,14 +119,71 @@ class AuthFlowTest extends TestCase
         ]);
     }
 
+    public function test_duplicate_registration_receives_the_same_neutral_acknowledgement(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+
+        User::factory()->create([
+            'email' => 'existing-registration@example.com',
+            'phone' => '962799999991',
+        ]);
+
+        $this->post(route('register.student.lookup'), [
+            'national_id' => '9876543290',
+            'birth_date' => '1999-01-15',
+        ])->assertOk();
+
+        $response = $this->from(route('register'))->post(route('register.store'), [
+            'registration_type' => 'student',
+            'email' => 'existing-registration@example.com',
+            'national_id' => '9876543290',
+            'birth_date' => '1999-01-15',
+            'phone' => '0799999992',
+            'address' => 'Registration enumeration test',
+            'student_lookup_verified' => '1',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ]);
+
+        $response
+            ->assertRedirect(route('register.submitted'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseMissing('users', ['national_id' => '9876543290']);
+        $this->assertNull(session(StudentRegistrationLookupService::SESSION_KEY));
+    }
+
+    public function test_existing_verified_identifier_does_not_change_the_public_lookup_response(): void
+    {
+        $this->seed(AccessControlSeeder::class);
+        $group = Group::query()->where('code', 'individuals')->firstOrFail();
+
+        User::factory()->create(['national_id' => '9876543291']);
+        Entity::query()->create([
+            'group_id' => $group->getKey(),
+            'name_en' => 'Existing Student',
+            'name_ar' => 'Existing Student',
+            'national_id' => '9876543291',
+            'registration_type' => 'student',
+            'status' => 'active',
+        ]);
+
+        $this->post(route('register.student.lookup'), [
+            'national_id' => '9876543291',
+            'birth_date' => '1999-01-15',
+        ])->assertOk()
+            ->assertJsonPath('message', 'National ID and date of birth verified; student details were filled.');
+    }
+
     public function test_registration_submitted_page_shows_durable_confirmation(): void
     {
         $this->refreshApplicationWithLocale('en');
 
         $this->get(route('register.submitted'))
             ->assertOk()
-            ->assertSeeText('Your registration was submitted successfully')
-            ->assertSeeText('RFC will review your information and uploaded documents.')
+            ->assertSeeText('Thank you for your registration request')
+            ->assertSeeText('If the details are eligible for a new registration')
             ->assertSeeText('Go to sign in');
     }
 
@@ -263,7 +320,7 @@ class AuthFlowTest extends TestCase
             && $request['birthDate'] === $birthDate);
     }
 
-    public function test_student_lookup_rejects_mohe_undergraduate_graduate_record(): void
+    public function test_student_lookup_uses_a_generic_response_for_graduate_record(): void
     {
         $this->seed(AccessControlSeeder::class);
 
@@ -298,14 +355,15 @@ class AuthFlowTest extends TestCase
 
         $response
             ->assertUnprocessable()
-            ->assertJsonPath('error', 'NOT_CURRENT_STUDENT');
+            ->assertJsonPath('error', 'LOOKUP_FAILED')
+            ->assertJsonPath('message', 'We could not verify this national ID and date of birth right now.');
 
         $this->assertNull(session(StudentRegistrationLookupService::SESSION_KEY));
 
         Http::assertSent(fn ($request): bool => $request['birthDate'] === '1998-10-03');
     }
 
-    public function test_student_lookup_reports_no_matching_student_separately_from_graduate_status(): void
+    public function test_student_lookup_uses_the_same_generic_response_when_no_student_matches(): void
     {
         $this->seed(AccessControlSeeder::class);
 
@@ -333,8 +391,8 @@ class AuthFlowTest extends TestCase
 
         $response
             ->assertUnprocessable()
-            ->assertJsonPath('error', 'STUDENT_NOT_FOUND')
-            ->assertJsonPath('message', 'No student matched the entered national ID and date of birth.');
+            ->assertJsonPath('error', 'LOOKUP_FAILED')
+            ->assertJsonPath('message', 'We could not verify this national ID and date of birth right now.');
 
         $this->assertNull(session(StudentRegistrationLookupService::SESSION_KEY));
     }
@@ -369,7 +427,7 @@ class AuthFlowTest extends TestCase
         $response
             ->assertRedirect(route('login'))
             ->assertSessionHasErrors([
-                'identifier' => 'Your registration is pending admin approval. You can sign in after your account has been approved.',
+                'identifier' => 'The provided login credentials are invalid.',
             ]);
 
         $this->assertGuest();
@@ -712,7 +770,7 @@ class AuthFlowTest extends TestCase
             && $request['nationalNo'] === '66677');
     }
 
-    public function test_company_lookup_reports_unknown_national_number_as_not_found(): void
+    public function test_company_lookup_uses_a_generic_response_for_unknown_national_number(): void
     {
         Cache::forget('gsb:ccd_company:99999');
         Cache::forget('gsb:mit_individual_registry:99999');
@@ -727,10 +785,10 @@ class AuthFlowTest extends TestCase
         $this->postJson(route('register.company.lookup'), [
             'registration_number' => '99999',
         ])->assertUnprocessable()
-            ->assertJsonPath('error', 'NOT_FOUND')
+            ->assertJsonPath('error', 'LOOKUP_FAILED')
             ->assertJsonPath(
                 'message',
-                'The establishment national number is incorrect, or no company or establishment is registered under it.',
+                'We could not verify this establishment national number right now.',
             );
     }
 
@@ -907,7 +965,7 @@ class AuthFlowTest extends TestCase
         $response
             ->assertRedirect(route('login'))
             ->assertSessionHasErrors([
-                'identifier' => 'Your registration is pending admin approval. You can sign in after your account has been approved.',
+                'identifier' => 'The provided login credentials are invalid.',
             ]);
 
         $this->assertGuest();
@@ -960,7 +1018,7 @@ class AuthFlowTest extends TestCase
         $response
             ->assertRedirect(route('login'))
             ->assertSessionHasErrors([
-                'identifier' => 'Your registration is pending admin approval. You can sign in after your account has been approved.',
+                'identifier' => 'The provided login credentials are invalid.',
             ]);
 
         $this->assertGuest();

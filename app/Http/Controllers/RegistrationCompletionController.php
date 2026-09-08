@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Entity;
 use App\Models\User;
 use App\Support\PhoneNumber;
+use App\Support\ProfileChangeRequests;
 use App\Support\UploadedFileStorage;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class RegistrationCompletionController extends Controller
@@ -92,7 +94,22 @@ class RegistrationCompletionController extends Controller
         $document = $validated['registration_document'] ?? null;
         $logo = $validated['logo'] ?? null;
 
-        DB::transaction(function () use ($validated, $entity, $user, $document, $logo): void {
+        DB::transaction(function () use ($request, $validated, $entity, $user, $document, $logo): void {
+            $entity = Entity::query()->lockForUpdate()->findOrFail($entity->getKey());
+            $user = User::query()->lockForUpdate()->findOrFail($user->getKey());
+
+            abort_unless($request->routeIs('registration.completion.link.*')
+                ? $this->canCompleteViaSignedLink($entity)
+                : $this->canCompleteAsAuthenticatedUser($entity), 404);
+
+            if ($entity->isImmutableRegistrationIdentityField('registration_no')
+                && ProfileChangeRequests::normalizeValue($validated['registration_number'])
+                    !== ProfileChangeRequests::normalizeValue($entity->registration_no)) {
+                throw ValidationException::withMessages([
+                    'registration_number' => __('app.auth.registration_identity_locked'),
+                ]);
+            }
+
             $metadata = $entity->metadata ?? [];
 
             if ($document instanceof UploadedFile) {
@@ -125,7 +142,9 @@ class RegistrationCompletionController extends Controller
             $entity->forceFill([
                 'name_en' => $validated['entity_name'],
                 'name_ar' => $validated['entity_name'],
-                'registration_no' => $validated['registration_number'],
+                'registration_no' => $entity->isImmutableRegistrationIdentityField('registration_no')
+                    ? $entity->registration_no
+                    : $validated['registration_number'],
                 'email' => $validated['email'],
                 'phone' => $validated['phone'],
                 'status' => 'pending_review',
@@ -134,7 +153,12 @@ class RegistrationCompletionController extends Controller
 
             $user->forceFill([
                 'name' => $validated['entity_name'],
-                'username' => $this->makeUsername((string) $entity->registration_type, $validated['registration_number']),
+                'username' => $this->makeUsername(
+                    (string) $entity->registration_type,
+                    $entity->isImmutableRegistrationIdentityField('registration_no')
+                        ? (string) $entity->registration_no
+                        : $validated['registration_number'],
+                ),
                 'email' => $validated['email'],
                 'phone' => $validated['phone'],
                 'status' => 'pending_review',

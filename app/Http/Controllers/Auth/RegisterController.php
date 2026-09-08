@@ -13,18 +13,25 @@ use App\Support\PasswordPolicy;
 use App\Support\PhoneNumber;
 use App\Support\RegistrationValidationAudit;
 use App\Support\UploadedFileStorage;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Support\Timebox;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Throwable;
 
 class RegisterController extends Controller
 {
+    /** @var array<int, string> */
+    private array $registrationFiles = [];
+
     public function index(): View
     {
         return view('auth.register', [
@@ -39,6 +46,8 @@ class RegisterController extends Controller
         StudentRegistrationLookupService $studentLookupService,
         CompanyRegistrationLookupService $companyLookupService,
     ): RedirectResponse {
+        $this->registrationFiles = [];
+
         try {
             $request->validate([
                 'registration_type' => ['required', Rule::in(array_keys($this->registrationTypes()))],
@@ -55,8 +64,33 @@ class RegisterController extends Controller
             }
 
             return $this->storeOrganizationLike($request, $roleAssignmentService, $registrationType);
+        } catch (UniqueConstraintViolationException $exception) {
+            $this->removeFailedRegistrationFiles();
+
+            // A concurrent registration may claim the identity after the availability check.
+            $identifier = $registrationType === 'student'
+                ? (string) $request->input('national_id')
+                : (string) $request->input('registration_number');
+
+            if ($this->registrationIdentityExists(
+                userFields: [
+                    'email' => (string) $request->input('email'),
+                    'phone' => [PhoneNumber::normalize((string) $request->input('phone')), (string) $request->input('phone')],
+                    'username' => $this->makeUsername($registrationType, $identifier),
+                ] + ($registrationType === 'student' ? ['national_id' => $identifier] : []),
+                entityFields: [$registrationType === 'student' ? 'national_id' : 'registration_no' => $identifier],
+            )) {
+                return $this->registrationAcknowledgement($request);
+            }
+
+            throw $exception;
         } catch (ValidationException $exception) {
+            $this->removeFailedRegistrationFiles();
             RegistrationValidationAudit::record($request, $exception->errors());
+
+            throw $exception;
+        } catch (Throwable $exception) {
+            $this->removeFailedRegistrationFiles();
 
             throw $exception;
         }
@@ -75,10 +109,10 @@ class RegisterController extends Controller
 
         $data = $request->validate([
             'registration_type' => ['required', 'in:student'],
-            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
-            'national_id' => ['required', 'regex:/^\d{10}$/', Rule::unique('users', 'national_id'), Rule::unique('entities', 'national_id')],
+            'email' => ['required', 'string', 'email', 'max:255'],
+            'national_id' => ['required', 'regex:/^\d{10}$/'],
             'birth_date' => ['required', 'date_format:Y-m-d', 'before:today'],
-            'phone' => ['required', 'regex:/^\d{10}$/', Rule::unique('users', 'phone')],
+            'phone' => ['required', 'regex:/^\d{10}$/'],
             'address' => ['required', 'string', 'max:255'],
             'logo' => $this->logoValidationRules(),
             'student_lookup_verified' => ['accepted'],
@@ -100,63 +134,75 @@ class RegisterController extends Controller
             ]);
         }
 
-        $data = array_merge($data, (array) data_get($lookupState, 'data', []));
-        $data['phone'] = PhoneNumber::normalize($data['phone']);
-        $username = $this->makeUsername('student', $data['national_id']);
-        $logo = $data['logo'] ?? null;
+        return app(Timebox::class)->call(function () use ($request, $data, $roleAssignmentService, $lookupState): RedirectResponse {
+            $data['phone'] = PhoneNumber::normalize($data['phone']);
+            $passwordHash = Hash::make($data['password']);
 
-        DB::transaction(function () use ($data, $roleAssignmentService, $username, $logo): void {
-            $group = Group::query()->where('code', 'individuals')->firstOrFail();
+            if ($this->registrationIdentityExists(
+                userFields: [
+                    'email' => $data['email'],
+                    'national_id' => $data['national_id'],
+                    'phone' => [$data['phone'], (string) $request->input('phone')],
+                ],
+                entityFields: ['national_id' => $data['national_id']],
+            )) {
+                return $this->registrationAcknowledgement($request);
+            }
 
-            $user = User::query()->create([
-                'name' => $data['full_name'],
-                'username' => $username,
-                'email' => $data['email'],
-                'national_id' => $data['national_id'],
-                'phone' => $data['phone'],
-                'status' => 'pending_review',
-                'registration_type' => 'student',
-                'password' => Hash::make($data['password']),
-            ]);
+            $data = array_merge($data, (array) data_get($lookupState, 'data', []));
+            $username = $this->makeUsername('student', $data['national_id']);
+            $logo = $data['logo'] ?? null;
 
-            $entity = Entity::query()->create([
-                'group_id' => $group->getKey(),
-                'name_en' => $data['full_name'],
-                'name_ar' => $data['full_name'],
-                'national_id' => $data['national_id'],
-                'email' => $data['email'],
-                'phone' => $data['phone'],
-                'registration_type' => 'student',
-                'status' => 'pending_review',
-                'metadata' => array_merge([
-                    'birth_date' => $data['birth_date'],
-                    'gender' => $data['gender'],
-                    'nationality' => $data['nationality'],
-                    'university_name' => $data['university_name'],
-                    'major' => $data['major'],
-                    'degree' => $data['degree'] ?? null,
-                    'student_status' => $data['student_status'] ?? null,
-                    'student_id' => $data['student_id'] ?? null,
-                    'university_type' => $data['university_type'] ?? null,
-                    'university_governorate' => $data['university_governorate'] ?? null,
-                    'city' => $data['city'] ?? null,
-                    'address' => $data['address'],
-                ], $this->logoMetadata($logo, 'student')),
-            ]);
+            DB::transaction(function () use ($data, $roleAssignmentService, $username, $logo, $passwordHash): void {
+                $group = Group::query()->where('code', 'individuals')->firstOrFail();
 
-            $entity->users()->attach($user->getKey(), [
-                'is_primary' => true,
-                'status' => 'active',
-                'joined_at' => now(),
-            ]);
+                $user = User::query()->create([
+                    'name' => $data['full_name'],
+                    'username' => $username,
+                    'email' => $data['email'],
+                    'national_id' => $data['national_id'],
+                    'phone' => $data['phone'],
+                    'status' => 'pending_review',
+                    'registration_type' => 'student',
+                    'password' => $passwordHash,
+                ]);
 
-            $roleAssignmentService->assignToEntity($user, $entity, 'applicant_owner');
-        });
+                $entity = Entity::query()->create([
+                    'group_id' => $group->getKey(),
+                    'name_en' => $data['full_name'],
+                    'name_ar' => $data['full_name'],
+                    'national_id' => $data['national_id'],
+                    'email' => $data['email'],
+                    'phone' => $data['phone'],
+                    'registration_type' => 'student',
+                    'status' => 'pending_review',
+                    'metadata' => array_merge([
+                        'birth_date' => $data['birth_date'],
+                        'gender' => $data['gender'],
+                        'nationality' => $data['nationality'],
+                        'university_name' => $data['university_name'],
+                        'major' => $data['major'],
+                        'degree' => $data['degree'] ?? null,
+                        'student_status' => $data['student_status'] ?? null,
+                        'student_id' => $data['student_id'] ?? null,
+                        'university_type' => $data['university_type'] ?? null,
+                        'university_governorate' => $data['university_governorate'] ?? null,
+                        'city' => $data['city'] ?? null,
+                        'address' => $data['address'],
+                    ], $this->logoMetadata($logo, 'student')),
+                ]);
 
-        $request->session()->forget(StudentRegistrationLookupService::SESSION_KEY);
+                $entity->users()->attach($user->getKey(), [
+                    'is_primary' => true,
+                    'status' => 'active',
+                    'joined_at' => now(),
+                ]);
 
-        return redirect()
-            ->route('register.submitted');
+                $roleAssignmentService->assignToEntity($user, $entity, 'applicant_owner');
+            });
+
+            return $this->registrationAcknowledgement($request);
+        }, 1_000_000);
     }
 
     private function storeCompany(
@@ -166,12 +212,12 @@ class RegisterController extends Controller
     ): RedirectResponse {
         $data = $request->validate([
             'registration_type' => ['required', 'in:company'],
-            'registration_number' => ['required', 'regex:/^\d{1,10}$/', Rule::unique('entities', 'registration_no')],
+            'registration_number' => ['required', 'regex:/^\d{1,10}$/'],
             'entity_name' => ['nullable', 'string', 'max:255'],
             'company_registration_date' => ['nullable', 'date'],
             'company_capital' => ['nullable', 'numeric', 'min:0'],
-            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
-            'phone' => ['required', 'regex:/^\d{10}$/', Rule::unique('users', 'phone')],
+            'email' => ['required', 'string', 'email', 'max:255'],
+            'phone' => ['required', 'regex:/^\d{10}$/'],
             'address' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
             'registration_document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
@@ -191,65 +237,73 @@ class RegisterController extends Controller
             ]);
         }
 
-        $data = array_merge($data, (array) data_get($lookupState, 'data', []));
-        $data['company_registry_source'] = data_get($lookupState, 'meta.source');
-        $data['phone'] = PhoneNumber::normalize($data['phone']);
-        $username = $this->makeUsername('company', $data['registration_number']);
-        $document = $data['registration_document'];
-        $documentPath = $this->storeRegistrationDocument($document, 'company');
-        $logo = $data['logo'] ?? null;
+        return app(Timebox::class)->call(function () use ($request, $data, $roleAssignmentService, $lookupState): RedirectResponse {
+            $data['phone'] = PhoneNumber::normalize($data['phone']);
+            $passwordHash = Hash::make($data['password']);
 
-        DB::transaction(function () use ($data, $roleAssignmentService, $username, $documentPath, $document, $logo): void {
-            $group = Group::query()->where('code', 'organizations')->firstOrFail();
+            if ($this->registrationIdentityExists(
+                userFields: ['email' => $data['email'], 'phone' => [$data['phone'], (string) $request->input('phone')]],
+                entityFields: ['registration_no' => $data['registration_number']],
+            )) {
+                return $this->registrationAcknowledgement($request);
+            }
 
-            $user = User::query()->create([
-                'name' => $data['entity_name'],
-                'username' => $username,
-                'email' => $data['email'],
-                'national_id' => null,
-                'phone' => $data['phone'],
-                'status' => 'pending_review',
-                'registration_type' => 'company',
-                'password' => Hash::make($data['password']),
-            ]);
+            $data = array_merge($data, (array) data_get($lookupState, 'data', []));
+            $data['company_registry_source'] = data_get($lookupState, 'meta.source');
+            $username = $this->makeUsername('company', $data['registration_number']);
+            $document = $data['registration_document'];
+            $documentPath = $this->storeRegistrationDocument($document, 'company');
+            $logo = $data['logo'] ?? null;
 
-            $entity = Entity::query()->create([
-                'group_id' => $group->getKey(),
-                'name_en' => $data['entity_name'],
-                'name_ar' => $data['entity_name'],
-                'registration_no' => $data['registration_number'],
-                'email' => $data['email'],
-                'phone' => $data['phone'],
-                'registration_type' => 'company',
-                'status' => 'pending_review',
-                'metadata' => array_filter(array_merge([
-                    'address' => $data['address'],
-                    'description' => $data['description'] ?: null,
-                    'company_registration_date' => $data['company_registration_date'],
-                    'company_capital' => $data['company_capital'],
-                    'organization_type' => $data['organization_type'] ?? null,
-                    'governorate' => $data['governorate'] ?? null,
-                    'commercial_registration_number' => $data['commercial_registration_number'] ?? null,
-                    'company_registry_source' => data_get($data, 'company_registry_source'),
-                    'registration_document_path' => $documentPath,
-                    'registration_document_name' => $document->getClientOriginalName(),
-                    'registration_document_mime' => $document->getClientMimeType(),
-                ], $this->logoMetadata($logo, 'company')), static fn ($value) => $value !== null && $value !== ''),
-            ]);
+            DB::transaction(function () use ($data, $roleAssignmentService, $username, $documentPath, $document, $logo, $passwordHash): void {
+                $group = Group::query()->where('code', 'organizations')->firstOrFail();
 
-            $entity->users()->attach($user->getKey(), [
-                'is_primary' => true,
-                'status' => 'active',
-                'joined_at' => now(),
-            ]);
+                $user = User::query()->create([
+                    'name' => $data['entity_name'],
+                    'username' => $username,
+                    'email' => $data['email'],
+                    'national_id' => null,
+                    'phone' => $data['phone'],
+                    'status' => 'pending_review',
+                    'registration_type' => 'company',
+                    'password' => $passwordHash,
+                ]);
 
-            $roleAssignmentService->assignToEntity($user, $entity, 'applicant_owner');
-        });
+                $entity = Entity::query()->create([
+                    'group_id' => $group->getKey(),
+                    'name_en' => $data['entity_name'],
+                    'name_ar' => $data['entity_name'],
+                    'registration_no' => $data['registration_number'],
+                    'email' => $data['email'],
+                    'phone' => $data['phone'],
+                    'registration_type' => 'company',
+                    'status' => 'pending_review',
+                    'metadata' => array_filter(array_merge([
+                        'address' => $data['address'],
+                        'description' => $data['description'] ?: null,
+                        'company_registration_date' => $data['company_registration_date'],
+                        'company_capital' => $data['company_capital'],
+                        'organization_type' => $data['organization_type'] ?? null,
+                        'governorate' => $data['governorate'] ?? null,
+                        'commercial_registration_number' => $data['commercial_registration_number'] ?? null,
+                        'company_registry_source' => data_get($data, 'company_registry_source'),
+                        'registration_document_path' => $documentPath,
+                        'registration_document_name' => $document->getClientOriginalName(),
+                        'registration_document_mime' => $document->getClientMimeType(),
+                    ], $this->logoMetadata($logo, 'company')), static fn ($value) => $value !== null && $value !== ''),
+                ]);
 
-        $request->session()->forget(CompanyRegistrationLookupService::SESSION_KEY);
+                $entity->users()->attach($user->getKey(), [
+                    'is_primary' => true,
+                    'status' => 'active',
+                    'joined_at' => now(),
+                ]);
 
-        return redirect()
-            ->route('register.submitted');
+                $roleAssignmentService->assignToEntity($user, $entity, 'applicant_owner');
+            });
+
+            return $this->registrationAcknowledgement($request);
+        }, 1_000_000);
     }
 
     private function storeOrganizationLike(
@@ -260,9 +314,9 @@ class RegisterController extends Controller
         $data = $request->validate([
             'registration_type' => ['required', Rule::in(['company', 'ngo', 'school'])],
             'entity_name' => ['required', 'string', 'max:255'],
-            'registration_number' => ['required', 'string', 'max:50', Rule::unique('entities', 'registration_no')],
-            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
-            'phone' => ['required', 'regex:/^\d{10}$/', Rule::unique('users', 'phone')],
+            'registration_number' => ['required', 'string', 'max:50'],
+            'email' => ['required', 'string', 'email', 'max:255'],
+            'phone' => ['required', 'regex:/^\d{10}$/'],
             'address' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
             'registration_document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
@@ -272,55 +326,64 @@ class RegisterController extends Controller
             'phone.regex' => __('app.auth.phone_digits'),
         ], $this->logoValidationMessages()));
 
-        $data['phone'] = PhoneNumber::normalize($data['phone']);
-        $username = $this->makeUsername($registrationType, $data['registration_number']);
-        $document = $data['registration_document'];
-        $documentPath = $this->storeRegistrationDocument($document, $registrationType);
-        $logo = $data['logo'] ?? null;
+        return app(Timebox::class)->call(function () use ($request, $data, $roleAssignmentService, $registrationType): RedirectResponse {
+            $data['phone'] = PhoneNumber::normalize($data['phone']);
+            $passwordHash = Hash::make($data['password']);
 
-        DB::transaction(function () use ($data, $roleAssignmentService, $registrationType, $username, $documentPath, $document, $logo): void {
-            $group = Group::query()->where('code', 'organizations')->firstOrFail();
+            if ($this->registrationIdentityExists(
+                userFields: ['email' => $data['email'], 'phone' => [$data['phone'], (string) $request->input('phone')]],
+                entityFields: ['registration_no' => $data['registration_number']],
+            )) {
+                return $this->registrationAcknowledgement($request);
+            }
+            $username = $this->makeUsername($registrationType, $data['registration_number']);
+            $document = $data['registration_document'];
+            $documentPath = $this->storeRegistrationDocument($document, $registrationType);
+            $logo = $data['logo'] ?? null;
 
-            $user = User::query()->create([
-                'name' => $data['entity_name'],
-                'username' => $username,
-                'email' => $data['email'],
-                'national_id' => null,
-                'phone' => $data['phone'],
-                'status' => 'pending_review',
-                'registration_type' => $registrationType,
-                'password' => Hash::make($data['password']),
-            ]);
+            DB::transaction(function () use ($data, $roleAssignmentService, $registrationType, $username, $documentPath, $document, $logo, $passwordHash): void {
+                $group = Group::query()->where('code', 'organizations')->firstOrFail();
 
-            $entity = Entity::query()->create([
-                'group_id' => $group->getKey(),
-                'name_en' => $data['entity_name'],
-                'name_ar' => $data['entity_name'],
-                'registration_no' => $data['registration_number'],
-                'email' => $data['email'],
-                'phone' => $data['phone'],
-                'registration_type' => $registrationType,
-                'status' => 'pending_review',
-                'metadata' => array_filter(array_merge([
-                    'address' => $data['address'],
-                    'description' => $data['description'] ?: null,
-                    'registration_document_path' => $documentPath,
-                    'registration_document_name' => $document->getClientOriginalName(),
-                    'registration_document_mime' => $document->getClientMimeType(),
-                ], $this->logoMetadata($logo, $registrationType)), static fn ($value) => $value !== null && $value !== ''),
-            ]);
+                $user = User::query()->create([
+                    'name' => $data['entity_name'],
+                    'username' => $username,
+                    'email' => $data['email'],
+                    'national_id' => null,
+                    'phone' => $data['phone'],
+                    'status' => 'pending_review',
+                    'registration_type' => $registrationType,
+                    'password' => $passwordHash,
+                ]);
 
-            $entity->users()->attach($user->getKey(), [
-                'is_primary' => true,
-                'status' => 'active',
-                'joined_at' => now(),
-            ]);
+                $entity = Entity::query()->create([
+                    'group_id' => $group->getKey(),
+                    'name_en' => $data['entity_name'],
+                    'name_ar' => $data['entity_name'],
+                    'registration_no' => $data['registration_number'],
+                    'email' => $data['email'],
+                    'phone' => $data['phone'],
+                    'registration_type' => $registrationType,
+                    'status' => 'pending_review',
+                    'metadata' => array_filter(array_merge([
+                        'address' => $data['address'],
+                        'description' => $data['description'] ?: null,
+                        'registration_document_path' => $documentPath,
+                        'registration_document_name' => $document->getClientOriginalName(),
+                        'registration_document_mime' => $document->getClientMimeType(),
+                    ], $this->logoMetadata($logo, $registrationType)), static fn ($value) => $value !== null && $value !== ''),
+                ]);
 
-            $roleAssignmentService->assignToEntity($user, $entity, 'applicant_owner');
-        });
+                $entity->users()->attach($user->getKey(), [
+                    'is_primary' => true,
+                    'status' => 'active',
+                    'joined_at' => now(),
+                ]);
 
-        return redirect()
-            ->route('register.submitted');
+                $roleAssignmentService->assignToEntity($user, $entity, 'applicant_owner');
+            });
+
+            return $this->registrationAcknowledgement($request);
+        }, 1_000_000);
     }
 
     /**
@@ -366,9 +429,60 @@ class RegisterController extends Controller
         return Str::limit($registrationType.'-'.$normalizedIdentifier, 50, '');
     }
 
+    /**
+     * @param  array<string, string|array<int, string>>  $userFields
+     * @param  array<string, string|array<int, string>>  $entityFields
+     */
+    private function registrationIdentityExists(array $userFields, array $entityFields): bool
+    {
+        $userExists = User::withTrashed()
+            ->where(function ($query) use ($userFields): void {
+                foreach ($userFields as $field => $value) {
+                    $query->orWhereIn($field, array_values(array_unique((array) $value)));
+                }
+            })
+            ->exists();
+        $entityExists = Entity::withTrashed()
+            ->where(function ($query) use ($entityFields): void {
+                foreach ($entityFields as $field => $value) {
+                    $query->orWhereIn($field, array_values(array_unique((array) $value)));
+                }
+            })
+            ->exists();
+
+        return $userExists || $entityExists;
+    }
+
+    private function registrationAcknowledgement(Request $request): RedirectResponse
+    {
+        $request->session()->forget([
+            StudentRegistrationLookupService::SESSION_KEY,
+            CompanyRegistrationLookupService::SESSION_KEY,
+        ]);
+
+        return redirect()->route('register.submitted');
+    }
+
     private function storeRegistrationDocument(UploadedFile $document, string $registrationType): string
     {
-        return UploadedFileStorage::store($document, 'registration-documents/'.$registrationType);
+        return $this->storeRegistrationFile($document, 'registration-documents/'.$registrationType);
+    }
+
+    private function storeRegistrationFile(UploadedFile $file, string $directory): string
+    {
+        $path = UploadedFileStorage::store($file, $directory);
+        $this->registrationFiles[] = $path;
+
+        return $path;
+    }
+
+    private function removeFailedRegistrationFiles(): void
+    {
+        foreach ($this->registrationFiles as $path) {
+            Storage::disk('local')->delete($path);
+        }
+
+        $this->registrationFiles = [];
     }
 
     /**
@@ -402,7 +516,7 @@ class RegisterController extends Controller
         }
 
         return [
-            'logo_path' => UploadedFileStorage::store($logo, 'registration-logos/'.$registrationType),
+            'logo_path' => $this->storeRegistrationFile($logo, 'registration-logos/'.$registrationType),
             'logo_name' => $logo->getClientOriginalName(),
             'logo_mime' => $logo->getClientMimeType(),
             'logo_size' => $logo->getSize(),

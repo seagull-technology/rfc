@@ -396,13 +396,16 @@
                                 <button class="btn btn-outline-success" type="submit">{{ __('app.admin.entities.restore_action') }}</button>
                             </form>
                         @else
-                            <form method="POST" action="{{ route('admin.entities.status', $entity->getKey()) }}">
-                                @csrf
-                                <input type="hidden" name="status" value="{{ $entity->status === 'active' ? 'inactive' : 'active' }}">
-                                <button class="btn btn-outline-warning" type="submit">
-                                    {{ $entity->status === 'active' ? __('app.admin.entities.deactivate_action') : __('app.admin.entities.activate_action') }}
-                                </button>
-                            </form>
+                            @php($nextOperationalStatus = $entity->status === 'active' ? 'inactive' : 'active')
+                            @if ($entity->canChangeStatusOutsideRegistrationReview($nextOperationalStatus))
+                                <form method="POST" action="{{ route('admin.entities.status', $entity->getKey()) }}">
+                                    @csrf
+                                    <input type="hidden" name="status" value="{{ $nextOperationalStatus }}">
+                                    <button class="btn btn-outline-warning" type="submit">
+                                        {{ $entity->status === 'active' ? __('app.admin.entities.deactivate_action') : __('app.admin.entities.activate_action') }}
+                                    </button>
+                                </form>
+                            @endif
                             <form method="POST" action="{{ route('admin.entities.delete', $entity->getKey()) }}">
                                 @csrf
                                 <button class="btn btn-outline-danger" type="submit">{{ __('app.admin.entities.delete_action') }}</button>
@@ -441,7 +444,7 @@
                 </div>
             @endif
 
-            @if ($entity->isRegistrationReviewable())
+            @if ($entity->usesRegistrationWorkflow())
                 <div class="card">
                     <div class="card-header">
                         <div class="iq-header-title">
@@ -563,7 +566,7 @@
         </div>
 
         <div class="col-xl-7">
-            @if ($entity->isRegistrationReviewable())
+            @if ($entity->usesRegistrationWorkflow())
                 <div class="card">
                     <div class="card-header">
                         <div class="iq-header-title">
@@ -686,11 +689,17 @@
                         </div>
                         <div class="col-md-6">
                             <label for="status" class="form-label">{{ __('app.admin.entities.status') }}</label>
-                            <select id="status" name="status" class="form-select" required>
+                            @if ($entity->usesRegistrationWorkflow())
+                                <input type="hidden" name="status" value="{{ $entity->status }}">
+                            @endif
+                            <select id="status" name="{{ $entity->usesRegistrationWorkflow() ? '' : 'status' }}" class="form-select" @disabled($entity->usesRegistrationWorkflow()) required>
                                 @foreach (['active', 'inactive', 'pending_review', 'needs_completion', 'rejected'] as $status)
                                     <option value="{{ $status }}" @selected(old('status', $entity->status) === $status)>{{ __('app.statuses.'.$status) }}</option>
                                 @endforeach
                             </select>
+                            @if ($entity->usesRegistrationWorkflow())
+                                <div class="form-text">{{ __('app.admin.entities.registration_status_requires_review') }}</div>
+                            @endif
                         </div>
                         <div class="col-md-6">
                             <label for="name_en" class="form-label">{{ __('app.admin.entities.name_en') }}</label>
@@ -706,11 +715,17 @@
                         </div>
                         <div class="col-md-6">
                             <label for="registration_no" class="form-label">{{ __('app.auth.registration_number') }}</label>
-                            <input id="registration_no" name="registration_no" type="text" class="form-control" value="{{ old('registration_no', $entity->registration_no) }}">
+                            <input id="registration_no" name="registration_no" type="text" class="form-control" value="{{ $entity->isImmutableRegistrationIdentityField('registration_no') ? $entity->registration_no : old('registration_no', $entity->registration_no) }}" @readonly($entity->isImmutableRegistrationIdentityField('registration_no'))>
+                            @if ($entity->isImmutableRegistrationIdentityField('registration_no'))
+                                <div class="form-text">{{ __('app.admin.entities.registration_identity_locked') }}</div>
+                            @endif
                         </div>
                         <div class="col-md-6">
                             <label for="national_id" class="form-label">{{ __('app.auth.organization_national_id') }}</label>
-                            <input id="national_id" name="national_id" type="text" class="form-control" value="{{ old('national_id', $entity->national_id) }}">
+                            <input id="national_id" name="national_id" type="text" class="form-control" value="{{ $entity->isImmutableRegistrationIdentityField('national_id') ? $entity->national_id : old('national_id', $entity->national_id) }}" @readonly($entity->isImmutableRegistrationIdentityField('national_id'))>
+                            @if ($entity->isImmutableRegistrationIdentityField('national_id'))
+                                <div class="form-text">{{ __('app.admin.entities.registration_identity_locked') }}</div>
+                            @endif
                         </div>
                         <div class="col-md-6">
                             <label for="email" class="form-label">{{ __('app.auth.email') }}</label>
@@ -1090,7 +1105,7 @@
             </div>
         @endif
 
-        @if ($entity->isRegistrationReviewable())
+        @if ($entity->usesRegistrationWorkflow())
             <div class="col-12">
                 <div class="card">
                     <div class="card-header">

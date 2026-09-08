@@ -45,7 +45,10 @@
                                             <div class="col-md-6">
                                                 <div class="mb-3">
                                                     <label class="form-label">{{ __('app.auth.registration_number_labels.'.$registrationType) }}</label>
-                                                    <input type="text" name="registration_number" class="form-control @error('registration_number') is-invalid @enderror" value="{{ old('registration_number', $entity->registration_no) }}" required>
+                                                    <input type="text" name="registration_number" class="form-control @error('registration_number') is-invalid @enderror" value="{{ $entity->isImmutableRegistrationIdentityField('registration_no') ? $entity->registration_no : old('registration_number', $entity->registration_no) }}" @readonly($entity->isImmutableRegistrationIdentityField('registration_no')) required>
+                                                    @if ($entity->isImmutableRegistrationIdentityField('registration_no'))
+                                                        <div class="form-text">{{ __('app.auth.registration_identity_locked') }}</div>
+                                                    @endif
                                                     @error('registration_number')
                                                         <div class="invalid-feedback d-block">{{ $message }}</div>
                                                     @enderror

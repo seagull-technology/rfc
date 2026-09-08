@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ProtectsRegistrationIdentity;
 use App\Support\ApplicationWorkflowRegistry;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -14,7 +15,7 @@ use Illuminate\Support\Str;
 
 class Entity extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, ProtectsRegistrationIdentity, SoftDeletes;
 
     protected $fillable = [
         'group_id',
@@ -190,8 +191,31 @@ class Entity extends Model
         return ($this->status ?: 'active') === 'active';
     }
 
-    public function isRegistrationReviewable(): bool
+    public function usesRegistrationWorkflow(): bool
     {
         return in_array($this->registration_type, ['student', 'company', 'ngo', 'school'], true);
+    }
+
+    public function isRegistrationReviewable(): bool
+    {
+        return ! $this->trashed()
+            && $this->usesRegistrationWorkflow()
+            && $this->status === 'pending_review';
+    }
+
+    public function canChangeStatusOutsideRegistrationReview(string $newStatus): bool
+    {
+        if (! $this->usesRegistrationWorkflow()) {
+            return true;
+        }
+
+        return in_array($this->status, ['active', 'inactive'], true)
+            && in_array($newStatus, ['active', 'inactive'], true);
+    }
+
+    public function isImmutableRegistrationIdentityField(string $field): bool
+    {
+        return $this->usesRegistrationWorkflow()
+            && in_array($field, ['registration_no', 'national_id'], true);
     }
 }

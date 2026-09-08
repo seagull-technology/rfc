@@ -15,7 +15,13 @@ class EnforceTrustedHosts
             return $next($request);
         }
 
-        if (! $this->isTrusted($request->getHost()) || ! $this->hasOnlyTrustedForwardedHosts($request)) {
+        // getHost() can use X-Forwarded-Host. Check the original authority too.
+        $hosts = $request->headers->all('host');
+
+        if (count($hosts) !== 1
+            || ! $this->isTrusted($hosts[0])
+            || ! $this->isTrusted($request->getHost())
+            || ! $this->hasOnlyTrustedForwardedHosts($request)) {
             return $this->rejectedResponse();
         }
 
@@ -24,26 +30,18 @@ class EnforceTrustedHosts
 
     private function hasOnlyTrustedForwardedHosts(Request $request): bool
     {
-        foreach (['X-Forwarded-Host', 'X-Original-Host', 'X-Host'] as $header) {
-            $value = (string) $request->headers->get($header, '');
-
-            if ($value === '') {
-                continue;
-            }
-
-            foreach (explode(',', $value) as $host) {
-                if (! $this->isTrusted($host)) {
-                    return false;
-                }
-            }
+        // Match IIS: only configured X-Forwarded-* headers are supported. Reject
+        // the alternate format rather than allow inconsistent parsing by layers.
+        if ($request->headers->has('Forwarded')) {
+            return false;
         }
 
-        $forwarded = (string) $request->headers->get('Forwarded', '');
-
-        if ($forwarded !== '' && preg_match_all('/(?:^|[;,]\s*)host\s*=\s*"?([^";,\s]+)"?/i', $forwarded, $matches)) {
-            foreach ($matches[1] as $host) {
-                if (! $this->isTrusted($host)) {
-                    return false;
+        foreach (['X-Forwarded-Host', 'X-Original-Host', 'X-Host'] as $header) {
+            foreach ($request->headers->all($header) as $value) {
+                foreach (explode(',', $value) as $host) {
+                    if (! $this->isTrusted($host)) {
+                        return false;
+                    }
                 }
             }
         }

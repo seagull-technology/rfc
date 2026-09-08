@@ -420,22 +420,22 @@ Route::group([
                     ->middleware('permission:settings.manage')
                     ->name('work-release-lookups.index');
                 Route::post('/work-release-lookups/work-categories', [WorkAndReleaseLookupController::class, 'storeWorkCategory'])
-                    ->middleware('permission:settings.manage')
+                    ->middleware(['permission:settings.manage', 'throttle:configuration-mutation'])
                     ->name('work-release-lookups.work-categories.store');
                 Route::post('/work-release-lookups/work-categories/{workCategory}/update', [WorkAndReleaseLookupController::class, 'updateWorkCategory'])
-                    ->middleware('permission:settings.manage')
+                    ->middleware(['permission:settings.manage', 'throttle:configuration-mutation'])
                     ->name('work-release-lookups.work-categories.update');
                 Route::post('/work-release-lookups/work-categories/{workCategory}/status', [WorkAndReleaseLookupController::class, 'updateWorkCategoryStatus'])
-                    ->middleware('permission:settings.manage')
+                    ->middleware(['permission:settings.manage', 'throttle:configuration-mutation'])
                     ->name('work-release-lookups.work-categories.status');
                 Route::post('/work-release-lookups/release-methods', [WorkAndReleaseLookupController::class, 'storeReleaseMethod'])
-                    ->middleware('permission:settings.manage')
+                    ->middleware(['permission:settings.manage', 'throttle:configuration-mutation'])
                     ->name('work-release-lookups.release-methods.store');
                 Route::post('/work-release-lookups/release-methods/{releaseMethod}/update', [WorkAndReleaseLookupController::class, 'updateReleaseMethod'])
-                    ->middleware('permission:settings.manage')
+                    ->middleware(['permission:settings.manage', 'throttle:configuration-mutation'])
                     ->name('work-release-lookups.release-methods.update');
                 Route::post('/work-release-lookups/release-methods/{releaseMethod}/status', [WorkAndReleaseLookupController::class, 'updateReleaseMethodStatus'])
-                    ->middleware('permission:settings.manage')
+                    ->middleware(['permission:settings.manage', 'throttle:configuration-mutation'])
                     ->name('work-release-lookups.release-methods.status');
 
                 Route::get('/form-lookups', [FormLookupOptionController::class, 'index'])

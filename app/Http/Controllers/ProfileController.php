@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -296,6 +297,7 @@ class ProfileController extends Controller
         $logo = $validated['logo'] ?? null;
 
         DB::transaction(function () use ($entity, $validated, $logo): void {
+            $entity = Entity::query()->lockForUpdate()->findOrFail($entity->getKey());
             $metadata = $entity->metadata ?? [];
 
             if ($logo instanceof UploadedFile) {
@@ -334,42 +336,48 @@ class ProfileController extends Controller
 
         abort_unless($user && $entity && $this->canManageEntityProfile($user, $entity), 403);
 
-        if (ProfileChangeRequests::pending($entity)) {
-            return redirect()
-                ->route('profile.show')
-                ->withErrors(['profile' => __('app.profile.official_change_pending_exists')]);
-        }
-
         $validated = $request->validate([
             ...ProfileChangeRequests::validationRules($entity),
             'note' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        $changes = ProfileChangeRequests::buildChanges($entity, $validated);
+        $changeRequest = DB::transaction(function () use ($entity, $user, $validated): array {
+            $entity = Entity::query()->lockForUpdate()->findOrFail($entity->getKey());
 
-        if ($changes === []) {
-            return redirect()
-                ->route('profile.show')
-                ->withErrors(['profile' => __('app.profile.official_change_no_changes')]);
-        }
+            if (ProfileChangeRequests::pending($entity)) {
+                throw ValidationException::withMessages([
+                    'profile' => __('app.profile.official_change_pending_exists'),
+                ]);
+            }
 
-        $changeRequest = [
-            'id' => (string) Str::uuid(),
-            'status' => 'pending',
-            'requested_at' => now()->toDateTimeString(),
-            'requested_by_user_id' => $user->getKey(),
-            'requested_by_name' => $user->displayName(),
-            'note' => $validated['note'] ?? null,
-            'fields' => $changes,
-        ];
+            $changes = ProfileChangeRequests::buildChanges($entity, $validated);
 
-        $metadata = $entity->metadata ?? [];
-        $metadata['profile_change_requests'] = collect((array) ($metadata['profile_change_requests'] ?? []))
-            ->push($changeRequest)
-            ->values()
-            ->all();
+            if ($changes === []) {
+                throw ValidationException::withMessages([
+                    'profile' => __('app.profile.official_change_no_changes'),
+                ]);
+            }
 
-        $entity->forceFill(['metadata' => $metadata])->save();
+            $changeRequest = [
+                'id' => (string) Str::uuid(),
+                'status' => 'pending',
+                'requested_at' => now()->toDateTimeString(),
+                'requested_by_user_id' => $user->getKey(),
+                'requested_by_name' => $user->displayName(),
+                'note' => $validated['note'] ?? null,
+                'fields' => $changes,
+            ];
+
+            $metadata = $entity->metadata ?? [];
+            $metadata['profile_change_requests'] = collect((array) ($metadata['profile_change_requests'] ?? []))
+                ->push($changeRequest)
+                ->values()
+                ->all();
+
+            $entity->forceFill(['metadata' => $metadata])->save();
+
+            return $changeRequest;
+        });
 
         $this->notifyProfileChangeReviewers($entity, $changeRequest);
 

@@ -251,7 +251,7 @@
                                                 </div>
                                                 <div class="col-md-4">
                                                     <label class="form-label small">{{ __('app.admin.users.national_id') }}</label>
-                                                    <input name="national_id" type="text" class="form-control" value="{{ $memberUser->national_id }}">
+                                                    <input name="national_id" type="text" class="form-control" value="{{ $memberUser->national_id }}" @readonly($memberUser->isImmutableRegistrationIdentityField('national_id'))>
                                                 </div>
                                                 <div class="col-md-4">
                                                     <label class="form-label small">{{ __('app.company.employees.job_title') }}</label>
