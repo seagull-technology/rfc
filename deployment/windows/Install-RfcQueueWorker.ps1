@@ -11,7 +11,8 @@ param(
     [string] $AppPath = "C:\inetpub\rfc",
     [string] $PhpExe = "C:\php\php.exe",
     [string] $InstallPath = "C:\Program Files\RFC\QueueWorker",
-    [string] $LogPath = "C:\ProgramData\RFC\QueueWorker\Logs"
+    [string] $LogPath = "C:\ProgramData\RFC\QueueWorker\Logs",
+    [switch] $RepairIncomplete
 )
 
 # Run in an elevated Windows PowerShell session. This installer deliberately
@@ -65,8 +66,22 @@ function Assert-NoExistingWorker {
 
 function Invoke-WorkerNative {
     param([string] $Executable, [string[]] $Arguments)
-    $output = & $Executable @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "Worker setup command failed ($LASTEXITCODE): $Executable $($Arguments -join ' ') $output" }
+    # Windows PowerShell 5.1 treats redirected native stderr as ErrorRecords.
+    # Capture all diagnostics before deciding success from the native exit code.
+    $command = Get-Command -Name $Executable -CommandType Application -ErrorAction Stop
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        # Native processes update the global automatic variable; a local
+        # LASTEXITCODE assignment would mask the returned status in a function.
+        $global:LASTEXITCODE = $null
+        $output = & $command.Source @Arguments 2>&1
+        $exitCode = $global:LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    if ($null -eq $exitCode -or $exitCode -ne 0) { throw "Worker setup command failed ($exitCode): $Executable $($Arguments -join ' ') $output" }
     return $output
 }
 
@@ -80,12 +95,57 @@ function Set-WorkerApplicationParameters {
     # Write the literal command line to avoid PowerShell 5.1/native executable
     # nested-quote conversion breaking an artisan path containing spaces.
     $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$Name\Parameters"
-    New-Item -Path $key -Force | Out-Null
+    if (-not (Test-Path -LiteralPath $key)) { New-Item -Path $key | Out-Null }
     New-ItemProperty -Path $key -Name "AppParameters" -Value $Parameters -PropertyType ExpandString -Force | Out-Null
+}
+
+function Initialize-WorkerRegistration {
+    param([string] $Name, [string] $ApplicationPath, [string] $PhpPath)
+    # New-Service creates the SCM entry only. NSSM's set command first reads
+    # Parameters\Application to recognize its service, so bootstrap this before
+    # invoking NSSM. Never force-create an existing registry key: that erases it.
+    $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$Name\Parameters"
+    if (-not (Test-Path -LiteralPath $key)) { New-Item -Path $key | Out-Null }
+    New-ItemProperty -Path $key -Name "Application" -Value $PhpPath -PropertyType ExpandString -Force | Out-Null
+    New-ItemProperty -Path $key -Name "AppDirectory" -Value $ApplicationPath -PropertyType ExpandString -Force | Out-Null
+    Set-WorkerApplicationParameters $Name (Get-WorkerArguments $ApplicationPath)
+}
+
+function Assert-RepairableWorker {
+    param([string] $Name, [string] $PermanentBinary, [string] $ApplicationPath, [string] $PhpPath, [string] $Logs)
+    $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='$Name'"
+    if (-not $service -or $service.State -ne "Stopped" -or $service.StartMode -ne "Disabled" -or
+        $service.Description -ne "RFC Laravel database queue worker") {
+        throw "Repair requires the disabled, stopped service left by this setup. No service will be replaced."
+    }
+    $imagePath = ([string] $service.PathName).Trim()
+    if ($imagePath -ine $PermanentBinary -and $imagePath -ine ('"' + $PermanentBinary + '"')) {
+        throw "The disabled service points to an unexpected executable. Repair refused."
+    }
+    if ($service.StartName -notin @("LocalSystem", "NT AUTHORITY\SYSTEM", "NT SERVICE\$Name")) {
+        throw "The disabled service uses an unexpected account. Repair refused."
+    }
+    $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$Name\Parameters"
+    if (Test-Path -LiteralPath $key) {
+        $properties = Get-ItemProperty -LiteralPath $key -ErrorAction Stop
+        $expected = @{
+            Application = $PhpPath; AppDirectory = $ApplicationPath
+            AppParameters = (Get-WorkerArguments $ApplicationPath)
+            AppStdout = (Join-Path $Logs "worker-out.log")
+            AppStderr = (Join-Path $Logs "worker-error.log")
+        }
+        foreach ($entry in $expected.GetEnumerator()) {
+            $existing = $properties.PSObject.Properties[$entry.Key]
+            if ($existing -and [string] $existing.Value -ine [string] $entry.Value) {
+                throw "Existing $($entry.Key) points to a different worker configuration. Repair refused."
+            }
+        }
+    }
 }
 
 function Set-WorkerConfiguration {
     param([string] $Binary, [string] $Name, [string] $ApplicationPath, [string] $PhpPath, [string] $Logs)
+    Initialize-WorkerRegistration $Name $ApplicationPath $PhpPath
     $settings = @(
         @("Application", $PhpPath), @("AppDirectory", $ApplicationPath),
         @("ObjectName", "NT SERVICE\$Name"),
@@ -105,6 +165,25 @@ function Set-WorkerConfiguration {
     # Laravel queue:restart or --max-time returns exit code zero.
     Invoke-WorkerNative "sc.exe" @("failure", $Name, "reset=", "86400", "actions=", "restart/5000/restart/15000/restart/60000") | Out-Null
     Invoke-WorkerNative "sc.exe" @("failureflag", $Name, "1") | Out-Null
+}
+
+function Assert-WorkerRegistration {
+    param([string] $Name, [string] $ApplicationPath, [string] $PhpPath, [string] $Logs)
+    $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$Name\Parameters"
+    $properties = Get-ItemProperty -LiteralPath $key -ErrorAction Stop
+    $expected = @{
+        Application = $PhpPath; AppDirectory = $ApplicationPath
+        AppParameters = (Get-WorkerArguments $ApplicationPath)
+        AppStdout = (Join-Path $Logs "worker-out.log")
+        AppStderr = (Join-Path $Logs "worker-error.log")
+        AppRestartDelay = "5000"
+    }
+    foreach ($entry in $expected.GetEnumerator()) {
+        $actual = $properties.PSObject.Properties[$entry.Key]
+        if (-not $actual -or [string] $actual.Value -cne [string] $entry.Value) {
+            throw "Worker registration verification failed for $($entry.Key). Do not start it."
+        }
+    }
 }
 
 function Resolve-WorkerVirtualAccountSid {
@@ -158,26 +237,39 @@ foreach ($path in @((Join-Path $AppPath "artisan"), (Join-Path $AppPath ".env"),
 foreach ($path in @((Join-Path $AppPath "storage"), (Join-Path $AppPath "bootstrap\cache"))) {
     if (-not (Test-Path -LiteralPath $path -PathType Container)) { throw "Required runtime directory is missing: $path" }
 }
-foreach ($path in @($InstallPath, $LogPath)) {
-    if (Test-Path -LiteralPath $path) { throw "Dedicated worker directory already exists: $path. Inspect it before setup; no files will be overwritten." }
-}
-Assert-NoExistingWorker $ServiceName
 Assert-NssmChecksum $NssmPath $ExpectedSha256
 Assert-NssmVersion ((Invoke-WorkerNative $NssmPath @("version")) -join " ")
-
-$createdService = $false
-try {
-    New-Item -ItemType Directory -Path $InstallPath, $LogPath -Force | Out-Null
-    $permanentBinary = Join-Path $InstallPath "nssm.exe"
-    Copy-Item -LiteralPath $NssmPath -Destination $permanentBinary
+$permanentBinary = Join-Path $InstallPath "nssm.exe"
+if ($RepairIncomplete) {
     Assert-NssmChecksum $permanentBinary $ExpectedSha256
-    # Native creation guarantees Manual + Stopped from the outset. The verified
-    # NSSM release then assigns the passwordless virtual account and logon right.
-    New-Service -Name $ServiceName -BinaryPathName ('"' + $permanentBinary + '"') -StartupType Manual -DisplayName "RFC Queue Worker" -Description "RFC Laravel database queue worker" | Out-Null
-    $createdService = $true
+    foreach ($path in @($InstallPath, $LogPath)) {
+        if (-not (Test-Path -LiteralPath $path -PathType Container)) { throw "Expected setup directory is missing: $path" }
+    }
+    Assert-RepairableWorker $ServiceName $permanentBinary $AppPath $PhpExe $LogPath
+}
+else {
+    Assert-NoExistingWorker $ServiceName
+    foreach ($path in @($InstallPath, $LogPath)) {
+        if (Test-Path -LiteralPath $path) { throw "Dedicated worker directory already exists: $path. Inspect it before setup; no files will be overwritten." }
+    }
+}
+
+$createdService = [bool] $RepairIncomplete
+try {
+    if (-not $RepairIncomplete) {
+        New-Item -ItemType Directory -Path $InstallPath, $LogPath -Force | Out-Null
+        Copy-Item -LiteralPath $NssmPath -Destination $permanentBinary
+        Assert-NssmChecksum $permanentBinary $ExpectedSha256
+        # Native creation keeps the service stopped; initialize NSSM's registry
+        # identity before its first set command. Failed setup stays disabled.
+        New-Service -Name $ServiceName -BinaryPathName ('"' + $permanentBinary + '"') -StartupType Manual -DisplayName "RFC Queue Worker" -Description "RFC Laravel database queue worker" | Out-Null
+        $createdService = $true
+    }
     Set-WorkerConfiguration $permanentBinary $ServiceName $AppPath $PhpExe $LogPath
+    Assert-WorkerRegistration $ServiceName $AppPath $PhpExe $LogPath
     $workerSid = Resolve-WorkerVirtualAccountSid $ServiceName
     Grant-WorkerFileAccess $AppPath $phpDirectory $InstallPath $LogPath $workerSid
+    Set-Service -Name $ServiceName -StartupType Manual
     Assert-WorkerIsStaged $ServiceName
 }
 catch {

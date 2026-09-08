@@ -378,9 +378,29 @@ that requires the worker (replace the checksum with the verified executable hash
   -ExpectedSha256 "VERIFIED_64_CHARACTER_NSSM_EXE_SHA256"
 ```
 
-The setup refuses to overwrite an existing service. The deployment starts and
-checks the worker while maintenance still pauses jobs. Set startup to Automatic
-only after the deployment succeeds, using the upgrade commands above.
+The setup refuses to overwrite an existing service by default. If the initial
+setup reported `not a valid NSSM service`, use the corrected setup script with
+`-RepairIncomplete`. That mode only accepts this installer's exact disabled,
+stopped service, expected executable/account/description, and matching existing
+application/log settings. It verifies the permanent NSSM checksum again and
+repairs the registration without deleting the service. The corrected script
+initializes `Parameters\Application` before calling NSSM, preserves existing
+registry values, and verifies the final application/log configuration.
+
+For that specific incomplete installation, run the corrected script from an
+elevated PowerShell window (substitute its actual extracted path):
+
+```powershell
+& C:\Deploy\rfc-queue-worker-repair-20260908\Install-RfcQueueWorker.ps1 `
+  -NssmPath "C:\Program Files\RFC\QueueWorker\nssm.exe" `
+  -ExpectedSha256 "eee9c44c29c2be011f1f1e43bb8c3fca888cb81053022ec5a0060035de16d848" `
+  -RepairIncomplete
+```
+
+Successful setup or repair leaves the service Manual and Stopped. A failure
+leaves it Disabled for inspection. The deployment starts and checks the worker
+while maintenance still pauses jobs. Set startup to Automatic only after the
+deployment succeeds, using the upgrade commands above.
 
 Temporary alternative while testing:
 

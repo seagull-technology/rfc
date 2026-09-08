@@ -4,12 +4,14 @@ param(
 
 # Portable checks of the real installer helpers. No service, registry, or Windows
 # ACL changes occur; the main installer body is parsed but never executed.
+# Local validation uses PowerShell 7; Windows PowerShell 5.1 integration requires
+# the Windows server and is not claimed by this portable harness.
 $ErrorActionPreference = "Stop"
 $tokens = $null
 $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $ScriptPath).Path, [ref] $tokens, [ref] $parseErrors)
 if ($parseErrors.Count -gt 0) { throw (($parseErrors | ForEach-Object { $_.Message }) -join [Environment]::NewLine) }
-foreach ($name in @("Assert-NssmChecksum", "Assert-NssmVersion", "Assert-SeparateWorkerPaths", "Assert-NoExistingWorker", "Invoke-WorkerNative", "Get-WorkerArguments", "Set-WorkerConfiguration", "Resolve-WorkerVirtualAccountSid", "Grant-WorkerFileAccess", "Assert-WorkerIsStaged")) {
+foreach ($name in @("Assert-NssmChecksum", "Assert-NssmVersion", "Assert-SeparateWorkerPaths", "Assert-NoExistingWorker", "Invoke-WorkerNative", "Get-WorkerArguments", "Initialize-WorkerRegistration", "Set-WorkerApplicationParameters", "Set-WorkerConfiguration", "Assert-WorkerRegistration", "Assert-RepairableWorker", "Resolve-WorkerVirtualAccountSid", "Grant-WorkerFileAccess", "Assert-WorkerIsStaged")) {
     $definition = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) |
         Where-Object { $_.Name -eq $name } | Select-Object -First 1
     if (-not $definition) { throw "Missing installer helper: $name" }
@@ -68,29 +70,147 @@ try {
     Assert-Throws { Resolve-WorkerVirtualAccountSid "RFCQueueWorker" } "Broad-account fallback must never be accepted."
     $checks++
 
-    function Test-FailingNative { $global:LASTEXITCODE = 5; "native failure" }
-    Assert-Throws { Invoke-WorkerNative "Test-FailingNative" @() } "Native setup failures must abort."
+    # Exercise the actual native wrapper against a child process. Stderr alone
+    # must not hide its exit status; the caller's error preference must survive.
+    $pwshExe = (Get-Process -Id $PID).Path
+    $originalPreference = $ErrorActionPreference
+    $diagnostic = Invoke-WorkerNative $pwshExe @("-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "[Console]::Error.WriteLine('benign diagnostic'); exit 0")
+    Assert-True (($diagnostic -join " ") -match "benign diagnostic") "Successful native stderr must be captured."
+    Assert-True ($ErrorActionPreference -eq $originalPreference) "Native success must restore the caller's error preference."
+    Assert-Throws { Invoke-WorkerNative $pwshExe @("-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "[Console]::Error.WriteLine('failure diagnostic'); exit 17") } "A real nonzero native exit must abort setup."
+    Assert-True ($ErrorActionPreference -eq $originalPreference) "Native failure must restore the caller's error preference."
+    Assert-Throws { Invoke-WorkerNative (Join-Path $testRoot "missing-native.exe") @() } "An unresolved native command must fail before execution."
     $checks++
 
+    # Model the Registry provider's important difference from the filesystem:
+    # New-Item -Force on an existing registry key resets its values. NSSM only
+    # recognizes a service after Parameters/Application has been initialized.
+    $script:registry = @{}
+    $script:registryEvents = @()
     $script:nativeCalls = @()
     $script:failNativeCall = 0
+    $registryKey = "HKLM:\SYSTEM\CurrentControlSet\Services\RFCQueueWorker\Parameters"
+    function Test-Path {
+        param([Alias("LiteralPath")] [string] $Path, [string] $PathType)
+        if ($Path.StartsWith("HKLM:")) { return $script:registry.ContainsKey($Path) }
+        if ($PathType) { return Microsoft.PowerShell.Management\Test-Path -LiteralPath $Path -PathType $PathType }
+        return Microsoft.PowerShell.Management\Test-Path -LiteralPath $Path
+    }
+    function New-Item {
+        param([string] $Path, [switch] $Force)
+        if (-not $Path.StartsWith("HKLM:")) { throw "Unexpected non-registry mutation in helper tests: $Path" }
+        if ($registry.ContainsKey($Path) -and -not $Force) { throw "Registry key already exists." }
+        $script:registry[$Path] = @{}
+        $script:registryEvents += "create:$Path"
+    }
+    function New-ItemProperty {
+        param([string] $Path, [string] $Name, $Value, [string] $PropertyType, [switch] $Force)
+        if (-not $registry.ContainsKey($Path)) { throw "Registry key must exist before its values are written." }
+        $script:registry[$Path][$Name] = $Value
+        $script:registryEvents += "value:$Name"
+    }
+    function Get-ItemProperty {
+        param([Alias("LiteralPath")] [string] $Path, [string] $Name, [string] $ErrorAction)
+        if (-not $registry.ContainsKey($Path)) { return $null }
+        return [pscustomobject] $registry[$Path]
+    }
     function Invoke-WorkerNative {
         param([string] $Executable, [string[]] $Arguments)
         $script:nativeCalls += [pscustomobject] @{ Executable = $Executable; Arguments = $Arguments }
         if ($failNativeCall -eq $nativeCalls.Count) { throw "mock native failure" }
+        if ($Executable -eq $binary) {
+            $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$($Arguments[1])\Parameters"
+            if (-not $registry.ContainsKey($key) -or -not $registry[$key]["Application"]) {
+                throw "Simulated NSSM: not a valid NSSM service (Parameters/Application absent)."
+            }
+            $setting = $Arguments[2]
+            if ($setting -eq "ObjectName") { $script:mockService.StartName = $Arguments[3] }
+            elseif ($setting -eq "AppExit") { $script:registry[$key]["AppExit:" + $Arguments[3]] = $Arguments[4] }
+            else { $script:registry[$key][$setting] = $Arguments[3] }
+            $script:registryEvents += "nssm:$setting"
+        }
     }
-    function Set-WorkerApplicationParameters {
-        param([string] $Name, [string] $Parameters)
-        $script:workerParameters = $Parameters
-    }
+
+    Assert-Throws { Invoke-WorkerNative $binary @("set", "RFCQueueWorker", "Application", (Join-Path $php "php.exe")) } "The stateful mock must reproduce NSSM rejecting an uninitialized native service."
+    $nativeCalls = @()
+    Initialize-WorkerRegistration "RFCQueueWorker" $app (Join-Path $php "php.exe")
+    Assert-True ($registry[$registryKey]["Application"] -eq (Join-Path $php "php.exe")) "Initialization must write Application before NSSM is called."
+    Assert-True ($nativeCalls.Count -eq 0) "Registration initialization must not call NSSM before bootstrapping its registry values."
+    $registry = @{} # The public configuration entry point must also bootstrap a fresh service itself.
     Set-WorkerConfiguration $binary "RFCQueueWorker" $app (Join-Path $php "php.exe") $logs
+    $workerParameters = $registry[$registryKey]["AppParameters"]
     Assert-True ($workerParameters.StartsWith('"' + (Join-Path $app "artisan") + '" queue:work ')) "Artisan must be absolute and preserve spaces."
     Assert-True ($workerParameters -notmatch '--force\b') "Worker must honor application maintenance mode."
-    $configuration = @($nativeCalls | ForEach-Object { $_.Arguments -join "|" })
-    foreach ($setting in @("set|RFCQueueWorker|AppExit|Default|Restart", "set|RFCQueueWorker|AppExit|0|Restart", "set|RFCQueueWorker|ObjectName|NT SERVICE\RFCQueueWorker", "set|RFCQueueWorker|AppRotateBytes|10485760")) {
-        Assert-True ($configuration -contains $setting) "Missing required worker setting: $setting"
+    $expectedValues = @{
+        Application = (Join-Path $php "php.exe"); AppDirectory = $app
+        AppStdout = (Join-Path $logs "worker-out.log"); AppStderr = (Join-Path $logs "worker-error.log")
+        AppRotateBytes = "10485760"; "AppExit:Default" = "Restart"; "AppExit:0" = "Restart"
     }
+    foreach ($entry in $expectedValues.GetEnumerator()) {
+        Assert-True ($registry[$registryKey][$entry.Key] -eq $entry.Value) "Configuration lost registry value $($entry.Key); existing keys must not be recreated with -Force."
+    }
+    Assert-True ($mockService.StartName -eq "NT SERVICE\RFCQueueWorker") "Worker configuration must select the exact virtual account."
     Assert-True (@($nativeCalls | Where-Object { $_.Executable -eq "sc.exe" }).Count -eq 2) "Wrapper failure recovery must be configured."
+    $checks++
+
+    Assert-WorkerRegistration "RFCQueueWorker" $app (Join-Path $php "php.exe") $logs
+    foreach ($name in @("Application", "AppDirectory", "AppParameters", "AppStdout", "AppStderr", "AppRestartDelay")) {
+        $original = $registry[$registryKey][$name]
+        $registry[$registryKey][$name] = "wrong configured value"
+        Assert-Throws { Assert-WorkerRegistration "RFCQueueWorker" $app (Join-Path $php "php.exe") $logs } "Registration readback must reject an incorrect $name."
+        $registry[$registryKey].Remove($name)
+        Assert-Throws { Assert-WorkerRegistration "RFCQueueWorker" $app (Join-Path $php "php.exe") $logs } "Registration readback must reject a missing $name."
+        $registry[$registryKey][$name] = $original
+    }
+    Assert-WorkerRegistration "RFCQueueWorker" $app (Join-Path $php "php.exe") $logs
+    $checks++
+
+    # Both helpers may be reused in repair. Neither may erase previously applied
+    # restart/log values while preserving or rewriting the application arguments.
+    Initialize-WorkerRegistration "RFCQueueWorker" $app (Join-Path $php "php.exe")
+    Set-WorkerApplicationParameters "RFCQueueWorker" (Get-WorkerArguments $app)
+    foreach ($entry in $expectedValues.GetEnumerator()) {
+        Assert-True ($registry[$registryKey][$entry.Key] -eq $entry.Value) "Repair initialization/arguments erased $($entry.Key)."
+    }
+    New-Item -Path $registryKey -Force
+    Assert-True ($registry[$registryKey].Count -eq 0) "Registry mock must reproduce the destructive New-Item -Force behavior."
+    $checks++
+
+    $script:ExpectedSha256 = (Get-FileHash $binary -Algorithm SHA256).Hash
+    $mockService = [pscustomobject] @{
+        State = "Stopped"; StartMode = "Disabled"; StartName = "LocalSystem"
+        PathName = ('"' + $binary + '"'); Description = "RFC Laravel database queue worker"
+    }
+    Assert-RepairableWorker "RFCQueueWorker" $binary $app (Join-Path $php "php.exe") $logs
+    $mockService.StartName = "NT SERVICE\RFCQueueWorker"
+    Assert-RepairableWorker "RFCQueueWorker" $binary $app (Join-Path $php "php.exe") $logs
+    foreach ($entry in @(
+        @{ Key = "State"; Value = "Running" }, @{ Key = "StartMode"; Value = "Manual" },
+        @{ Key = "PathName"; Value = ('"' + $binary + '" extra-argument') },
+        @{ Key = "Description"; Value = "Some other service" }, @{ Key = "StartName"; Value = "NT AUTHORITY\NetworkService" }
+    )) {
+        $original = $mockService.($entry.Key)
+        $mockService.($entry.Key) = $entry.Value
+        Assert-Throws { Assert-RepairableWorker "RFCQueueWorker" $binary $app (Join-Path $php "php.exe") $logs } "Repair must reject a mismatched $($entry.Key)."
+        $mockService.($entry.Key) = $original
+    }
+    $checks++
+
+    $repairPaths = @{
+        Application = (Join-Path $php "php.exe"); AppDirectory = $app
+        AppParameters = (Get-WorkerArguments $app)
+        AppStdout = (Join-Path $logs "worker-out.log"); AppStderr = (Join-Path $logs "worker-error.log")
+    }
+    foreach ($entry in $repairPaths.GetEnumerator()) { $registry[$registryKey][$entry.Key] = $entry.Value }
+    Assert-RepairableWorker "RFCQueueWorker" $binary $app (Join-Path $php "php.exe") $logs
+    foreach ($entry in $repairPaths.GetEnumerator()) {
+        $registry[$registryKey][$entry.Key] = "unrelated value"
+        Assert-Throws { Assert-RepairableWorker "RFCQueueWorker" $binary $app (Join-Path $php "php.exe") $logs } "Repair must reject an unrelated registry $($entry.Key)."
+        $registry[$registryKey][$entry.Key] = $entry.Value
+    }
+    $script:ExpectedSha256 = "0" * 64
+    Assert-Throws { Assert-NssmChecksum $binary $ExpectedSha256 } "Repair preflight must reject an unverified permanent NSSM binary."
+    $script:ExpectedSha256 = (Get-FileHash $binary -Algorithm SHA256).Hash
     $checks++
 
     $nativeCalls = @()
@@ -108,6 +228,7 @@ try {
     Assert-True ($nativeCalls.Count -eq 2) "ACL changes must stop at the first failure."
     $checks++
 
+    Assert-True ($ast.Extent.Text -match 'Assert-NssmChecksum \$permanentBinary \$ExpectedSha256[\s\S]*Assert-RepairableWorker') "Permanent binary checksum verification must precede partial-repair validation."
     $commands = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
     Assert-True (-not ($commands | Where-Object { $_.GetCommandName() -eq "Start-Service" })) "Installer must never start a worker or consume queued jobs."
     $create = $commands | Where-Object { $_.GetCommandName() -eq "New-Service" }
