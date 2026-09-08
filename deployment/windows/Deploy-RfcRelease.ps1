@@ -2,20 +2,38 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $ArchivePath,
 
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[a-fA-F0-9]{64}$')]
+    [string] $ExpectedSha256,
+
     [string] $SiteName = "RFC",
     [string] $AppPath = "C:\inetpub\rfc",
-    [string] $PhpExe = "C:\php\php.exe"
+    [string] $PhpExe = "C:\php\php.exe",
+    [string] $QueueServiceName = "RFCQueueWorker",
+    [string] $SchedulerTaskName = "RFC Laravel Scheduler",
+    # Existing releases should preserve role/reference records unless the
+    # deployment explicitly includes a reviewed access-control seed change.
+    [switch] $SeedAccessControl,
+    [ValidateRange(30, 900)]
+    [int] $WorkerDrainSeconds = 180
 )
 
 $ErrorActionPreference = "Stop"
-$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$ArchivePath = (Resolve-Path -LiteralPath $ArchivePath).Path
+$timestamp = (Get-Date -Format "yyyyMMdd-HHmmss") + "-" + [Guid]::NewGuid().ToString("N").Substring(0, 8)
 $parentPath = Split-Path $AppPath -Parent
 $stagePath = Join-Path $parentPath "rfc-stage-$timestamp"
 $backupPath = Join-Path $parentPath "rfc-backup-$timestamp"
 $failedPath = Join-Path $parentPath "rfc-failed-$timestamp"
 $swapped = $false
+$oldReleaseMoved = $false
 $maintenanceEnabled = $false
+$runtimeChanged = $false
+$databaseUpgradeStarted = $false
 $appPoolName = $null
+$schedulerTask = $null
+$schedulerWasEnabled = $false
+$maintenanceSecret = [Guid]::NewGuid().ToString("N")
 
 # Windows cannot rename an application directory while the shell or an Explorer
 # window is positioned inside it. Keep the deployment shell at the parent path.
@@ -57,6 +75,31 @@ function Get-DotEnvValue {
     }
 
     return $match.Groups[1].Value.Trim().Trim([char] 34).Trim([char] 39)
+}
+
+function Assert-ApplicationIsNotInMaintenance {
+    Push-Location $AppPath
+
+    try {
+        $output = (& $PhpExe artisan about --only=environment --json) -join [Environment]::NewLine
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not read the existing application's maintenance state."
+        }
+
+        $maintenanceState = ($output | ConvertFrom-Json).environment.maintenance_mode
+
+        if ($null -eq $maintenanceState) {
+            throw "Existing application did not report its maintenance state."
+        }
+
+        if ($maintenanceState) {
+            throw "The application is already in maintenance mode. Resolve that maintenance window before running this deployment; its existing state will not be overwritten."
+        }
+    }
+    finally {
+        Pop-Location
+    }
 }
 
 function Assert-SessionCookieConfiguration {
@@ -174,18 +217,29 @@ function Stop-RfcSite {
         Stop-WebAppPool -Name $appPoolName
     }
 
-    for ($attempt = 1; $attempt -le 15; $attempt++) {
+    $deadline = (Get-Date).AddSeconds($WorkerDrainSeconds)
+
+    do {
         $siteStopped = (Get-WebsiteState -Name $SiteName).Value -eq "Stopped"
         $poolStopped = -not $appPoolName -or (Get-WebAppPoolState -Name $appPoolName).Value -eq "Stopped"
+        $workerIds = @()
 
-        if ($siteStopped -and $poolStopped) {
+        if ($appPoolName) {
+            $workerIds = @(& "$env:windir\system32\inetsrv\appcmd.exe" list wp "/apppool.name:$appPoolName" /text:WP.NAME)
+
+            if ($LASTEXITCODE -ne 0) {
+                throw "Could not verify that IIS workers for '$appPoolName' have stopped."
+            }
+        }
+
+        if ($siteStopped -and $poolStopped -and @($workerIds | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -eq 0) {
             return
         }
 
         Start-Sleep -Seconds 2
-    }
+    } while ((Get-Date) -lt $deadline)
 
-    throw "IIS did not fully stop within 30 seconds."
+    throw "IIS did not fully stop within $WorkerDrainSeconds seconds."
 }
 
 function Rename-DirectoryWithRetry {
@@ -201,7 +255,7 @@ function Rename-DirectoryWithRetry {
 
     for ($attempt = 1; $attempt -le 15; $attempt++) {
         try {
-            Rename-Item $Source $Destination
+            Rename-Item -LiteralPath $Source -NewName (Split-Path $Destination -Leaf)
             return
         }
         catch {
@@ -235,6 +289,237 @@ function Close-AppExplorerWindows {
     }
 }
 
+function Copy-RfcStorage {
+    param([string] $SourceApp, [string] $DestinationApp, [switch] $Mirror)
+
+    $source = Join-Path $SourceApp "storage"
+    $destination = Join-Path $DestinationApp "storage"
+
+    if (-not (Test-Path -LiteralPath $source -PathType Container)) {
+        throw "Storage source does not exist: $source"
+    }
+
+    New-Item -ItemType Directory -Force $destination | Out-Null
+    $copyMode = if ($Mirror) { "/MIR" } else { "/E" }
+    & robocopy.exe $source $destination $copyMode /COPY:DAT /DCOPY:DAT /XJ /R:2 /W:2 /NFL /NDL /NP
+
+    if ($LASTEXITCODE -gt 7) {
+        throw "Storage copy failed with robocopy exit code $LASTEXITCODE."
+    }
+}
+
+function Assert-ReleaseArchive {
+    param([string] $Path, [string] $Expected)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Release archive was not found: $Path"
+    }
+
+    $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+
+    if (-not $actual.Equals($Expected, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Release archive SHA-256 does not match the expected checksum. No release files were extracted."
+    }
+}
+
+function Move-StagedReleaseIntoPlace {
+    Rename-DirectoryWithRetry $AppPath $backupPath
+    $script:oldReleaseMoved = $true
+    Rename-DirectoryWithRetry $stagePath $AppPath
+    $script:swapped = $true
+}
+
+function Restore-PreviousReleaseFiles {
+    if (-not $oldReleaseMoved) {
+        return
+    }
+
+    if (-not (Test-Path -LiteralPath $backupPath -PathType Container)) {
+        throw "Rollback backup is missing: $backupPath"
+    }
+
+    if (Test-Path -LiteralPath $AppPath -PathType Container) {
+        # Carry forward uploads, sessions, logs and other runtime files even when
+        # the new release is rolled back. Never restore an older storage snapshot.
+        Copy-RfcStorage $AppPath $backupPath -Mirror
+        Rename-DirectoryWithRetry $AppPath $failedPath
+    }
+
+    Rename-DirectoryWithRetry $backupPath $AppPath
+    $script:oldReleaseMoved = $false
+    $script:swapped = $false
+}
+
+function Get-ServiceWorkerProcesses {
+    $service = Get-CimInstance Win32_Service -Filter ("Name='" + $QueueServiceName.Replace("'", "''") + "'")
+
+    if (-not $service -or $service.ProcessId -eq 0) {
+        return
+    }
+
+    $allProcesses = @(Get-CimInstance Win32_Process)
+    $processIds = @([uint32] $service.ProcessId)
+    $visitedIds = $processIds
+    $descendants = @()
+
+    while ($processIds.Count -gt 0) {
+        $children = @($allProcesses | Where-Object { $processIds -contains $_.ParentProcessId -and $visitedIds -notcontains $_.ProcessId })
+        $descendants += $children
+        $processIds = @($children | ForEach-Object { [uint32] $_.ProcessId })
+        $visitedIds += $processIds
+    }
+
+    @($allProcesses | Where-Object { $_.ProcessId -eq $service.ProcessId }) + $descendants |
+        Where-Object { $_.CommandLine -match 'queue:work(?:\s|"|$)' }
+}
+
+function Assert-WorkerCommand {
+    param([object[]] $Workers)
+
+    if ($Workers.Count -eq 0) {
+        throw "Service '$QueueServiceName' has no running Laravel queue:work process."
+    }
+
+    $artisanPath = Join-Path $AppPath "artisan"
+
+    foreach ($worker in $Workers) {
+        if ($worker.CommandLine.IndexOf($artisanPath, [System.StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+            $worker.CommandLine -match '(?:^|\s)"?--force"?(?:\s|$)') {
+            throw "Service '$QueueServiceName' must run '$artisanPath queue:work' without --force so maintenance pauses new jobs."
+        }
+    }
+}
+
+function Stop-RfcWorker {
+    if ((Get-Service -Name $QueueServiceName).Status -eq "Stopped") {
+        return
+    }
+
+    $workers = @(Get-ServiceWorkerProcesses)
+    Assert-WorkerCommand $workers
+    # The service manager may restart a worker after queue:restart. Maintenance
+    # mode keeps that replacement idle while we wait for the old job to finish.
+    Invoke-PhpArtisan $AppPath queue:restart
+    $deadline = (Get-Date).AddSeconds($WorkerDrainSeconds)
+
+    do {
+        $remaining = @($workers | Where-Object {
+            $current = Get-CimInstance Win32_Process -Filter "ProcessId=$($_.ProcessId)"
+            $current -and $current.CreationDate -eq $_.CreationDate
+        })
+
+        if ($remaining.Count -eq 0) {
+            Stop-Service -Name $QueueServiceName
+            (Get-Service -Name $QueueServiceName).WaitForStatus("Stopped", [TimeSpan]::FromSeconds(30))
+            return
+        }
+
+        Start-Sleep -Seconds 1
+    } while ((Get-Date) -lt $deadline)
+
+    throw "Queue worker did not finish its current job within $WorkerDrainSeconds seconds. Deployment will not force-terminate it."
+}
+
+function Start-RfcWorker {
+    if ((Get-Service -Name $QueueServiceName).Status -ne "Running") {
+        Start-Service -Name $QueueServiceName
+    }
+
+    (Get-Service -Name $QueueServiceName).WaitForStatus("Running", [TimeSpan]::FromSeconds(30))
+    $deadline = (Get-Date).AddSeconds(30)
+
+    do {
+        $workers = @(Get-ServiceWorkerProcesses)
+
+        if ($workers.Count -gt 0) {
+            Assert-WorkerCommand $workers
+            Start-Sleep -Seconds 2
+            $stable = @(Get-ServiceWorkerProcesses | Where-Object { $workers.ProcessId -contains $_.ProcessId })
+
+            if ($stable.Count -gt 0) {
+                return
+            }
+        }
+
+        Start-Sleep -Seconds 1
+    } while ((Get-Date) -lt $deadline)
+
+    throw "Service '$QueueServiceName' did not start a stable worker for the deployed application."
+}
+
+function New-MaintenanceSmokeSession {
+    # AppServiceProvider forces HTTPS redirects, so following the secret URL
+    # would leave loopback. Build Laravel's signed maintenance cookie locally.
+    $expiresAt = [DateTimeOffset]::UtcNow.AddMinutes(10).ToUnixTimeSeconds()
+    $hmac = New-Object System.Security.Cryptography.HMACSHA256
+
+    try {
+        $hmac.Key = [System.Text.Encoding]::UTF8.GetBytes($maintenanceSecret)
+        $digest = $hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($expiresAt.ToString([Globalization.CultureInfo]::InvariantCulture)))
+        $mac = ([BitConverter]::ToString($digest)).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $hmac.Dispose()
+    }
+
+    $payload = @{ expires_at = $expiresAt; mac = $mac } | ConvertTo-Json -Compress
+    $value = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload))
+    $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+    $session.Cookies.Add([Uri] "http://127.0.0.1", [System.Net.Cookie]::new("laravel_maintenance", $value, "/"))
+
+    return $session
+}
+
+function Suspend-RfcScheduler {
+    if (-not $schedulerTask) {
+        return
+    }
+
+    Disable-ScheduledTask -TaskName $schedulerTask.TaskName -TaskPath $schedulerTask.TaskPath | Out-Null
+    $deadline = (Get-Date).AddSeconds($WorkerDrainSeconds)
+
+    do {
+        if ((Get-ScheduledTask -TaskName $schedulerTask.TaskName -TaskPath $schedulerTask.TaskPath).State -ne "Running") {
+            return
+        }
+
+        Start-Sleep -Seconds 1
+    } while ((Get-Date) -lt $deadline)
+
+    throw "Scheduled task '$SchedulerTaskName' did not finish; deployment will not terminate an active scheduler."
+}
+
+function Restore-RfcScheduler {
+    if ($schedulerTask -and $schedulerWasEnabled) {
+        Enable-ScheduledTask -TaskName $schedulerTask.TaskName -TaskPath $schedulerTask.TaskPath | Out-Null
+    }
+}
+
+function Restore-OriginalRuntimeState {
+    if ($queueWasRunning) {
+        Start-RfcWorker
+    }
+    elseif ((Get-Service -Name $QueueServiceName).Status -ne "Stopped") {
+        Stop-RfcWorker
+    }
+
+    Restore-RfcScheduler
+
+    if ($poolWasStarted -and (Get-WebAppPoolState -Name $appPoolName).Value -ne "Started") {
+        Start-WebAppPool -Name $appPoolName
+    }
+    elseif (-not $poolWasStarted -and (Get-WebAppPoolState -Name $appPoolName).Value -ne "Stopped") {
+        Stop-WebAppPool -Name $appPoolName
+    }
+
+    if ($siteWasStarted -and (Get-WebsiteState -Name $SiteName).Value -ne "Started") {
+        Start-Website -Name $SiteName
+    }
+    elseif (-not $siteWasStarted -and (Get-WebsiteState -Name $SiteName).Value -ne "Stopped") {
+        Stop-Website -Name $SiteName
+    }
+}
+
 if (-not (Test-Path $PhpExe)) {
     throw "PHP executable was not found: $PhpExe"
 }
@@ -243,9 +528,7 @@ Assert-PhpSecurityConfiguration
 Assert-PhpUploadConfiguration
 Show-PhpPerformanceWarning
 
-if (-not (Test-Path $ArchivePath)) {
-    throw "Release archive was not found: $ArchivePath"
-}
+Assert-ReleaseArchive $ArchivePath $ExpectedSha256
 
 if (-not (Test-Path (Join-Path $AppPath ".env"))) {
     throw "The existing server .env file was not found under $AppPath"
@@ -257,11 +540,59 @@ if (-not (Test-Path "IIS:\Sites\$SiteName")) {
     throw "IIS website '$SiteName' does not exist."
 }
 
-$appPoolName = (Get-Item "IIS:\Sites\$SiteName").applicationPool
+$site = Get-Item "IIS:\Sites\$SiteName"
+$configuredPublicPath = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($site.physicalPath)).TrimEnd([char] '\', [char] '/')
+$expectedPublicPath = [IO.Path]::GetFullPath((Join-Path $AppPath "public")).TrimEnd([char] '\', [char] '/')
+
+if (-not $configuredPublicPath.Equals($expectedPublicPath, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "IIS site '$SiteName' serves '$configuredPublicPath', not the requested application '$expectedPublicPath'."
+}
+
+$appPoolName = $site.applicationPool
+$otherPoolSites = @(Get-Website | Where-Object { $_.Name -ne $SiteName -and $_.applicationPool -eq $appPoolName -and $_.State -eq "Started" })
+
+if ($otherPoolSites.Count -gt 0) {
+    throw "Application pool '$appPoolName' also serves another running website. Give RFC a dedicated pool before deploying."
+}
+
+Assert-ApplicationIsNotInMaintenance
+$siteWasStarted = (Get-WebsiteState -Name $SiteName).Value -eq "Started"
+$poolWasStarted = (Get-WebAppPoolState -Name $appPoolName).Value -eq "Started"
+$queueService = Get-Service -Name $QueueServiceName -ErrorAction SilentlyContinue
+
+if (-not $queueService) {
+    throw "Required queue service '$QueueServiceName' is missing. Install the managed worker before deployment."
+}
+
+if ($queueService.Status -notin @("Running", "Stopped")) {
+    throw "Queue service '$QueueServiceName' must be Running or Stopped before deployment."
+}
+
+$queueWasRunning = $queueService.Status -eq "Running"
+
+if ($queueWasRunning) {
+    Assert-WorkerCommand @(Get-ServiceWorkerProcesses)
+}
+
+if ($SchedulerTaskName) {
+    $schedulerTasks = @(Get-ScheduledTask -TaskName $SchedulerTaskName -ErrorAction SilentlyContinue)
+
+    if ($schedulerTasks.Count -gt 1) {
+        throw "More than one scheduled task is named '$SchedulerTaskName'; use a unique task name."
+    }
+
+    if ($schedulerTasks.Count -eq 1) {
+        $schedulerTask = $schedulerTasks[0]
+        $schedulerWasEnabled = $schedulerTask.Settings.Enabled
+    }
+    else {
+        Write-Warning "Scheduled task '$SchedulerTaskName' was not found. Confirm no external scheduler writes to this application during deployment."
+    }
+}
 
 try {
     Write-Host "== Extract release =="
-    New-Item -ItemType Directory -Force $stagePath | Out-Null
+    New-Item -ItemType Directory $stagePath | Out-Null
     & tar.exe -xzf $ArchivePath -C $stagePath
 
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $stagePath "artisan"))) {
@@ -277,12 +608,7 @@ try {
     Write-Host "== Preserve environment and storage =="
     Copy-Item (Join-Path $AppPath ".env") (Join-Path $stagePath ".env") -Force
     Assert-SessionCookieConfiguration (Join-Path $stagePath ".env")
-    New-Item -ItemType Directory -Force (Join-Path $stagePath "storage") | Out-Null
-    & robocopy.exe (Join-Path $AppPath "storage") (Join-Path $stagePath "storage") /E /COPY:DAT /R:2 /W:2 /NFL /NDL /NP
-
-    if ($LASTEXITCODE -gt 7) {
-        throw "Storage copy failed with robocopy exit code $LASTEXITCODE."
-    }
+    Copy-RfcStorage $AppPath $stagePath
 
     @(
         "storage\app\public",
@@ -297,80 +623,117 @@ try {
     }
 
     icacls (Join-Path $stagePath "storage") /grant "IIS_IUSRS:(OI)(CI)M" /T | Out-Null
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not grant IIS write access to staged storage."
+    }
+
     icacls (Join-Path $stagePath "bootstrap\cache") /grant "IIS_IUSRS:(OI)(CI)M" /T | Out-Null
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not grant IIS write access to staged bootstrap cache."
+    }
 
     Write-Host "== Validate release against server configuration =="
     Invoke-PhpArtisan $stagePath config:clear
     Invoke-PhpArtisan $stagePath view:clear
     Invoke-PhpArtisan $stagePath security:production-check
-    Invoke-PhpArtisan $stagePath security:evidence "--label=$timestamp"
     Invoke-PhpArtisan $stagePath migrate:status
 
-    Write-Host "== Enter maintenance mode =="
-    Invoke-PhpArtisan $AppPath down --retry=60
+    Write-Host "== Quiesce application writers =="
+    $runtimeChanged = $true
+    Suspend-RfcScheduler
     $maintenanceEnabled = $true
+    Invoke-PhpArtisan $AppPath down --retry=60 "--secret=$maintenanceSecret"
+    Stop-RfcSite
+    Stop-RfcWorker
+
+    Write-Host "== Synchronize final runtime storage =="
+    # The live preflight copy is insufficient: users may have uploaded or deleted
+    # files since it ran. Mirror only after web, worker and scheduler are quiet.
+    Copy-RfcStorage $AppPath $stagePath -Mirror
 
     Write-Host "== Upgrade database and reference data =="
+    $databaseUpgradeStarted = $true
     Invoke-PhpArtisan $stagePath migrate --force
-    Invoke-PhpArtisan $stagePath db:seed '--class=Database\Seeders\AccessControlSeeder' --force
+
+    if ($SeedAccessControl) {
+        Invoke-PhpArtisan $stagePath db:seed '--class=Database\Seeders\AccessControlSeeder' --force
+    }
 
     Write-Host "== Swap application release =="
     Close-AppExplorerWindows
-    Stop-RfcSite
-    Rename-DirectoryWithRetry $AppPath $backupPath
-    Rename-DirectoryWithRetry $stagePath $AppPath
-    $swapped = $true
+    Move-StagedReleaseIntoPlace
 
     Write-Host "== Rebuild production caches =="
-    Invoke-PhpArtisan $AppPath optimize:clear
+    Invoke-PhpArtisan $AppPath optimize:clear --except=cache
     Invoke-PhpArtisan $AppPath storage:link
     Invoke-PhpArtisan $AppPath config:cache
     # Localized route prefixes are resolved from the request by
     # mcamara/laravel-localization and must remain uncached.
     Invoke-PhpArtisan $AppPath route:clear
     Invoke-PhpArtisan $AppPath view:cache
-    Invoke-PhpArtisan $AppPath queue:restart
-    Invoke-PhpArtisan $AppPath up
-    $maintenanceEnabled = $false
+    Invoke-PhpArtisan $AppPath security:evidence "--label=$timestamp"
 
     Start-RfcSite
 
-    Write-Host "== Smoke test =="
+    Write-Host "== Smoke test while public maintenance remains enabled =="
     $smokeHost = ([Uri](Get-DotEnvValue (Join-Path $AppPath ".env") "APP_URL")).Host
-    $response = Invoke-WebRequest "http://127.0.0.1/ar/sign-in" -Headers @{ Host = $smokeHost } -UseBasicParsing -TimeoutSec 30
+    $smokeSession = New-MaintenanceSmokeSession
+    $response = Invoke-WebRequest "http://127.0.0.1/ar/sign-in" -Headers @{ Host = $smokeHost } -WebSession $smokeSession -UseBasicParsing -TimeoutSec 30
 
     if ($response.StatusCode -ne 200) {
         throw "Smoke test returned HTTP $($response.StatusCode)."
     }
 
+    # Validate worker startup while maintenance still prevents it consuming jobs.
+    # Reopening public traffic is the final deployment step after rollback checks.
+    Start-RfcWorker
+    Restore-RfcScheduler
+    Invoke-PhpArtisan $AppPath up
+    $maintenanceEnabled = $false
+
     Write-Host "Deployment completed successfully."
     Write-Host "Application backup: $backupPath"
 }
 catch {
-    Write-Host "Deployment failed: $($_.Exception.Message)" -ForegroundColor Red
+    $deploymentError = $_
+    Write-Host "Deployment failed: $($deploymentError.Exception.Message)" -ForegroundColor Red
 
-    if ($swapped) {
-        Write-Host "== Roll back application files =="
-        Stop-RfcSite
+    try {
+        if ($oldReleaseMoved) {
+            Write-Host "== Roll back application files =="
+            Stop-RfcSite
 
-        if (Test-Path $AppPath) {
-            Rename-Item $AppPath $failedPath
+            if (Test-Path -LiteralPath $AppPath) {
+                Invoke-PhpArtisan $AppPath down --retry=60
+                Stop-RfcWorker
+            }
+
+            Restore-PreviousReleaseFiles
+            Invoke-PhpArtisan $AppPath optimize:clear --except=cache
+            Write-Host "Previous application files were restored. Failed release retained at: $failedPath"
         }
 
-        if (Test-Path $backupPath) {
-            Rename-Item $backupPath $AppPath
+        if ($runtimeChanged) {
+            # Restart the original services while maintenance still pauses jobs.
+            Restore-OriginalRuntimeState
+
+            if ($maintenanceEnabled -and (Test-Path -LiteralPath $AppPath)) {
+                Invoke-PhpArtisan $AppPath up
+                $maintenanceEnabled = $false
+            }
         }
-
-        Invoke-PhpArtisan $AppPath up
-        Start-RfcSite
-        Write-Host "Previous application files were restored. Failed release: $failedPath"
     }
-    elseif ($maintenanceEnabled -and (Test-Path $AppPath)) {
-        Invoke-PhpArtisan $AppPath up
-        Start-RfcSite
+    catch {
+        Write-Host "Rollback needs operator attention: $($_.Exception.Message). Backup: $backupPath; staged release: $stagePath; failed release: $failedPath" -ForegroundColor Red
     }
 
-    throw
+    if ($databaseUpgradeStarted) {
+        Write-Warning "Application rollback does not reverse migrations or reference-data changes. Verify compatibility or restore the separately prepared database backup."
+    }
+
+    throw $deploymentError
 }
 finally {
     if (-not $swapped -and (Test-Path $stagePath)) {

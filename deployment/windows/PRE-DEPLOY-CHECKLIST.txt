@@ -168,12 +168,25 @@ manifest under the private local disk at storage\app\private\security-evidence.
 Deployment command example:
 
   Set-ExecutionPolicy -Scope Process Bypass
-  C:\Deploy\rfc-offline-release-20260820-v4\Deploy-RfcRelease.ps1 `
-    -ArchivePath C:\Deploy\rfc-offline-release-20260820-v4\rfc-app.tar.gz
+  C:\Deploy\rfc-offline-release-20260908-v1\Deploy-RfcRelease.ps1 `
+    -ArchivePath C:\Deploy\rfc-offline-release-20260908-v1\rfc-app.tar.gz `
+    -ExpectedSha256 "VERIFIED_64_CHARACTER_APP_ARCHIVE_SHA256"
 
-The script preserves .env and storage, applies migrations, refreshes permissions and
-reference lookups without changing existing Super Admin/RFC passwords, swaps the
-application, rebuilds caches, and checks http://localhost/ar/sign-in.
+Use the rfc-app.tar.gz hash from the verified release's SHA256SUMS.txt. The script
+rejects a mismatch before extraction. Run from C:\inetpub, outside the app folder.
+RFCQueueWorker must be installed. Its command must use the absolute path
+C:\inetpub\rfc\artisan queue:work without --force. The scheduler name defaults to
+RFC Laravel Scheduler; pass -SchedulerTaskName if the installed task differs.
+
+The script preserves .env and current storage, pauses writers before its final
+storage copy, applies migrations, swaps the application, rebuilds caches without
+clearing the shared application cache, and checks the sign-in page while public
+maintenance remains active. It starts and checks the worker before reopening.
+The site must serve C:\inetpub\rfc\public and must not share its application pool
+with another running website. An already-maintained application is rejected.
+
+Reference lookups and roles are preserved by default. Use -SeedAccessControl only
+when a release includes a reviewed seed change; this security release does not.
 
 Do not delete the generated C:\inetpub\rfc-backup-* directory until UAT is complete.
 

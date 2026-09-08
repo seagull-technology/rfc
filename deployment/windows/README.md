@@ -14,6 +14,81 @@ Copy these installers/packages to the server before starting:
 
 Composer and Node.js are not required on the server when deploying the prepared release package, because `vendor/` and `public/build/` are included.
 
+## Build The Offline Release
+
+Commit the reviewed application, dependency lockfiles, vendor assets, and release
+notes first. From the repository root on the build machine, run:
+
+```sh
+python3 scripts/build-offline-release.py \
+  --ref HEAD \
+  --release-name rfc-offline-release-YYYYMMDD-v1 \
+  --notes deployment/windows/RELEASE-NOTES-YYYYMMDD-v1.txt
+```
+
+Use the actual release date and committed notes filename. The builder packages
+only the selected commit using `git archive`; uncommitted changes are excluded.
+It requires Git, Python 3.9+, Composer/PHP, Node/npm, and populated Composer/npm
+download caches for the locked packages. It copies those caches into temporary
+staging, installs production PHP dependencies there, builds the browser assets,
+checks vendor-asset provenance, and compiles Blade views. Network access and
+dependency audits are disabled. A missing cached package stops the build.
+
+When an approved earlier release contains the same `composer.json` and
+`composer.lock`, it can supply the production vendor files with
+`--vendor-archive /path/to/previous/rfc-app.tar.gz --vendor-sha256 APPROVED_SHA256`.
+Both options are required together. The builder verifies the approved archive
+checksum, matching Composer inputs and exact production package versions/refs,
+extracts only vendor files, then regenerates the production autoloader through
+Composer in staging. The seed archive hash is recorded in the new manifest.
+
+The output under `deployment/releases` contains the prior ZIP bundle format,
+the extracted bundle, an outer ZIP checksum, and additional build/security
+evidence. `SOURCE-COMMIT.txt` identifies the source commit;
+`BUILD-MANIFEST.json` records runtime file hashes, production dependencies and
+tool versions; `SHA256SUMS.txt` covers the bundle files. `DEPLOY-COMMAND.txt`
+includes the required `-ExpectedSha256` value for this exact application archive.
+Local `.env`, uploads,
+logs, caches, tests, `.git`, and `node_modules` are excluded. Existing release
+names are never overwritten. Use `--output-dir`, `--composer-cache`, or
+`--npm-cache` to select alternative locations.
+
+Before transfer, verify the ZIP checksum. After extraction on Windows, verify
+the bundle files against `SHA256SUMS.txt` using `Get-FileHash -Algorithm SHA256`.
+This build does not apply server settings or replace the deployment-time
+production security check.
+
+## Upgrade The Existing RFC Server
+
+Keep using the offline ZIP transfer to `C:\Deploy`. Complete the pre-deploy
+checklist, including a current database backup and the managed queue worker,
+then run the bundled script from outside `C:\inetpub\rfc`:
+
+```powershell
+Expand-Archive -LiteralPath C:\Deploy\rfc-offline-release-20260908-v1.zip -DestinationPath C:\Deploy
+Set-Location C:\inetpub
+Set-ExecutionPolicy -Scope Process Bypass
+& C:\Deploy\rfc-offline-release-20260908-v1\Deploy-RfcRelease.ps1 `
+  -ArchivePath C:\Deploy\rfc-offline-release-20260908-v1\rfc-app.tar.gz `
+  -ExpectedSha256 "VERIFIED_64_CHARACTER_APP_ARCHIVE_SHA256"
+```
+
+Use the app archive hash from the verified release's `SHA256SUMS.txt`. The script
+preserves the current `.env`, uploads, and shared cache; it pauses writers before
+the final storage copy and retains the previous release for rollback. A failed
+swap restores the previous code while preserving current storage. Database
+migrations are not automatically reversed. `-SeedAccessControl` is opt-in and is
+not needed for this security release.
+
+The default worker is `RFCQueueWorker`; its command must use the absolute
+`C:\inetpub\rfc\artisan queue:work` path without `--force`. Pass
+`-SchedulerTaskName` if the installed task differs from `RFC Laravel Scheduler`.
+The script checks sign-in and worker startup before ending public maintenance.
+Verify the public site and a controlled password-recovery request afterward.
+
+The remaining setup sections are for provisioning a server; an existing
+installation should use the upgrade procedure above.
+
 ## Recommended Server Layout
 
 ```powershell
