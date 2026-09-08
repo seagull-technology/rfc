@@ -65,11 +65,11 @@ checklist, including a current database backup and the managed queue worker,
 then run the bundled script from outside `C:\inetpub\rfc`:
 
 ```powershell
-Expand-Archive -LiteralPath C:\Deploy\rfc-offline-release-20260908-v1.zip -DestinationPath C:\Deploy
+Expand-Archive -LiteralPath C:\Deploy\rfc-offline-release-20260908-v2.zip -DestinationPath C:\Deploy
 Set-Location C:\inetpub
 Set-ExecutionPolicy -Scope Process Bypass
-& C:\Deploy\rfc-offline-release-20260908-v1\Deploy-RfcRelease.ps1 `
-  -ArchivePath C:\Deploy\rfc-offline-release-20260908-v1\rfc-app.tar.gz `
+& C:\Deploy\rfc-offline-release-20260908-v2\Deploy-RfcRelease.ps1 `
+  -ArchivePath C:\Deploy\rfc-offline-release-20260908-v2\rfc-app.tar.gz `
   -ExpectedSha256 "VERIFIED_64_CHARACTER_APP_ARCHIVE_SHA256"
 ```
 
@@ -84,7 +84,13 @@ The default worker is `RFCQueueWorker`; its command must use the absolute
 `C:\inetpub\rfc\artisan queue:work` path without `--force`. Pass
 `-SchedulerTaskName` if the installed task differs from `RFC Laravel Scheduler`.
 The script checks sign-in and worker startup before ending public maintenance.
-Verify the public site and a controlled password-recovery request afterward.
+After it reports successful deployment, enable automatic startup for a newly
+staged queue service, then verify the public site and a controlled recovery request:
+
+```powershell
+Set-Service -Name RFCQueueWorker -StartupType Automatic
+Get-Service -Name RFCQueueWorker
+```
 
 The remaining setup sections are for provisioning a server; an existing
 installation should use the upgrade procedure above.
@@ -340,17 +346,41 @@ A continuously running worker is required for production password-reset OTP
 messages. Recovery requests queue delivery so SMS provider latency cannot reveal
 whether an account exists on IIS. Set `QUEUE_CONNECTION=database` and
 `DB_QUEUE_RETRY_AFTER=180` in production `.env` (the reservation must outlast the
-120-second worker timeout), then rebuild the configuration cache. The standard
+configured 120-second worker timeout), then rebuild the configuration cache. The standard
 migrations include the jobs and failed-jobs tables. Use a separate shared durable
 queue only if its worker and reservation/visibility timeout are configured too.
 
-Install NSSM offline and create a service:
+Native Windows PHP generally lacks PCNTL, so Laravel's `--timeout` cannot enforce
+a hard process timeout there. Keep `GOV_SMS_CONNECT_TIMEOUT=5` and
+`GOV_SMS_TIMEOUT=15`, and start with one worker. The SMS client's bounded HTTP
+calls must finish well inside the queue's reservation interval. Review those
+bounds before adding other long-running jobs or more workers.
+
+Obtain NSSM from its [official download page](https://nssm.cc/download). Use the
+recommended 2.24-101 build or a reviewed newer build for modern Windows. Verify
+the transferred executable's SHA-256 against the recorded trusted download
+before running it. The setup script copies it to the permanent location
+`C:\Program Files\RFC\QueueWorker\nssm.exe`, outside the application directory.
+Leave that runtime copy in place; source downloads can remain under `C:\Deploy`.
+
+The bundled setup script creates a dedicated passwordless Windows virtual
+account, limits application writes to runtime directories, and configures NSSM
+to restart a worker after normal or failed exits. It creates the service with
+Manual startup and leaves it Stopped so setup does not consume queued jobs.
+The deployment script preserves this account's permissions in each new release.
+
+Run the setup from an elevated PowerShell window before the first deployment
+that requires the worker (replace the checksum with the verified executable hash):
 
 ```powershell
-nssm install RFCQueueWorker C:\php\php.exe "C:\inetpub\rfc\artisan queue:work --sleep=3 --tries=3 --timeout=120"
-nssm set RFCQueueWorker AppDirectory C:\inetpub\rfc
-nssm start RFCQueueWorker
+& C:\Deploy\rfc-offline-release-20260908-v2\Install-RfcQueueWorker.ps1 `
+  -NssmPath C:\Deploy\nssm-2.24-101-g897c7ad\win64\nssm.exe `
+  -ExpectedSha256 "VERIFIED_64_CHARACTER_NSSM_EXE_SHA256"
 ```
+
+The setup refuses to overwrite an existing service. The deployment starts and
+checks the worker while maintenance still pauses jobs. Set startup to Automatic
+only after the deployment succeeds, using the upgrade commands above.
 
 Temporary alternative while testing:
 

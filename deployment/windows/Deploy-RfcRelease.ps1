@@ -300,8 +300,11 @@ function Copy-RfcStorage {
     }
 
     New-Item -ItemType Directory -Force $destination | Out-Null
-    $copyMode = if ($Mirror) { "/MIR" } else { "/E" }
-    & robocopy.exe $source $destination $copyMode /COPY:DAT /DCOPY:DAT /XJ /R:2 /W:2 /NFL /NDL /NP
+    # /E /PURGE mirrors deletions like /MIR while preserving the destination
+    # directory ACLs granted to IIS and the dedicated queue service identity.
+    $copyOptions = @("/E")
+    if ($Mirror) { $copyOptions += "/PURGE" }
+    & robocopy.exe $source $destination @copyOptions /COPY:DAT /DCOPY:DAT /XJ /R:2 /W:2 /NFL /NDL /NP
 
     if ($LASTEXITCODE -gt 7) {
         throw "Storage copy failed with robocopy exit code $LASTEXITCODE."
@@ -371,6 +374,78 @@ function Get-ServiceWorkerProcesses {
 
     @($allProcesses | Where-Object { $_.ProcessId -eq $service.ProcessId }) + $descendants |
         Where-Object { $_.CommandLine -match 'queue:work(?:\s|"|$)' }
+}
+
+function Resolve-WindowsAccountSid {
+    param([string] $AccountName)
+
+    $account = New-Object System.Security.Principal.NTAccount($AccountName)
+    $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+}
+
+function Resolve-QueueServiceAccountSid {
+    param([object] $Service)
+
+    if (-not $Service -or [string]::IsNullOrWhiteSpace($Service.StartName)) {
+        throw "Cannot determine the logon account for queue service '$QueueServiceName'."
+    }
+
+    $accountName = $Service.StartName.Trim()
+
+    # Win32_Service uses aliases for built-in accounts. Resolve those without
+    # depending on the server's localized display names.
+    switch -Regex ($accountName) {
+        '^(LocalSystem|NT AUTHORITY\\SYSTEM)$' { return "S-1-5-18" }
+        '^(LocalService|NT AUTHORITY\\(LocalService|LOCAL SERVICE))$' { return "S-1-5-19" }
+        '^(NetworkService|NT AUTHORITY\\(NetworkService|NETWORK SERVICE))$' { return "S-1-5-20" }
+    }
+
+    if ($accountName.StartsWith('.\')) {
+        if ([string]::IsNullOrWhiteSpace($env:COMPUTERNAME)) {
+            throw "Cannot resolve the machine name for queue account '$accountName'."
+        }
+
+        $accountName = $env:COMPUTERNAME + $accountName.Substring(1)
+    }
+
+    try {
+        # This also resolves passwordless NT SERVICE\<service> virtual accounts.
+        # Never substitute a broad group if a configured account cannot resolve.
+        $sid = Resolve-WindowsAccountSid $accountName
+    }
+    catch {
+        throw "Cannot resolve queue service account '$accountName' to a Windows SID. Verify the service logon account before deployment."
+    }
+
+    if ($sid -notmatch '^S-1-\d+(?:-\d+)+$') {
+        throw "Queue service account '$accountName' did not resolve to a valid Windows SID."
+    }
+
+    return $sid
+}
+
+function Grant-QueueWorkerAccess {
+    param([string] $ReleasePath, [string] $AccountSid)
+
+    if ($AccountSid -notmatch '^S-1-\d+(?:-\d+)+$') {
+        throw "Cannot grant release access without a resolved queue service SID."
+    }
+
+    # Releases receive fresh ACLs: /COPY:DAT deliberately does not copy the old
+    # storage ACLs. Reapply only this service principal on every staged release.
+    $grants = @(
+        @{ Path = $ReleasePath; Rights = "RX" },
+        @{ Path = (Join-Path $ReleasePath "storage"); Rights = "M" },
+        @{ Path = (Join-Path $ReleasePath "bootstrap\cache"); Rights = "M" }
+    )
+
+    foreach ($grant in $grants) {
+        & icacls.exe $grant.Path /grant ("*${AccountSid}:(OI)(CI)" + $grant.Rights) /T | Out-Null
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not grant queue service '$QueueServiceName' $($grant.Rights) access to '$($grant.Path)'."
+        }
+    }
 }
 
 function Assert-WorkerCommand {
@@ -569,6 +644,8 @@ if ($queueService.Status -notin @("Running", "Stopped")) {
 }
 
 $queueWasRunning = $queueService.Status -eq "Running"
+$queueServiceConfiguration = Get-CimInstance Win32_Service -Filter ("Name='" + $QueueServiceName.Replace("'", "''") + "'")
+$queueServiceAccountSid = Resolve-QueueServiceAccountSid $queueServiceConfiguration
 
 if ($queueWasRunning) {
     Assert-WorkerCommand @(Get-ServiceWorkerProcesses)
@@ -633,6 +710,8 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Could not grant IIS write access to staged bootstrap cache."
     }
+
+    Grant-QueueWorkerAccess $stagePath $queueServiceAccountSid
 
     Write-Host "== Validate release against server configuration =="
     Invoke-PhpArtisan $stagePath config:clear

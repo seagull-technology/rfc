@@ -16,7 +16,8 @@ if ($parseErrors.Count -gt 0) {
 $functionNames = @(
     "Copy-RfcStorage", "Assert-ReleaseArchive", "Move-StagedReleaseIntoPlace",
     "Restore-PreviousReleaseFiles", "Assert-WorkerCommand", "Stop-RfcWorker",
-    "Restore-OriginalRuntimeState", "New-MaintenanceSmokeSession"
+    "Restore-OriginalRuntimeState", "New-MaintenanceSmokeSession",
+    "Resolve-QueueServiceAccountSid", "Grant-QueueWorkerAccess"
 )
 
 foreach ($name in $functionNames) {
@@ -70,8 +71,9 @@ function Rename-DirectoryWithRetry {
 function robocopy.exe {
     param([string] $Source, [string] $Destination, [Parameter(ValueFromRemainingArguments = $true)] [string[]] $Flags)
     if ($failStorageCopy) { $global:LASTEXITCODE = 8; return }
-    if ($Flags -contains "/MIR") { Remove-Item -LiteralPath $Destination -Recurse -Force }
-    Copy-Item -LiteralPath $Source -Destination $Destination -Recurse -Force
+    $script:lastStorageFlags = $Flags
+    if ($Flags -contains "/PURGE") { Get-ChildItem -LiteralPath $Destination -Force | Remove-Item -Recurse -Force }
+    Get-ChildItem -LiteralPath $Source -Force | Copy-Item -Destination $Destination -Recurse -Force
     $global:LASTEXITCODE = 1
 }
 
@@ -102,6 +104,7 @@ try {
     New-TestLayout
     Set-Content (Join-Path $AppPath "storage\late-upload.txt") "upload after live preflight"
     Copy-RfcStorage $AppPath $stagePath -Mirror
+    Assert-True (($lastStorageFlags -contains "/E") -and ($lastStorageFlags -contains "/PURGE") -and ($lastStorageFlags -notcontains "/MIR")) "Storage mirror must preserve destination ACLs with /E /PURGE."
     Move-StagedReleaseIntoPlace
     Assert-True (Test-Path (Join-Path $AppPath "storage\late-upload.txt")) "Final storage sync lost a late upload."
     Set-Content (Join-Path $AppPath "storage\new-upload.txt") "upload from new release"
@@ -122,6 +125,59 @@ try {
     $checks++
 
     $QueueServiceName = "RFCQueueWorker"
+    function Resolve-WindowsAccountSid {
+        param([string] $AccountName)
+        $script:lastResolvedAccount = $AccountName
+        if ($AccountName -eq "NT SERVICE\RFCQueueWorker") { return "S-1-5-80-101-202-303-404-505" }
+        if ($AccountName -eq "RFCTEST\queue-user") { return "S-1-5-21-101-202-303-1001" }
+        if ($AccountName -eq "DOMAIN\queue-user") { return "S-1-5-21-101-202-304-1002" }
+        throw "Account not found"
+    }
+
+    foreach ($entry in @(
+        @{ Name = "LocalSystem"; Sid = "S-1-5-18" },
+        @{ Name = "NT AUTHORITY\SYSTEM"; Sid = "S-1-5-18" },
+        @{ Name = "NT AUTHORITY\LocalService"; Sid = "S-1-5-19" },
+        @{ Name = "NT AUTHORITY\NETWORK SERVICE"; Sid = "S-1-5-20" },
+        @{ Name = "NT SERVICE\RFCQueueWorker"; Sid = "S-1-5-80-101-202-303-404-505" },
+        @{ Name = "DOMAIN\queue-user"; Sid = "S-1-5-21-101-202-304-1002" }
+    )) {
+        $sid = Resolve-QueueServiceAccountSid ([pscustomobject] @{ StartName = $entry.Name })
+        Assert-True ($sid -eq $entry.Sid) "The configured service account resolved to an incorrect SID: $($entry.Name)."
+    }
+    $previousComputerName = $env:COMPUTERNAME
+    try {
+        $env:COMPUTERNAME = "RFCTEST"
+        $sid = Resolve-QueueServiceAccountSid ([pscustomobject] @{ StartName = '.\queue-user' })
+        Assert-True ($sid -eq "S-1-5-21-101-202-303-1001") "A local account must resolve on this computer."
+        Assert-True ($lastResolvedAccount -eq "RFCTEST\queue-user") "Local account resolution used the wrong machine."
+    }
+    finally { $env:COMPUTERNAME = $previousComputerName }
+    Assert-Throws { Resolve-QueueServiceAccountSid $null } "A missing service identity must fail preflight."
+    Assert-Throws { Resolve-QueueServiceAccountSid ([pscustomobject] @{ StartName = " " }) } "A blank service identity must fail preflight."
+    Assert-Throws { Resolve-QueueServiceAccountSid ([pscustomobject] @{ StartName = "UNKNOWN\missing" }) } "An unresolvable account must not fall back to a broader principal."
+    $checks++
+
+    function icacls.exe {
+        param([string] $Path, [Parameter(ValueFromRemainingArguments = $true)] [string[]] $Flags)
+        $script:aclCalls += [pscustomobject] @{ Path = $Path; Flags = $Flags }
+        $global:LASTEXITCODE = if ($aclCalls.Count -eq $failAclCallNumber) { 5 } else { 0 }
+    }
+    $aclCalls = @()
+    $failAclCallNumber = 0
+    $workerSid = "S-1-5-80-101-202-303-404-505"
+    Grant-QueueWorkerAccess $stagePath $workerSid
+    Assert-True ($aclCalls.Count -eq 3) "Only app read access and the two runtime write paths should be granted."
+    Assert-True (($aclCalls[0].Path -eq $stagePath) -and ($aclCalls[0].Flags -contains "*${workerSid}:(OI)(CI)RX")) "The release must grant only RX to the resolved service SID."
+    Assert-True (($aclCalls[1].Path -eq (Join-Path $stagePath "storage")) -and ($aclCalls[1].Flags -contains "*${workerSid}:(OI)(CI)M")) "Storage must grant inherited Modify to the same service SID."
+    Assert-True (($aclCalls[2].Path -eq (Join-Path $stagePath "bootstrap\cache")) -and ($aclCalls[2].Flags -contains "*${workerSid}:(OI)(CI)M")) "Bootstrap cache must grant inherited Modify to the same service SID."
+    Assert-Throws { Grant-QueueWorkerAccess $stagePath "UNKNOWN\missing" } "ACL changes require a resolved SID."
+    $aclCalls = @()
+    $failAclCallNumber = 2
+    Assert-Throws { Grant-QueueWorkerAccess $stagePath $workerSid } "A failed ACL grant must abort deployment."
+    Assert-True ($aclCalls.Count -eq 2) "ACL failure must stop subsequent grants."
+    $checks++
+
     $validWorker = [pscustomobject] @{ ProcessId = 42; CreationDate = [DateTime] "2026-09-08"; CommandLine = ('php "' + (Join-Path $AppPath "artisan") + '" queue:work --timeout=120') }
     Assert-WorkerCommand @($validWorker)
     Assert-Throws { Assert-WorkerCommand @([pscustomobject] @{ CommandLine = $validWorker.CommandLine + " --force" }) } "A worker that ignores maintenance must be rejected."

@@ -1,0 +1,63 @@
+RFC security retest release v2 - 2026-09-08
+
+PURPOSE
+Deploy the reviewed application fixes for the NSQAC security report. V01 remains
+with the Government API supplier for its discussion with the security team.
+
+APPLICATION CHANGES
+- Prevent identity and company registration numbers from being changed through
+  applicant profile updates, including alternate request field names.
+- Protect approval and completion workflows against stale or conflicting edits.
+- Apply request limits consistently and mask account-existence responses.
+- Send password-recovery SMS through the durable queue in production.
+- Validate forwarded hosts, harden application cookies, and update the shipped
+  vulnerable JavaScript component.
+- Keep form validation on the form when an image/background request intervenes.
+
+DEPLOYMENT
+Use the existing offline ZIP -> C:\Deploy -> Deploy-RfcRelease.ps1 process.
+Read PRE-DEPLOY-CHECKLIST.txt and SECURITY-RETEST.md first. Verify SHA256SUMS.txt
+and pass the rfc-app.tar.gz hash as -ExpectedSha256. SOURCE-COMMIT.txt identifies
+the exact source revision; BUILD-MANIFEST.json records packaged files.
+
+The script verifies the archive, preserves the existing .env and storage,
+pauses application writers, retains the previous release, and checks the new
+application before reopening it. AccessControlSeeder is skipped by default;
+this release does not require new migrations or access-control seed changes.
+An application backup is not a database backup; verify a current database
+backup/snapshot before deployment.
+
+REQUIRED SERVER SETTINGS
+- Keep the existing APP_KEY, database credentials and government API secrets.
+  Do not replace the existing .env with the example file.
+- QUEUE_CONNECTION=database, DB_QUEUE_RETRY_AFTER=180, CACHE_STORE=database.
+- RFCQueueWorker must exist and run the application's queue:work continuously
+  with the documented timeout/retry settings. Recovery SMS depends on it.
+- Apply the production cookie/proxy/PHP settings in the checklist and run
+  php artisan security:production-check after deployment.
+
+VALIDATION
+Application verification: 383 automated tests passed (3910 assertions),
+production asset build passed, vendor asset check passed, formatting passed.
+Deployment script: PowerShell parser and 11 mocked service/filesystem regression
+scenarios passed. Packaging checks are recorded with the release build.
+Windows IIS/service behavior and public endpoint behavior must be verified on
+the actual server; local tests do not establish production deployment success.
+
+STILL REQUIRES SERVER / GOVERNMENT VERIFICATION
+Public TLS versions/ciphers, F5 or other infrastructure cookies, DNS behavior,
+and outbound network restrictions must be checked at the layer that controls
+them. This release alone does not establish that these findings are closed.
+
+V2 DEPLOYMENT CHANGES
+Application code is unchanged from v1. Server preflight on RFCtgWeb found no
+RFCQueueWorker service. This release adds a checksum-verified setup script for
+a dedicated Windows virtual service account and preserves its permissions
+through application swaps. Storage synchronization keeps staged directory ACLs.
+The setup leaves the worker Stopped/Manual; enable Automatic startup only after
+the deployment succeeds. Installer parser and 8 portable regression scenarios
+passed; real Windows service creation and permissions still need server checks.
+
+On native Windows, Laravel's timeout option generally has no PCNTL enforcement.
+Keep GOV_SMS_CONNECT_TIMEOUT=5 and GOV_SMS_TIMEOUT=15 and use one worker initially.
+The limited HTTP request durations must fit inside DB_QUEUE_RETRY_AFTER=180.

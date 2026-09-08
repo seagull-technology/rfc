@@ -268,7 +268,7 @@ def main():
         bundle = work / args.release_name
         bundle.mkdir()
         files = create_app_archive(source, bundle / "rfc-app.tar.gz", timestamp)
-        for name in ["Deploy-RfcRelease.ps1", "PRE-DEPLOY-CHECKLIST.txt", ".env.production.example", "SECURITY-RETEST.md"]:
+        for name in ["Deploy-RfcRelease.ps1", "Install-RfcQueueWorker.ps1", "PRE-DEPLOY-CHECKLIST.txt", ".env.production.example", "SECURITY-RETEST.md"]:
             shutil.copyfile(source / "deployment/windows" / name, bundle / name)
         shutil.copyfile(source / str(notes), bundle / "RELEASE-NOTES.txt")
         windows_bundle = "C:\\Deploy\\" + args.release_name
