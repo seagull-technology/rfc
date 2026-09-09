@@ -18,7 +18,7 @@ if ($parseErrors.Count -gt 0) {
 $functionNames = @(
     "Copy-RfcStorage", "Assert-ReleaseArchive", "Move-StagedReleaseIntoPlace",
     "Restore-PreviousReleaseFiles", "Assert-WorkerCommand", "Stop-RfcWorker",
-    "Restore-OriginalRuntimeState", "New-MaintenanceSmokeSession",
+    "Restore-OriginalRuntimeState", "New-MaintenanceSmokeCookie",
     "Resolve-QueueServiceAccountSid", "Grant-QueueWorkerAccess",
     "Get-RfcIisWorkerIds", "Stop-RfcSite"
 )
@@ -227,9 +227,8 @@ try {
     $checks++
 
     $maintenanceSecret = "test-maintenance-key"
-    $smokeSession = New-MaintenanceSmokeSession
-    $cookie = $smokeSession.Cookies.GetCookies([Uri] "http://127.0.0.1/")["laravel_maintenance"]
-    $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($cookie.Value)) | ConvertFrom-Json
+    $smokeCookie = New-MaintenanceSmokeCookie
+    $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($smokeCookie)) | ConvertFrom-Json
     Assert-True ($payload.expires_at -gt [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) "Smoke maintenance cookie must be unexpired."
     Assert-True ($payload.mac -match '^[a-f0-9]{64}$') "Smoke maintenance cookie must carry an HMAC."
     $checks++

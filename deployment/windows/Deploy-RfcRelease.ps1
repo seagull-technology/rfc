@@ -561,9 +561,9 @@ function Start-RfcWorker {
     throw "Service '$QueueServiceName' did not start a stable worker for the deployed application."
 }
 
-function New-MaintenanceSmokeSession {
-    # AppServiceProvider forces HTTPS redirects, so following the secret URL
-    # would leave loopback. Build Laravel's signed maintenance cookie locally.
+function New-MaintenanceSmokeCookie {
+    # Laravel's secret URL issues a redirect. Sign its bypass cookie locally so
+    # the test stays on loopback with automatic redirects disabled.
     $expiresAt = [DateTimeOffset]::UtcNow.AddMinutes(10).ToUnixTimeSeconds()
     $hmac = New-Object System.Security.Cryptography.HMACSHA256
 
@@ -577,11 +577,47 @@ function New-MaintenanceSmokeSession {
     }
 
     $payload = @{ expires_at = $expiresAt; mac = $mac } | ConvertTo-Json -Compress
-    $value = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload))
-    $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-    $session.Cookies.Add([Uri] "http://127.0.0.1", [System.Net.Cookie]::new("laravel_maintenance", $value, "/"))
+    return [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload))
+}
 
-    return $session
+function Invoke-RfcMaintenanceSmokeRequest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string] $SmokeHost,
+        [Uri] $RequestUri = "http://127.0.0.1/ar/sign-in"
+    )
+
+    if (-not $RequestUri.IsAbsoluteUri -or $RequestUri.Scheme -ne "http" -or
+        $RequestUri.Host -ne "127.0.0.1" -or $RequestUri.UserInfo -or $RequestUri.Fragment) {
+        throw "The maintenance smoke request must use an HTTP loopback URI without credentials or a fragment."
+    }
+
+    # Windows PowerShell 5.1 uses .NET Framework: a custom Host changes cookie
+    # container domain matching. Send the cookie explicitly, with no container
+    # that could replace it. Keep this single request on loopback even when the
+    # machine has a proxy or the application returns a redirect.
+    # https://learn.microsoft.com/en-us/dotnet/api/system.net.httpwebrequest.host
+    $request = [System.Net.HttpWebRequest]::Create($RequestUri)
+    $request.Method = "GET"
+    $request.Host = $SmokeHost
+    $request.Proxy = $null
+    $request.CookieContainer = $null
+    $request.AllowAutoRedirect = $false
+    $request.Timeout = 30000
+    $request.ReadWriteTimeout = 30000
+    $request.Accept = "text/html"
+    $request.Headers["Cookie"] = "laravel_maintenance=" + [Uri]::EscapeDataString((New-MaintenanceSmokeCookie))
+    $response = $null
+
+    try {
+        $response = $request.GetResponse()
+        return [pscustomobject] @{ StatusCode = [int] $response.StatusCode }
+    }
+    finally {
+        if ($null -ne $response) { $response.Dispose() }
+        $request.Abort()
+    }
 }
 
 function Suspend-RfcScheduler {
@@ -803,8 +839,7 @@ try {
 
     Write-Host "== Smoke test while public maintenance remains enabled =="
     $smokeHost = ([Uri](Get-DotEnvValue (Join-Path $AppPath ".env") "APP_URL")).Host
-    $smokeSession = New-MaintenanceSmokeSession
-    $response = Invoke-WebRequest "http://127.0.0.1/ar/sign-in" -Headers @{ Host = $smokeHost } -WebSession $smokeSession -UseBasicParsing -TimeoutSec 30
+    $response = Invoke-RfcMaintenanceSmokeRequest -SmokeHost $smokeHost
 
     if ($response.StatusCode -ne 200) {
         throw "Smoke test returned HTTP $($response.StatusCode)."

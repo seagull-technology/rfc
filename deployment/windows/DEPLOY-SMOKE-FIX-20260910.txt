@@ -1,0 +1,45 @@
+RFC maintenance smoke-check correction - 2026-09-10
+
+PURPOSE
+Windows PowerShell's HTTP transport matches CookieContainer cookies against an
+explicit Host header. The previous loopback cookie was therefore omitted from
+the request to Host filmjordan.jo, causing Laravel's maintenance response (503).
+The signed cookie itself matches Laravel's validation requirements.
+
+The corrected helper sends that cookie explicitly on a request to 127.0.0.1,
+with no CookieContainer, proxy or automatic redirects. Public maintenance stays
+active until sign-in returns HTTP 200 and the queue worker is checked. HTTP
+errors and redirects still fail deployment; response objects are disposed.
+This helper also includes the managed IIS worker-query correction.
+
+APPLICATION ARCHIVE
+Reuse the already transferred application archive; no application rebuild or
+retransfer is required for this deployment-script correction.
+Path: C:\Deploy\rfc-offline-release-20260909-v1\rfc-app.tar.gz
+Source commit: 9c5af15a616a88fea8de7a2cff18860c424e4f32
+SHA256: 4454d3f21e90091b0d9d9c9ab3f8dda678aa9e62e74faa07a6aed4e22b562b1c
+
+RETRY
+Transfer rfc-deploy-smoke-fix-20260910.zip to C:\Deploy, verify its delivered
+SHA256, and extract it under C:\Deploy. SOURCE-COMMIT.txt in that bundle records
+the corrected deployment helper revision separately from the application.
+
+Run in Administrator PowerShell from C:\inetpub:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Deploy\rfc-deploy-smoke-fix-20260910\Deploy-RfcRelease.ps1" -ArchivePath "C:\Deploy\rfc-offline-release-20260909-v1\rfc-app.tar.gz" -ExpectedSha256 "4454d3f21e90091b0d9d9c9ab3f8dda678aa9e62e74faa07a6aed4e22b562b1c"
+
+The script stages a fresh copy and synchronizes current storage. Do not deploy
+the retained failed/staged directory from the earlier attempt. The application
+backup and rollback behavior are unchanged. Original bundles remain immutable.
+
+The queue worker is already installed. Do not rerun its installer. After the
+deployment succeeds and the worker is checked, enable Automatic startup.
+
+VALIDATION
+- Parser and 16 portable deployment regression scenarios passed.
+- Four real loopback HTTP transport scenarios passed: Host/cookie delivery,
+  redirects not followed, HTTP errors and rejected non-loopback destinations.
+- A temporary PHP listener using the exact Laravel cookie validator accepted
+  the helper's correctly signed cookie (200) and rejected a wrong key (503),
+  including PHP cookie decoding and ar-JO culture handling.
+These used fake keys locally under PowerShell 7. Windows PowerShell 5.1 / IIS
+integration is verified by the server deployment, not claimed by local tests.

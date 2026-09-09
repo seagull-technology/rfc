@@ -87,8 +87,11 @@ The script checks sign-in and worker startup before ending public maintenance.
 It queries the IIS management API before maintenance and during shutdown,
 requiring both the site and its pool to be Stopped with no remaining workers.
 An empty worker collection is valid; a query failure stops deployment with the
-underlying error. See `DEPLOY-IIS-FIX-20260909.txt` for the standalone corrected
-helper that can deploy the already transferred 2026-09-09 v1 application archive.
+underlying error. The sign-in check sends a signed maintenance cookie explicitly
+on a loopback request, with redirects and proxy use disabled. It requires HTTP
+200 while public maintenance remains active. See `DEPLOY-SMOKE-FIX-20260910.txt`
+for the latest standalone helper, which includes both corrections and reuses the
+already transferred 2026-09-09 v1 application archive.
 After it reports successful deployment, enable automatic startup for a newly
 staged queue service, then verify the public site and a controlled recovery request:
 
