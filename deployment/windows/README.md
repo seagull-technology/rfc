@@ -410,6 +410,29 @@ leaves it Disabled for inspection. The deployment starts and checks the worker
 while maintenance still pauses jobs. Set startup to Automatic only after the
 deployment succeeds, using the upgrade commands above.
 
+The earlier September 8/9 installer artifacts also applied inheritance removal
+recursively to the private NSSM/log directories. Staging subsequently reported
+SCM event 7000 (`Access is denied`): the parent folder had the intended grants,
+but `nssm.exe` displayed no permission entries. The current installer grants the
+three intended identities on each private root first, removes only that root's
+inherited permissions in a separate command, and verifies the actual root and
+descendant ACLs before reporting success. Existing protected descendants fail
+verification; they are not silently broadened or reset.
+
+For that inspected staging configuration, run
+[`Repair-RfcWorkerBinaryAccess.ps1`](Repair-RfcWorkerBinaryAccess.ps1) from an
+elevated PowerShell session. It checks the stopped service's identity/path,
+restores inheritance only on its permanent executable, checks the reviewed
+SHA-256 before invoking `nssm version`, and displays the executable/log ACLs.
+Review the output before retrying deployment. It does not start the worker.
+Use the corrected installer from this revision for new installations; the
+immutable earlier release/repair ZIPs still contain their original scripts.
+
+ACL validation includes portable regression checks and an additional
+`tests/Deployment/WorkerFileAccess.Windows.Tests.ps1` test that exercises real
+NTFS inheritance in disposable directories on elevated Windows. A skipped
+Windows test on another operating system is not Windows integration validation.
+
 Temporary alternative while testing:
 
 ```powershell

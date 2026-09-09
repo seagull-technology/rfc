@@ -11,7 +11,7 @@ $tokens = $null
 $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $ScriptPath).Path, [ref] $tokens, [ref] $parseErrors)
 if ($parseErrors.Count -gt 0) { throw (($parseErrors | ForEach-Object { $_.Message }) -join [Environment]::NewLine) }
-foreach ($name in @("Assert-NssmChecksum", "Assert-NssmVersion", "Assert-SeparateWorkerPaths", "Assert-NoExistingWorker", "Invoke-WorkerNative", "Get-WorkerArguments", "Initialize-WorkerRegistration", "Set-WorkerApplicationParameters", "Set-WorkerConfiguration", "Assert-WorkerRegistration", "Assert-RepairableWorker", "Resolve-WorkerVirtualAccountSid", "Grant-WorkerFileAccess", "Assert-WorkerIsStaged")) {
+foreach ($name in @("Assert-NssmChecksum", "Assert-NssmVersion", "Assert-SeparateWorkerPaths", "Assert-NoExistingWorker", "Invoke-WorkerNative", "Get-WorkerArguments", "Initialize-WorkerRegistration", "Set-WorkerApplicationParameters", "Set-WorkerConfiguration", "Assert-WorkerRegistration", "Assert-RepairableWorker", "Resolve-WorkerVirtualAccountSid", "Assert-WorkerPrivateDirectoryAccess", "Set-WorkerPrivateDirectoryAccess", "Grant-WorkerFileAccess", "Assert-WorkerIsStaged")) {
     $definition = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) |
         Where-Object { $_.Name -eq $name } | Select-Object -First 1
     if (-not $definition) { throw "Missing installer helper: $name" }
@@ -215,17 +215,72 @@ try {
 
     $nativeCalls = @()
     $sid = "S-1-5-80-101-202-303-404-505"
+    Microsoft.PowerShell.Management\New-Item -ItemType Directory -Path $install, $logs | Out-Null
+    $installedBinary = Join-Path $install "nssm.exe"
+    $existingLog = Join-Path $logs "worker-out.log"
+    Set-Content -LiteralPath $installedBinary -Value "fixture"
+    Set-Content -LiteralPath $existingLog -Value "fixture"
+    $script:privateAcls = @{}
+    foreach ($path in @($install, $logs, $installedBinary, $existingLog)) {
+        $isRoot = $path -in @($install, $logs)
+        $workerRights = if ($path -in @($install, $installedBinary)) { "ReadAndExecute" } else { "Modify" }
+        $rules = @()
+        foreach ($identity in @("S-1-5-18", "S-1-5-32-544", $sid)) {
+            $rights = if ($identity -eq $sid) { $workerRights } else { "FullControl" }
+            $rules += [pscustomobject] @{
+                IdentityReference = [pscustomobject] @{ Value = $identity }
+                FileSystemRights = [Security.AccessControl.FileSystemRights] $rights
+                AccessControlType = [Security.AccessControl.AccessControlType]::Allow
+                PropagationFlags = [Security.AccessControl.PropagationFlags]::None
+                InheritanceFlags = [Security.AccessControl.InheritanceFlags] "ContainerInherit, ObjectInherit"
+            }
+        }
+        $acl = [pscustomobject] @{ AreAccessRulesProtected = $isRoot; Rules = $rules }
+        $acl | Add-Member ScriptMethod GetAccessRules { param($Explicit, $Inherited, $TargetType); return $this.Rules }
+        $privateAcls[$path] = $acl
+    }
+    function Get-Acl {
+        param([string] $LiteralPath, [string] $ErrorAction)
+        if (-not $privateAcls.ContainsKey($LiteralPath)) { throw "Unexpected ACL read: $LiteralPath" }
+        return $privateAcls[$LiteralPath]
+    }
     Grant-WorkerFileAccess $app $php $install $logs $sid
-    Assert-True ($nativeCalls.Count -eq 6) "ACL changes must stay within six required scopes."
+    Assert-True ($nativeCalls.Count -eq 8) "Private root grants and inheritance changes must use separate calls."
     Assert-True (($nativeCalls[0].Arguments -contains "*${sid}:(OI)(CI)RX") -and ($nativeCalls[1].Arguments -contains "*${sid}:(OI)(CI)RX")) "App and PHP require read/execute only."
     Assert-True (($nativeCalls[2].Arguments -contains "*${sid}:(OI)(CI)M") -and ($nativeCalls[3].Arguments -contains "*${sid}:(OI)(CI)M")) "Only application runtime directories require Modify."
-    Assert-True (($nativeCalls[4].Arguments -contains "/inheritance:r") -and ($nativeCalls[4].Arguments -contains "*${sid}:(OI)(CI)RX")) "Permanent NSSM must have protected read/execute access."
-    Assert-True (($nativeCalls[5].Arguments -contains "/inheritance:r") -and ($nativeCalls[5].Arguments -contains "*${sid}:(OI)(CI)M")) "Private logs must have protected worker Modify access."
+    foreach ($index in @(4, 6)) {
+        Assert-True (($nativeCalls[$index].Arguments -contains "/grant:r") -and ($nativeCalls[$index + 1].Arguments -contains "/inheritance:r")) "Grant access before removing inherited root permissions."
+        Assert-True (-not ($nativeCalls[$index].Arguments -contains "/T") -and -not ($nativeCalls[$index + 1].Arguments -contains "/T")) "Private ACL setup must preserve child inheritance."
+    }
+    Assert-True ($nativeCalls[4].Arguments -contains "*${sid}:(OI)(CI)RX") "Permanent NSSM must have read/execute access."
+    Assert-True ($nativeCalls[6].Arguments -contains "*${sid}:(OI)(CI)M") "Private logs must have worker Modify access."
     Assert-Throws { Grant-WorkerFileAccess $app $php $install $logs "S-1-5-18" } "ACLs must reject broad built-in identities."
     $nativeCalls = @()
     $failNativeCall = 2
     Assert-Throws { Grant-WorkerFileAccess $app $php $install $logs $sid } "ACL failure must stop setup."
     Assert-True ($nativeCalls.Count -eq 2) "ACL changes must stop at the first failure."
+    $checks++
+
+    # Native exit zero is insufficient: validate the actual child ACL, including
+    # an empty DACL and disabled inheritance as seen on the staging server.
+    $goodRules = $privateAcls[$installedBinary].Rules
+    $privateAcls[$installedBinary].Rules = @()
+    Assert-Throws { Assert-WorkerPrivateDirectoryAccess $install $sid "RX" } "Empty executable ACL must fail even if icacls succeeded."
+    $privateAcls[$installedBinary].Rules = $goodRules
+    $privateAcls[$installedBinary].AreAccessRulesProtected = $true
+    Assert-Throws { Assert-WorkerPrivateDirectoryAccess $install $sid "RX" } "Protected child must not silently miss future inherited permissions."
+    $privateAcls[$installedBinary].AreAccessRulesProtected = $false
+    $privateAcls[$installedBinary].Rules[2].FileSystemRights = [Security.AccessControl.FileSystemRights]::Modify
+    Assert-Throws { Assert-WorkerPrivateDirectoryAccess $install $sid "RX" } "Worker must not be able to rewrite its service executable."
+    $privateAcls[$installedBinary].Rules[2].FileSystemRights = [Security.AccessControl.FileSystemRights]::ReadAndExecute
+    $privateAcls[$installedBinary].Rules[2].AccessControlType = [Security.AccessControl.AccessControlType]::Deny
+    Assert-Throws { Assert-WorkerPrivateDirectoryAccess $install $sid "RX" } "Deny entries must not count as granted access."
+    $privateAcls[$installedBinary].Rules[2].AccessControlType = [Security.AccessControl.AccessControlType]::Allow
+    $privateAcls[$existingLog].Rules[2].FileSystemRights = [Security.AccessControl.FileSystemRights]::ReadAndExecute
+    Assert-Throws { Assert-WorkerPrivateDirectoryAccess $logs $sid "M" } "Existing log files must actually be writable by the worker."
+    $privateAcls[$existingLog].Rules[2].FileSystemRights = [Security.AccessControl.FileSystemRights]::Modify
+    Assert-WorkerPrivateDirectoryAccess $install $sid "RX"
+    Assert-WorkerPrivateDirectoryAccess $logs $sid "M"
     $checks++
 
     Assert-True ($ast.Extent.Text -match 'Assert-NssmChecksum \$permanentBinary \$ExpectedSha256[\s\S]*Assert-RepairableWorker') "Permanent binary checksum verification must precede partial-repair validation."

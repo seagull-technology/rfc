@@ -197,6 +197,59 @@ function Resolve-WorkerVirtualAccountSid {
     return $sid
 }
 
+function Assert-WorkerPrivateDirectoryAccess {
+    param([string] $Directory, [string] $Sid, [ValidateSet("RX", "M")] [string] $Permission)
+    $workerRights = if ($Permission -eq "RX") { [Security.AccessControl.FileSystemRights]::ReadAndExecute } else { [Security.AccessControl.FileSystemRights]::Modify }
+    $expected = @{
+        "S-1-5-18" = [long] [Security.AccessControl.FileSystemRights]::FullControl
+        "S-1-5-32-544" = [long] [Security.AccessControl.FileSystemRights]::FullControl
+        $Sid = [long] $workerRights
+    }
+    $root = Get-Item -LiteralPath $Directory -Force -ErrorAction Stop
+    if (-not $root.PSIsContainer) { throw "Expected a private worker directory: $Directory" }
+    $items = @($root) + @(Get-ChildItem -LiteralPath $Directory -Force -Recurse -ErrorAction Stop)
+    foreach ($item in $items) {
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Unexpected link in private worker directory: $($item.FullName)" }
+        $acl = Get-Acl -LiteralPath $item.FullName -ErrorAction Stop
+        $isRoot = $item.FullName -eq $root.FullName
+        if ($acl.AreAccessRulesProtected -ne $isRoot) { throw "Unexpected worker ACL inheritance: $($item.FullName)" }
+        $granted = @{}
+        foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+            $identity = $rule.IdentityReference.Value
+            if ($rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or -not $expected.ContainsKey($identity)) {
+                throw "Unexpected permission in private worker directory: $($item.FullName)"
+            }
+            if ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) { continue }
+            $granted[$identity] = [long] $granted[$identity] -bor [long] $rule.FileSystemRights
+            if ($isRoot -and (($rule.InheritanceFlags -band [Security.AccessControl.InheritanceFlags]::ContainerInherit) -eq 0 -or
+                ($rule.InheritanceFlags -band [Security.AccessControl.InheritanceFlags]::ObjectInherit) -eq 0)) {
+                throw "Private worker permissions must reach child files and directories: $Directory"
+            }
+        }
+        foreach ($identity in $expected.Keys) {
+            if (([long] $granted[$identity] -band $expected[$identity]) -ne $expected[$identity]) {
+                throw "Missing required permissions for $identity on $($item.FullName)"
+            }
+        }
+        $allowedWorkerRights = [long] $workerRights -bor [long] [Security.AccessControl.FileSystemRights]::Synchronize
+        if (([long] $granted[$Sid] -band (-bnot $allowedWorkerRights)) -ne 0) {
+            throw "Worker has excessive permissions on $($item.FullName)"
+        }
+    }
+}
+
+function Set-WorkerPrivateDirectoryAccess {
+    param([string] $Directory, [string] $Sid, [ValidateSet("RX", "M")] [string] $Permission)
+    if ($Sid -notmatch '^S-1-5-80-\d+-\d+-\d+-\d+-\d+$') { throw "An exact virtual service SID is required for worker ACLs." }
+    # Set the root grants before removing inherited access. Never combine these
+    # operations or remove inheritance recursively: that left nssm.exe with an
+    # empty DACL on Windows even though icacls reported success. Descendants must
+    # continue inheriting the restricted root's grants.
+    Invoke-WorkerNative "icacls.exe" @($Directory, "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F", "*${Sid}:(OI)(CI)$Permission", "/Q") | Out-Null
+    Invoke-WorkerNative "icacls.exe" @($Directory, "/inheritance:r", "/Q") | Out-Null
+    Assert-WorkerPrivateDirectoryAccess $Directory $Sid $Permission
+}
+
 function Grant-WorkerFileAccess {
     param([string] $ApplicationPath, [string] $PhpDirectory, [string] $BinaryDirectory, [string] $Logs, [string] $Sid)
     if ($Sid -notmatch '^S-1-5-80-\d+-\d+-\d+-\d+-\d+$') { throw "An exact virtual service SID is required for worker ACLs." }
@@ -208,8 +261,8 @@ function Grant-WorkerFileAccess {
     }
     # These two directories are newly created by this installer. Keep service
     # output private and the permanent service binary unwritable by the worker.
-    Invoke-WorkerNative "icacls.exe" @($BinaryDirectory, "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F", "*${Sid}:(OI)(CI)RX", "/T", "/Q") | Out-Null
-    Invoke-WorkerNative "icacls.exe" @($Logs, "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F", "*${Sid}:(OI)(CI)M", "/T", "/Q") | Out-Null
+    Set-WorkerPrivateDirectoryAccess $BinaryDirectory $Sid "RX"
+    Set-WorkerPrivateDirectoryAccess $Logs $Sid "M"
 }
 
 function Assert-WorkerIsStaged {
@@ -269,6 +322,7 @@ try {
     Assert-WorkerRegistration $ServiceName $AppPath $PhpExe $LogPath
     $workerSid = Resolve-WorkerVirtualAccountSid $ServiceName
     Grant-WorkerFileAccess $AppPath $phpDirectory $InstallPath $LogPath $workerSid
+    Assert-NssmChecksum $permanentBinary $ExpectedSha256
     Set-Service -Name $ServiceName -StartupType Manual
     Assert-WorkerIsStaged $ServiceName
 }
