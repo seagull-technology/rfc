@@ -65,11 +65,11 @@ checklist, including a current database backup and the managed queue worker,
 then run the bundled script from outside `C:\inetpub\rfc`:
 
 ```powershell
-Expand-Archive -LiteralPath C:\Deploy\rfc-offline-release-20260908-v2.zip -DestinationPath C:\Deploy
+Expand-Archive -LiteralPath C:\Deploy\rfc-offline-release-20260909-v1.zip -DestinationPath C:\Deploy
 Set-Location C:\inetpub
 Set-ExecutionPolicy -Scope Process Bypass
-& C:\Deploy\rfc-offline-release-20260908-v2\Deploy-RfcRelease.ps1 `
-  -ArchivePath C:\Deploy\rfc-offline-release-20260908-v2\rfc-app.tar.gz `
+& C:\Deploy\rfc-offline-release-20260909-v1\Deploy-RfcRelease.ps1 `
+  -ArchivePath C:\Deploy\rfc-offline-release-20260909-v1\rfc-app.tar.gz `
   -ExpectedSha256 "VERIFIED_64_CHARACTER_APP_ARCHIVE_SHA256"
 ```
 
@@ -373,7 +373,7 @@ Run the setup from an elevated PowerShell window before the first deployment
 that requires the worker (replace the checksum with the verified executable hash):
 
 ```powershell
-& C:\Deploy\rfc-offline-release-20260908-v2\Install-RfcQueueWorker.ps1 `
+& C:\Deploy\rfc-offline-release-20260909-v1\Install-RfcQueueWorker.ps1 `
   -NssmPath C:\Deploy\nssm-2.24-101-g897c7ad\win64\nssm.exe `
   -ExpectedSha256 "VERIFIED_64_CHARACTER_NSSM_EXE_SHA256"
 ```

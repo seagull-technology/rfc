@@ -1,0 +1,65 @@
+RFC security retest release - 2026-09-09
+
+PURPOSE
+Deploy the reviewed application fixes for the NSQAC security report. V01 remains
+with the Government API supplier for its discussion with the security team.
+This bundle supersedes the 2026-09-08 v1/v2 bundles for the pending deployment.
+
+APPLICATION CHANGES
+- Prevent identity and company registration numbers from being changed through
+  applicant profile updates, including alternate request field names.
+- Protect approval and completion workflows against stale or conflicting edits.
+- Apply request limits consistently and mask account-existence responses.
+- Send password-recovery SMS through the durable queue in production.
+- Validate forwarded hosts, harden application cookies, and update the shipped
+  vulnerable JavaScript component.
+- Keep form validation on the form when an image/background request intervenes.
+
+DEPLOYMENT
+Use the existing offline ZIP -> C:\Deploy -> Deploy-RfcRelease.ps1 process.
+Read PRE-DEPLOY-CHECKLIST.txt and SECURITY-RETEST.md first. Verify SHA256SUMS.txt
+and pass the rfc-app.tar.gz hash as -ExpectedSha256. SOURCE-COMMIT.txt identifies
+the exact source revision; BUILD-MANIFEST.json records packaged files.
+
+The script preserves the existing .env and storage, pauses application writers,
+retains the previous release, and checks the new application before reopening.
+The worker's file permissions are preserved through the application swap.
+AccessControlSeeder is skipped by default. This security release does not
+require new migrations or access-control seed changes. Verify a current database
+backup/snapshot before deployment; the application backup does not include it.
+
+QUEUE WORKER SETUP
+The installer initializes NSSM registration before configuration, preserves
+existing registry values, and correctly handles native command diagnostics.
+Its restricted -RepairIncomplete mode repairs its own disabled/stopped service.
+On 2026-09-09, the server operator reported successful repair on RFCtgWeb:
+RFCQueueWorker / NT SERVICE\RFCQueueWorker / Manual / Stopped.
+The permanent binary remains C:\Program Files\RFC\QueueWorker\nssm.exe.
+The service is staged; startup, database access and OTP delivery remain to test.
+Do not rerun installation after successful staging. The deployment starts the
+worker under maintenance. Enable Automatic startup only after deployment succeeds.
+
+REQUIRED SERVER SETTINGS
+- Preserve APP_KEY, database credentials and government API secrets in .env.
+  Do not replace the existing .env with the example file.
+- QUEUE_CONNECTION=database, DB_QUEUE_RETRY_AFTER=180, CACHE_STORE=database.
+- GOV_SMS_CONNECT_TIMEOUT=5 and GOV_SMS_TIMEOUT=15; use one worker initially.
+  Native Windows generally lacks PCNTL timeout enforcement, so bounded HTTP
+  request durations must fit inside the queue reservation interval.
+- Apply the production cookie/proxy/PHP settings in the checklist and run
+  php artisan security:production-check after deployment.
+
+VALIDATION
+The application code is unchanged from the reviewed 2026-09-08 security release:
+383 automated tests passed (3910 assertions), production asset build passed,
+vendor asset check passed, formatting passed.
+Deployment script: parser and 11 portable regression scenarios passed.
+Corrected worker installer: parser and 12 portable regression scenarios passed.
+The server operator's successful repair output is recorded above. Full Windows
+IIS deployment, worker startup, public endpoints and OTP delivery still require
+verification on the actual server. Packaging checks are recorded in the bundle.
+
+STILL REQUIRES SERVER / GOVERNMENT VERIFICATION
+Public TLS versions/ciphers, F5 or other infrastructure cookies, DNS behavior,
+and outbound network restrictions must be checked at the layer that controls
+them. This application release alone does not close those findings.
