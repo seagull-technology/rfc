@@ -208,6 +208,49 @@ function Start-RfcSite {
     throw "IIS could not be started after waiting for service control to settle: $($lastError.Exception.Message)"
 }
 
+function New-RfcIisServerManager {
+    # WebAdministration is already required for this deployment. Load its IIS
+    # management API explicitly so no native command exit code is involved.
+    # https://learn.microsoft.com/en-us/dotnet/api/microsoft.web.administration.servermanager.workerprocesses
+    Add-Type -Path (Join-Path $env:windir "System32\inetsrv\Microsoft.Web.Administration.dll") -ErrorAction Stop
+    return New-Object -TypeName Microsoft.Web.Administration.ServerManager -ErrorAction Stop
+}
+
+function Get-RfcIisWorkerIds {
+    param([string] $PoolName)
+
+    if ([string]::IsNullOrWhiteSpace($PoolName)) { throw "An exact IIS application pool name is required." }
+    $manager = $null
+
+    try {
+        # A fresh manager avoids using a worker collection cached before Stop.
+        $manager = New-RfcIisServerManager
+        # Invoke .NET getters explicitly: PowerShell property syntax can turn a
+        # getter exception into $null, which must never mean "no workers" here.
+        $pools = $manager.get_ApplicationPools()
+        if ($null -eq $pools -or $null -eq $pools[$PoolName]) {
+            throw "IIS application pool '$PoolName' was not found."
+        }
+
+        $workers = $manager.get_WorkerProcesses()
+        if ($null -eq $workers) { throw "IIS did not return a worker collection." }
+        $workerIds = @(foreach ($worker in $workers) {
+            if ([string]::Equals($worker.get_AppPoolName(), $PoolName, [StringComparison]::OrdinalIgnoreCase)) {
+                $workerId = [int] $worker.get_ProcessId()
+                if ($workerId -le 0) { throw "IIS returned an invalid worker process ID for '$PoolName'." }
+                $workerId
+            }
+        })
+        return $workerIds
+    }
+    catch {
+        throw "Could not enumerate IIS workers for '$PoolName': $($_.Exception.Message)"
+    }
+    finally {
+        if ($null -ne $manager) { $manager.Dispose() }
+    }
+}
+
 function Stop-RfcSite {
     if ((Get-WebsiteState -Name $SiteName).Value -eq "Started") {
         Stop-Website -Name $SiteName
@@ -225,14 +268,10 @@ function Stop-RfcSite {
         $workerIds = @()
 
         if ($appPoolName) {
-            $workerIds = @(& "$env:windir\system32\inetsrv\appcmd.exe" list wp "/apppool.name:$appPoolName" /text:WP.NAME)
-
-            if ($LASTEXITCODE -ne 0) {
-                throw "Could not verify that IIS workers for '$appPoolName' have stopped."
-            }
+            $workerIds = @(Get-RfcIisWorkerIds $appPoolName)
         }
 
-        if ($siteStopped -and $poolStopped -and @($workerIds | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -eq 0) {
+        if ($siteStopped -and $poolStopped -and $workerIds.Count -eq 0) {
             return
         }
 
@@ -629,6 +668,12 @@ $otherPoolSites = @(Get-Website | Where-Object { $_.Name -ne $SiteName -and $_.a
 if ($otherPoolSites.Count -gt 0) {
     throw "Application pool '$appPoolName' also serves another running website. Give RFC a dedicated pool before deploying."
 }
+
+# Prove that worker enumeration is available before taking the site offline.
+# AppCmd can return exit 1 for a valid empty list; the managed API represents
+# that state as an empty collection and preserves real enumeration failures.
+$preflightIisWorkers = @(Get-RfcIisWorkerIds $appPoolName)
+Write-Host "IIS worker preflight passed: $appPoolName / $($preflightIisWorkers.Count) worker(s)"
 
 Assert-ApplicationIsNotInMaintenance
 $siteWasStarted = (Get-WebsiteState -Name $SiteName).Value -eq "Started"

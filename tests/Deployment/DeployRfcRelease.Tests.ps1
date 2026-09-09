@@ -4,6 +4,8 @@ param(
 
 # Portable regression harness: executes the real deployment helper functions with
 # temporary directories and mocked Windows services. It never runs a deployment.
+# Runs locally under PowerShell 7; actual Windows PowerShell 5.1/IIS integration
+# requires the Windows server and is not represented by these portable fixtures.
 $ErrorActionPreference = "Stop"
 $tokens = $null
 $parseErrors = $null
@@ -17,7 +19,8 @@ $functionNames = @(
     "Copy-RfcStorage", "Assert-ReleaseArchive", "Move-StagedReleaseIntoPlace",
     "Restore-PreviousReleaseFiles", "Assert-WorkerCommand", "Stop-RfcWorker",
     "Restore-OriginalRuntimeState", "New-MaintenanceSmokeSession",
-    "Resolve-QueueServiceAccountSid", "Grant-QueueWorkerAccess"
+    "Resolve-QueueServiceAccountSid", "Grant-QueueWorkerAccess",
+    "Get-RfcIisWorkerIds", "Stop-RfcSite"
 )
 
 foreach ($name in $functionNames) {
@@ -229,6 +232,153 @@ try {
     $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($cookie.Value)) | ConvertFrom-Json
     Assert-True ($payload.expires_at -gt [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) "Smoke maintenance cookie must be unexpired."
     Assert-True ($payload.mac -match '^[a-f0-9]{64}$') "Smoke maintenance cookie must carry an HMAC."
+    $checks++
+
+    # Typed fixture makes a worker enumeration failure a real property-getter
+    # exception and tracks disposal. No IIS assembly or Windows API is loaded.
+    Add-Type -TypeDefinition @"
+public sealed class RfcIisWorkerFixture {
+    public string PoolNameValue { get; set; }
+    public int IdValue { get; set; }
+    public bool ThrowOnPoolName { get; set; }
+    public bool ThrowOnProcessId { get; set; }
+    public RfcIisWorkerFixture(string poolName, int processId) { PoolNameValue = poolName; IdValue = processId; }
+    public string AppPoolName {
+        get {
+            if (ThrowOnPoolName) throw new System.InvalidOperationException("Simulated worker pool-name failure");
+            return PoolNameValue;
+        }
+    }
+    public int ProcessId {
+        get {
+            if (ThrowOnProcessId) throw new System.InvalidOperationException("Simulated worker process-ID failure");
+            return IdValue;
+        }
+    }
+}
+public sealed class RfcIisManagerFixture : System.IDisposable {
+    public System.Collections.IDictionary ApplicationPools { get; set; }
+    public object[] Rows { get; set; }
+    public bool ThrowOnRead { get; set; }
+    public bool Disposed { get; private set; }
+    public object[] WorkerProcesses {
+        get {
+            if (ThrowOnRead) throw new System.InvalidOperationException("Simulated IIS enumeration failure");
+            return Rows;
+        }
+    }
+    public void Dispose() { Disposed = true; }
+}
+"@
+    $script:managedRows = @(
+        [RfcIisWorkerFixture]::new("RFC", 101),
+        [RfcIisWorkerFixture]::new("RFC-extra", 202),
+        [RfcIisWorkerFixture]::new("OtherPool", 303),
+        [RfcIisWorkerFixture]::new("rfc", 404)
+    )
+    $script:managerPoolExists = $true
+    $script:failWorkerQuery = $false
+    $script:createdManagers = @()
+    $script:iisPollCount = 0
+    $script:useDrainFixture = $false
+    $script:workerPollsBeforeDrain = 0
+    function New-RfcIisServerManager {
+        $script:iisPollCount++
+        $manager = New-Object RfcIisManagerFixture
+        $manager.ApplicationPools = @{}
+        if ($managerPoolExists) { $manager.ApplicationPools["RFC"] = [pscustomobject] @{ Name = "RFC" } }
+        $manager.Rows = $managedRows
+        if ($useDrainFixture) {
+            $manager.Rows = @()
+            if ($workerPollsBeforeDrain -lt 0 -or $iisPollCount -le $workerPollsBeforeDrain) {
+                $manager.Rows = @([RfcIisWorkerFixture]::new("RFC", 505))
+            }
+        }
+        $manager.ThrowOnRead = $failWorkerQuery
+        $script:createdManagers += $manager
+        return $manager
+    }
+
+    $ids = @(Get-RfcIisWorkerIds "RFC")
+    Assert-True (($ids -join ",") -eq "101,404") "Managed enumeration must match the exact pool, retain all its workers, and exclude similarly named pools."
+    Assert-True (@($ids | Where-Object { $_ -isnot [int] }).Count -eq 0) "Worker identities must be materialized as integer process IDs."
+    Assert-True $createdManagers[-1].Disposed "The IIS manager must be disposed after successful enumeration."
+    $managerPoolExists = $false
+    Assert-Throws { Get-RfcIisWorkerIds "RFC" } "An absent pool must not look like successful empty worker enumeration."
+    Assert-True $createdManagers[-1].Disposed "The IIS manager must be disposed when the requested pool is absent."
+    $managerPoolExists = $true
+    $failWorkerQuery = $true
+    Assert-Throws { Get-RfcIisWorkerIds "RFC" } "An IIS worker-query failure must not become an empty success result."
+    Assert-True $createdManagers[-1].Disposed "The IIS manager must be disposed after an enumeration exception."
+    $failWorkerQuery = $false
+    $savedRows = $managedRows
+    $managedRows = $null
+    Assert-Throws { Get-RfcIisWorkerIds "RFC" } "A null provider collection must not be accepted as no running workers."
+    Assert-True $createdManagers[-1].Disposed "The IIS manager must be disposed after a null provider collection."
+    $managedRows = $savedRows
+    foreach ($failureFlag in @("ThrowOnPoolName", "ThrowOnProcessId")) {
+        $managedRows[0].$failureFlag = $true
+        Assert-Throws { Get-RfcIisWorkerIds "RFC" } "A worker $failureFlag exception must fail enumeration instead of silently excluding the worker."
+        Assert-True $createdManagers[-1].Disposed "The IIS manager must be disposed after a worker identity getter exception."
+        $managedRows[0].$failureFlag = $false
+    }
+    $managedRows[0].IdValue = 0
+    Assert-Throws { Get-RfcIisWorkerIds "RFC" } "A nonpositive process ID must fail enumeration."
+    Assert-True $createdManagers[-1].Disposed "The IIS manager must be disposed after an invalid process ID."
+    $managedRows[0].IdValue = 101
+    $checks++
+
+    $SiteName = "RFC"
+    $appPoolName = "RFC"
+    $script:iisSiteState = "Started"
+    $script:iisPoolState = "Started"
+    $script:siteStopCount = 0
+    $script:poolStopCount = 0
+    $script:iisSleepCount = 0
+    function Get-WebsiteState { param([string] $Name); [pscustomobject] @{ Value = $iisSiteState } }
+    function Get-WebAppPoolState { param([string] $Name); [pscustomobject] @{ Value = $iisPoolState } }
+    function Stop-Website { param([string] $Name); $script:siteStopCount++; $script:iisSiteState = "Stopped" }
+    function Stop-WebAppPool { param([string] $Name); $script:poolStopCount++; $script:iisPoolState = "Stopped" }
+    function Start-Sleep { param([int] $Seconds); $script:iisSleepCount++ }
+    $useDrainFixture = $true
+    $workerPollsBeforeDrain = 0
+    $iisPollCount = 0
+    $WorkerDrainSeconds = 30
+    # Reproduce the server's successful empty-worker condition despite AppCmd's
+    # exit-code 1. Managed enumeration must not read any stale native status.
+    $global:LASTEXITCODE = 1
+    Stop-RfcSite
+    Assert-True ($siteStopCount -eq 1 -and $poolStopCount -eq 1) "The site and pool must both be stopped before returning."
+    Assert-True ($iisPollCount -eq 1 -and $iisSleepCount -eq 0) "Empty managed results must complete shutdown immediately, regardless of native LASTEXITCODE."
+    $siteStopCount = 0
+    $poolStopCount = 0
+    $iisPollCount = 0
+    Stop-RfcSite
+    Assert-True ($siteStopCount -eq 0 -and $poolStopCount -eq 0 -and $iisPollCount -eq 1) "An already stopped, empty pool must be accepted without repeated stop commands."
+    $checks++
+
+    $iisPollCount = 0
+    $iisSleepCount = 0
+    $workerPollsBeforeDrain = 2
+    Stop-RfcSite
+    Assert-True ($iisPollCount -eq 3 -and $iisSleepCount -eq 2) "Stopped site/pool state alone must not bypass two remaining worker polls."
+    Assert-True (@($createdManagers | Where-Object { -not $_.Disposed }).Count -eq 0) "Every poll must release its own IIS manager."
+    $checks++
+
+    $iisPollCount = 0
+    $iisSleepCount = 0
+    $failWorkerQuery = $true
+    Assert-Throws { Stop-RfcSite } "A shutdown worker-query error must fail closed."
+    Assert-True ($iisPollCount -eq 1 -and $iisSleepCount -eq 0) "Worker-query failure must abort immediately instead of treating it as a successful drain."
+    Assert-True $createdManagers[-1].Disposed "A failed shutdown query must dispose its IIS manager."
+    $failWorkerQuery = $false
+    $checks++
+
+    $iisPollCount = 0
+    $workerPollsBeforeDrain = -1
+    $WorkerDrainSeconds = 0
+    Assert-Throws { Stop-RfcSite } "A worker that never exits must reach the shutdown timeout instead of permitting a file swap."
+    Assert-True ($iisPollCount -eq 1) "The zero-second test deadline should stop after its first worker check."
     $checks++
 
     Write-Host "$checks deployment regression scenarios passed. No IIS, scheduler, service, or production operations were performed."

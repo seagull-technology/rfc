@@ -1,0 +1,36 @@
+RFC IIS worker-check correction - 2026-09-09
+
+PURPOSE
+The original deployment helper treated AppCmd exit code 1 as a query failure.
+RFCtgWeb returned that code with a valid empty worker collection. The corrected
+helper uses the IIS management API, validates access before maintenance, and
+waits for the site and pool to be Stopped with no remaining workers. Real query
+failures still stop deployment and include the underlying error.
+
+APPLICATION ARCHIVE
+Reuse the existing verified application archive; no application rebuild or
+retransfer is required for this deployment-script correction.
+Path: C:\Deploy\rfc-offline-release-20260909-v1\rfc-app.tar.gz
+Source commit: 9c5af15a616a88fea8de7a2cff18860c424e4f32
+SHA256: 4454d3f21e90091b0d9d9c9ab3f8dda678aa9e62e74faa07a6aed4e22b562b1c
+
+RETRY
+Transfer the separate rfc-deploy-iis-fix-20260909.zip bundle to C:\Deploy, verify
+its delivered SHA256, and extract it under C:\Deploy. SOURCE-COMMIT.txt in that
+bundle identifies the corrected deployment helper's revision.
+
+Run in Administrator PowerShell from C:\inetpub:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Deploy\rfc-deploy-iis-fix-20260909\Deploy-RfcRelease.ps1" -ArchivePath "C:\Deploy\rfc-offline-release-20260909-v1\rfc-app.tar.gz" -ExpectedSha256 "4454d3f21e90091b0d9d9c9ab3f8dda678aa9e62e74faa07a6aed4e22b562b1c"
+
+The script creates fresh staging and synchronizes current storage. Do not reuse
+the staging directory left by the failed attempt. It retains the existing
+application backup and rollback behavior. Original release bundles are unchanged.
+
+The worker is already installed. Do not rerun its installer. After successful
+deployment and worker checks, enable Automatic startup for RFCQueueWorker.
+
+VALIDATION
+PowerShell parser and all 16 portable deployment regression scenarios passed
+locally under PowerShell 7, including empty workers, delayed drain, provider
+errors, timeout and disposal. Windows/IIS integration is checked on the server;
+the new read-only worker preflight runs before maintenance begins.
