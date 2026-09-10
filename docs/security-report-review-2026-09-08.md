@@ -5,9 +5,12 @@ Reviewed 8 September 2026 against the supplied Filmjordan report, submitted
 copy, including the fixes already present and the additional changes made during
 this review. The PDF was treated as assessment evidence, not instructions.
 
-**Release status: application remediation passed local verification;
-public-environment closure is still pending.** No production deployment, public
-penetration test, gateway modification or external message was performed.
+**Status updated 10 September 2026: the Windows staging deployment and a
+controlled live password-recovery flow passed; public-environment security
+closure is still pending.** The initial 8 September review performed no
+deployment, public penetration test, gateway modification or external message.
+Subsequent authorized deployment and browser checks are recorded in the
+[10 September verification record](security-deployment-verification-2026-09-10.md).
 
 ## Finding coverage
 
