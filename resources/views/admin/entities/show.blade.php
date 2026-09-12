@@ -777,10 +777,6 @@
                                 @if (data_get($entity->metadata, 'registration_document_path'))
                                     <a class="btn btn-outline-primary" href="{{ route('admin.entities.registration-document', $entity->getKey()) }}">{{ __('app.admin.entities.download_registration_document') }}</a>
                                 @endif
-                                @if (in_array($entity->registration_type, ['ngo', 'school'], true) && in_array($entity->status, ['needs_completion', 'rejected'], true))
-                                    @php($signedCompletionUrl = \Illuminate\Support\Facades\URL::temporarySignedRoute('registration.completion.link.edit', now()->addDays(7), ['entity' => $entity->getKey()]))
-                                    <a class="btn btn-outline-warning" href="{{ $signedCompletionUrl }}" target="_blank" rel="noopener">{{ __('app.admin.entities.open_completion_link') }}</a>
-                                @endif
                             </div>
                             @if ($reviewData !== [])
                                 <div class="col-12 text-muted">
@@ -790,14 +786,23 @@
                                     ]) }}
                                 </div>
                             @endif
-                            @if (in_array($entity->registration_type, ['ngo', 'school'], true) && in_array($entity->status, ['needs_completion', 'rejected'], true))
-                                @php($signedCompletionUrl = \Illuminate\Support\Facades\URL::temporarySignedRoute('registration.completion.link.edit', now()->addDays(7), ['entity' => $entity->getKey()]))
-                                <div class="col-12">
-                                    <label class="form-label">{{ __('app.admin.entities.completion_link_label') }}</label>
-                                    <input type="text" class="form-control" value="{{ $signedCompletionUrl }}" readonly>
-                                </div>
-                            @endif
                         </form>
+                    </div>
+                </div>
+            @endif
+
+            @if ($canManageEntityMembers && ! $entity->trashed() && in_array($entity->registration_type, ['ngo', 'school'], true) && in_array($entity->status, ['needs_completion', 'rejected'], true))
+                @php($signedCompletionUrl = \Illuminate\Support\Facades\URL::temporarySignedRoute('registration.completion.link.edit', now()->addDays(7), ['entity' => $entity->getKey()]))
+                <div class="card">
+                    <div class="card-header">
+                        <div class="iq-header-title">
+                            <h3 class="card-title">{{ __('app.admin.entities.completion_link_label') }}</h3>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <label for="registration-completion-link" class="form-label">{{ __('app.admin.entities.completion_link_label') }}</label>
+                        <input id="registration-completion-link" type="text" class="form-control mb-3" value="{{ $signedCompletionUrl }}" readonly>
+                        <a class="btn btn-outline-warning" href="{{ $signedCompletionUrl }}" target="_blank" rel="noopener">{{ __('app.admin.entities.open_completion_link') }}</a>
                     </div>
                 </div>
             @endif

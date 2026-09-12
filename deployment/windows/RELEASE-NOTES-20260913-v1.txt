@@ -1,0 +1,36 @@
+RFC staging release - 13 September 2026 v1
+
+APPLICATION CHANGE
+Restore the administrator completion-link panel for rejected NGO/school
+registrations and those needing completion. The previous pending-review-only
+outer condition made that panel unreachable. The panel now requires
+entities.manage and an unarchived eligible registration; read-only viewers
+cannot obtain the signed edit link. Registration review actions remain limited
+to pending registrations. Existing seven-day signed URL and locked identity
+behavior are retained.
+
+VERIFICATION
+Fourteen focused tests / 141 assertions passed: NGO and school, rejected and
+needs_completion, Arabic and English, valid anonymous completion GET, unchanged
+entity/owner records, no notifications/jobs, pending/active behavior, read-only
+viewer and archived record exclusions. Public signed completion checks remain
+pending deployment. No claim of full report closure is made.
+
+DEPLOYMENT
+Use the existing verified offline ZIP workflow and bundled
+Deploy-RfcStagingVerification.ps1 on RFCtgWeb. Target C:\inetpub\rfc, IIS RFC,
+PHP C:\php\php.exe and the existing Running/Automatic RFCQueueWorker. No new
+migration, dependency, service or environment change is introduced. The owner
+waived an additional staging database backup. Preserve existing storage and
+the normal release rollback behavior.
+
+Do not rerun the SMTP/public-IP helper sequence from the earlier v5 instruction
+file. Those findings already have separate evidence and remain unresolved.
+Do not resubmit production 4, production 9 or scouting 5, or repeat saved
+registration decisions. Retained test fixtures and upload evidence are needed
+for the pending scoped server readback and exact cleanup.
+
+After deployment, verify the School47 completion link in an anonymous session
+and its locked registration identity rejection. The known gateway cookies,
+public TLS, SMTP trust and network-path findings remain separate owner work.
+The owner email remains NOT READY TO SEND pending application verification.
