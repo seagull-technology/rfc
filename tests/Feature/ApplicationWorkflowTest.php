@@ -39,10 +39,12 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Mockery;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\ChecksSubmissionDelivery;
 use Tests\TestCase;
 
 class ApplicationWorkflowTest extends TestCase
 {
+    use ChecksSubmissionDelivery;
     use RefreshDatabase;
 
     public function test_application_create_page_uses_template_form_shell(): void
@@ -6241,6 +6243,25 @@ class ApplicationWorkflowTest extends TestCase
         $this->assertContains('production_terms_accepted', $fields);
         $this->assertContains('work_content_summary_synopsis', $fields);
         $this->assertNotContains('project_name', $fields);
+
+        $document = new \DOMDocument;
+        $document->loadHTML($response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new \DOMXPath($document);
+        $this->assertSame(2, $xpath->query('//form[@id="form-wizard1"]/fieldset')->length);
+        $this->assertSame(1, $xpath->query('//fieldset[@disabled and contains(@class, "legacy-annex-inline")]')->length);
+        $this->assertSame(0, $xpath->query('//fieldset[contains(@class, "legacy-annex-inline")]//*[@id="WorkContentSummary"]')->length);
+    }
+
+    protected function createSubmissionForDeliveryTest(): array
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+        Storage::fake('local');
+        [$user] = $this->createApplicantContext();
+        $this->actingAs($user)->post(route('applications.store'), $this->applicationPayload())->assertRedirect()->assertSessionHasNoErrors();
+        $record = Application::query()->firstOrFail();
+
+        return [$user, $record, route('applications.submit', $record), route('applications.show', $record)];
     }
 
     /**

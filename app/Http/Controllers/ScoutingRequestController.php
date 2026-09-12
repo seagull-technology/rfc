@@ -11,6 +11,7 @@ use App\Models\ScoutingRequestCorrespondence;
 use App\Models\User;
 use App\Models\WorkCategory;
 use App\Notifications\InboxMessageNotification;
+use App\Notifications\SubmissionInboxNotification;
 use App\Rules\SafeExternalUrl;
 use App\Support\JordanBusinessDays;
 use App\Support\NotificationRecipients;
@@ -21,6 +22,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -235,38 +237,47 @@ class ScoutingRequestController extends Controller
 
         $record = $this->findApplicantRequest($scoutingRequest, $entity);
 
-        abort_unless($record->canBeSubmittedByApplicant(), 403);
-        $wasClarificationResponse = $record->status === 'needs_clarification';
+        return DB::transaction(function () use ($record, $user, $entity): RedirectResponse {
+            $record = $record->newQuery()
+                ->whereKey($record->getKey())
+                ->where('entity_id', $entity->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            $this->ensureApplicantCanViewScoutingRequest($user, $record);
 
-        $record->forceFill([
-            'status' => 'submitted',
-            'current_stage' => 'intake',
-            'submitted_at' => now(),
-        ])->save();
+            abort_unless($record->canBeSubmittedByApplicant(), 403);
+            $wasClarificationResponse = $record->status === 'needs_clarification';
 
-        $this->appendHistory($record, 'submitted', __('app.scouting.history.submitted'), $user->getKey());
+            $record->forceFill([
+                'status' => 'submitted',
+                'current_stage' => 'intake',
+                'submitted_at' => now(),
+            ])->save();
 
-        $record->loadMissing('entity');
+            $this->appendHistory($record, 'submitted', __('app.scouting.history.submitted'), $user->getKey());
 
-        NotificationRecipients::except(NotificationRecipients::adminUsers(), $user->getKey())
-            ->each(fn ($recipient) => $recipient->notify(new InboxMessageNotification(
-                typeKey: 'scouting_submitted',
-                title: $record->project_name,
-                body: __('app.notifications.scouting_submitted_body', [
-                    'code' => $record->code,
-                    'entity' => $record->entity?->displayName() ?? __('app.dashboard.no_entity'),
-                ]),
-                routeName: 'admin.scouting-requests.show',
-                routeParameters: ['scoutingRequest' => $record->getKey()],
-                meta: [
-                    ...WorkflowMessageMetadata::scouting($record),
-                    ...$this->adminApplicantResponseNotificationMeta($wasClarificationResponse, __('app.notifications.applicant_response_resubmission')),
-                ],
-            )));
+            $record->loadMissing('entity');
 
-        return redirect()
-            ->route('scouting-requests.show', $record)
-            ->with('status', __('app.scouting.submitted'));
+            NotificationRecipients::except(NotificationRecipients::adminUsers(), $user->getKey())
+                ->each(fn ($recipient) => $recipient->notify(new SubmissionInboxNotification(
+                    typeKey: 'scouting_submitted',
+                    title: $record->project_name,
+                    body: __('app.notifications.scouting_submitted_body', [
+                        'code' => $record->code,
+                        'entity' => $record->entity?->displayName() ?? __('app.dashboard.no_entity'),
+                    ]),
+                    routeName: 'admin.scouting-requests.show',
+                    routeParameters: ['scoutingRequest' => $record->getKey()],
+                    meta: [
+                        ...WorkflowMessageMetadata::scouting($record),
+                        ...$this->adminApplicantResponseNotificationMeta($wasClarificationResponse, __('app.notifications.applicant_response_resubmission')),
+                    ],
+                )));
+
+            return redirect()
+                ->route('scouting-requests.show', $record)
+                ->with('status', __('app.scouting.submitted'));
+        });
     }
 
     public function storeCorrespondence(Request $request, string $scoutingRequest): RedirectResponse

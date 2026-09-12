@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Models\WorkCategory;
 use App\Notifications\ForeignProducerInvitationNotification;
 use App\Notifications\InboxMessageNotification;
+use App\Notifications\SubmissionInboxNotification;
 use App\Rules\SafeExternalUrl;
 use App\Rules\SafeExternalUrlOrText;
 use App\Rules\SupportRequirementNotesRequired;
@@ -428,27 +429,34 @@ class ApplicationController extends Controller
         $this->ensureApplicantPermission($user, 'applications.submit');
         $record = $this->findApplicantApplication($application, $entity);
 
-        abort_unless($record->canBeSubmittedByApplicant(), 403);
+        return DB::transaction(function () use ($record, $user, $entity): RedirectResponse {
+            $record = $record->newQuery()
+                ->whereKey($record->getKey())
+                ->where('entity_id', $entity->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            $this->ensureApplicantCanViewApplication($user, $record);
 
-        $this->syncLockedApplicantProducerFields($record, $user, $entity);
-        $this->validateApplicationForSubmission($record);
+            abort_unless($record->canBeSubmittedByApplicant(), 403);
 
-        if (! $record->foreignProducerApprovalIsSatisfied()) {
-            return redirect()
-                ->route('applications.show', $record)
-                ->withErrors([
-                    'foreign_producer_declaration' => __('app.applications.foreign_producer_approval_required'),
-                ]);
-        }
+            $this->syncLockedApplicantProducerFields($record, $user, $entity);
+            $this->validateApplicationForSubmission($record);
 
-        $wasClarificationResponse = $record->status === 'needs_clarification';
-        $authorityApprovalsAwaitingApplicant = $record->authorityApprovals()
-            ->with(['entity.group', 'assignedTo'])
-            ->where('status', 'changes_requested')
-            ->get();
-        $wasAuthorityClarification = $authorityApprovalsAwaitingApplicant->isNotEmpty();
+            if (! $record->foreignProducerApprovalIsSatisfied()) {
+                return redirect()
+                    ->route('applications.show', $record)
+                    ->withErrors([
+                        'foreign_producer_declaration' => __('app.applications.foreign_producer_approval_required'),
+                    ]);
+            }
 
-        DB::transaction(function () use ($record, $user, $authorityApprovalsAwaitingApplicant, $wasAuthorityClarification): void {
+            $wasClarificationResponse = $record->status === 'needs_clarification';
+            $authorityApprovalsAwaitingApplicant = $record->authorityApprovals()
+                ->with(['entity.group', 'assignedTo'])
+                ->where('status', 'changes_requested')
+                ->get();
+            $wasAuthorityClarification = $authorityApprovalsAwaitingApplicant->isNotEmpty();
+
             if ($wasAuthorityClarification) {
                 $record->forceFill([
                     'status' => 'under_review',
@@ -484,70 +492,68 @@ class ApplicationController extends Controller
                         'approval_ids' => $authorityApprovalsAwaitingApplicant->pluck('id')->all(),
                     ],
                 );
+            } else {
+                $record->forceFill([
+                    'status' => 'submitted',
+                    'current_stage' => 'intake',
+                    'submitted_at' => now(),
+                    'review_note' => null,
+                    'reviewed_at' => null,
+                    'reviewed_by_user_id' => null,
+                    'final_decision_status' => null,
+                    'final_decision_note' => null,
+                    'final_decision_issued_at' => null,
+                    'final_decision_issued_by_user_id' => null,
+                    'final_permit_number' => null,
+                    'final_letter_path' => null,
+                    'final_letter_name' => null,
+                    'final_letter_mime_type' => null,
+                    'assigned_to_user_id' => null,
+                    'assigned_at' => null,
+                ])->save();
 
-                return;
+                $this->appendHistory($record, 'submitted', __('app.applications.history.submitted'), $user->getKey());
             }
 
-            $record->forceFill([
-                'status' => 'submitted',
-                'current_stage' => 'intake',
-                'submitted_at' => now(),
-                'review_note' => null,
-                'reviewed_at' => null,
-                'reviewed_by_user_id' => null,
-                'final_decision_status' => null,
-                'final_decision_note' => null,
-                'final_decision_issued_at' => null,
-                'final_decision_issued_by_user_id' => null,
-                'final_permit_number' => null,
-                'final_letter_path' => null,
-                'final_letter_name' => null,
-                'final_letter_mime_type' => null,
-                'assigned_to_user_id' => null,
-                'assigned_at' => null,
-            ])->save();
+            $record->load('entity');
 
-            $this->appendHistory($record, 'submitted', __('app.applications.history.submitted'), $user->getKey());
-        });
-
-        $record->load('entity');
-
-        NotificationRecipients::except(NotificationRecipients::adminUsers(), $user->getKey())
-            ->each(fn ($recipient) => $recipient->notify(new InboxMessageNotification(
-                typeKey: 'application_submitted',
-                title: $record->project_name,
-                body: __('app.notifications.application_submitted_body', [
-                    'code' => $record->code,
-                    'entity' => $record->entity?->displayName() ?? __('app.dashboard.no_entity'),
-                ]),
-                routeName: 'admin.applications.show',
-                routeParameters: ['application' => $record->getKey()],
-                meta: [
-                    ...WorkflowMessageMetadata::application($record),
-                    ...$this->adminApplicantResponseNotificationMeta($wasClarificationResponse, __('app.notifications.applicant_response_resubmission')),
-                ],
-            )));
-
-        if ($wasAuthorityClarification) {
-            $authorityApprovalsAwaitingApplicant
-                ->flatMap(fn (ApplicationAuthorityApproval $approval) => NotificationRecipients::authorityUsersForApproval($approval))
-                ->unique(fn (User $recipient): int => $recipient->getKey())
-                ->reject(fn (User $recipient): bool => $recipient->getKey() === $user->getKey())
-                ->each(fn (User $recipient) => $recipient->notify(new InboxMessageNotification(
-                    typeKey: 'authority_changes_resubmitted',
+            NotificationRecipients::except(NotificationRecipients::adminUsers(), $user->getKey())
+                ->each(fn ($recipient) => $recipient->notify(new SubmissionInboxNotification(
+                    typeKey: 'application_submitted',
                     title: $record->project_name,
-                    body: __('app.notifications.authority_changes_resubmitted_body', [
+                    body: __('app.notifications.application_submitted_body', [
                         'code' => $record->code,
+                        'entity' => $record->entity?->displayName() ?? __('app.dashboard.no_entity'),
                     ]),
-                    routeName: 'authority.applications.show',
+                    routeName: 'admin.applications.show',
                     routeParameters: ['application' => $record->getKey()],
-                    meta: WorkflowMessageMetadata::application($record),
+                    meta: [
+                        ...WorkflowMessageMetadata::application($record),
+                        ...$this->adminApplicantResponseNotificationMeta($wasClarificationResponse, __('app.notifications.applicant_response_resubmission')),
+                    ],
                 )));
-        }
 
-        return redirect()
-            ->route('applications.show', $record)
-            ->with('status', __('app.applications.submitted'));
+            if ($wasAuthorityClarification) {
+                $authorityApprovalsAwaitingApplicant
+                    ->flatMap(fn (ApplicationAuthorityApproval $approval) => NotificationRecipients::authorityUsersForApproval($approval))
+                    ->unique(fn (User $recipient): int => $recipient->getKey())
+                    ->reject(fn (User $recipient): bool => $recipient->getKey() === $user->getKey())
+                    ->each(fn (User $recipient) => $recipient->notify(new SubmissionInboxNotification(
+                        typeKey: 'authority_changes_resubmitted',
+                        title: $record->project_name,
+                        body: __('app.notifications.authority_changes_resubmitted_body', [
+                            'code' => $record->code,
+                        ]),
+                        routeName: 'authority.applications.show',
+                        routeParameters: ['application' => $record->getKey()],
+                        meta: WorkflowMessageMetadata::application($record),
+                    )));
+            }
+
+            return redirect()
+                ->route('applications.show', $record)
+                ->with('status', __('app.applications.submitted'));
+        });
     }
 
     public function storeDocument(Request $request, string $application): RedirectResponse

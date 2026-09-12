@@ -21,7 +21,7 @@ class RegistrationSmsRetryTest extends TestCase
             $channel->send($this->recipient('TEST'), $this->notification(true));
             $this->fail('The queue must receive an exception so this channel can retry.');
         } catch (RuntimeException $exception) {
-            $this->assertSame('Registration SMS delivery failed.', $exception->getMessage());
+            $this->assertSame('Queued SMS delivery failed.', $exception->getMessage());
             $this->assertStringNotContainsString('private-', $exception->getMessage());
         }
     }

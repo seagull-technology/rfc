@@ -2,11 +2,15 @@
 
 Prepared 10 September 2026. Draft only; no email has been sent.
 
-**NOT READY TO SEND.** Updated 12 September: v3 deployment and the Windows
-internal checks completed. V4's mail-scheme and form-navigation fixes passed
-456 local PHP tests / 4,398 assertions, five isolated browser regressions and
-14 portable wrapper check groups; v4 is not yet recorded deployed. Final form
-submissions, remaining live checks and provider delivery are incomplete.
+**NOT READY TO SEND.** Updated 12 September: v4 deployment and the Windows
+internal checks completed, including supported SMTP scheme/transport construction,
+controller/database-concurrency and 16 workflow checks per language. Local
+validation passed 456 PHP tests / 4,398 assertions, five isolated browser
+regressions and 14 portable wrapper groups. A subsequent public production submission saved Submitted but returned 500 on
+SMTP STARTTLS certificate verification, and correcting a synopsis exposed a
+hidden validation blocker. Additional application fixes are being validated for
+v5 and are not deployed yet. Provider delivery and retained-fixture cleanup remain
+incomplete.
 Finalize this draft only after the latest verification record is complete.
 
 **Subject:** Filmjordan security retest — admin and infrastructure actions
@@ -14,7 +18,7 @@ Finalize this draft only after the latest verification record is complete.
 Dear Administration and Infrastructure Teams,
 
 The following infrastructure findings were observed on the Windows test
-environment serving `filmjordan.jo`. V3 was deployed on 12 September; its internal
+environment serving `filmjordan.jo`. V4 was deployed on 12 September; its internal
 controller/database-concurrency checks and 16 workflow checks in each language
 passed, and the existing worker remained Running/Automatic. Those isolated
 checks do not establish public browser or provider-delivery behavior. Please
@@ -23,12 +27,19 @@ the supporting evidence described.
 
 Controlled production/scouting draft creation and edits now have passing browser
 samples: invalid input was retained, corrected drafts saved, and a retained
-scouting PDF downloaded with recorded size and hash. Final submission remains untested
-pending the mail fix. The upload route accepted five responses before returning
+scouting PDF downloaded with recorded size and hash. The mail fix is now deployed,
+but the later production submission saved Submitted then returned 500. Its audit
+shows in-app Sent and email Failed due to STARTTLS certificate verification. The
+request was not submitted again; scouting remains Draft. The upload route accepted five responses before returning
 429, but exact stored document counts were not independently visible. Temporary
 test membership was removed and the administrator's original context restored;
-the drafts remain for final checks. Browser control has recovered; native
-console/AnyDesk access still requires the established manual deployment path.
+the drafts remain for final checks. A separate CLI fixture run was intentionally
+retained after v4 for remaining public account/identity checks; it requires exact
+cleanup using its private manifest. Fifteen English-route public identity attacks
+against controlled student/company entities and owners returned expected 422
+errors; fresh reads preserved identity. Three further employee identity attacks passed with an unchanged readback.
+Profile/completion coverage remains internal-only pending public checks. RFC browser/DevTools control has
+recovered; AnyDesk/server access still uses the established manual deployment path.
 
 ## Confirmed failures requiring correction
 
@@ -43,8 +54,8 @@ protocols, CBC suites and static-RSA key exchange; retain modern TLS 1.2 with
 AEAD encryption and ephemeral key exchange. Synchronize serving/HA peers.
 Provide the listener/address inventory and independent before/after enumeration.
 The measured endpoint fails V11; alternate listeners, standby nodes and the
-internal TLS hop have not been verified. No TLS protocol/cipher enumeration was
-repeated after v3; application deployment does not change that result.
+internal TLS hop have not been verified. No later TLS protocol/cipher enumeration
+is recorded; v4 application deployment does not change that result.
 
 **V07/V08/V10/V12 — gateway cookies:** The fresh post-v3 public HTTPS sign-in
 response on 12 September at 12:56 UTC still emitted:
@@ -87,13 +98,20 @@ deployment does not prove those recovery controls.
 **Application delivery follow-up, still in progress:** V3 corrected the default
 mailer from `SMTP` to `smtp`; a fresh browser approval now succeeds with one
 history/inbox entry and stale actions are blocked. The worker audit exposed a
-separate uppercase SMTP scheme setting, with three failed email attempts. Its
-narrow correction is locally verified for v4, including one unambiguous URL
-scheme override with credentials preserved; deployment and real delivery
-verification remain pending. V4 also fixes form error navigation. Do not treat the passing
-internal tests as successful external delivery or repeat the completed review.
-Any infrastructure mail-relay request will be finalized after that correction
-and its controlled delivery evidence are reviewed.
+separate uppercase SMTP scheme setting, with three failed email attempts. V4
+is now deployed and its safe preflight confirms the effective scheme is supported
+and the transport can be constructed, with credentials preserved. That check
+opens no SMTP connection and sends no message: actual relay authentication and
+delivery remain unverified. V4 also deploys the form error-navigation fix, whose
+live browser retest is separate from the internal helper. Do not repeat the
+completed review. The subsequent public production submission now provides controlled evidence:
+STARTTLS certificate verification failed. Check the configured SMTP hostname,
+certificate validity/hostname and complete server chain, plus the Windows PHP
+OpenSSL CA trust configuration and service-account access to the CA bundle.
+Keep peer and hostname verification enabled. A read-only SMTP TLS diagnostic is
+being prepared; it does not authenticate or send a message. Correct the verified
+chain/trust problem, then test delivery and retry only the intended failed
+notification. Do not resubmit the already-saved production request.
 
 **Separate operational item:** No `RFC Laravel Scheduler` task was found. Check
 for an equivalent scheduler before creating anything. Review staging recipients

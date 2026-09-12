@@ -1,0 +1,69 @@
+RFC staging verification corrections - 2026-09-12 v5
+
+PURPOSE
+The v4 deployment passed its Windows controller, concurrency and Arabic/English
+internal checks. Subsequent public browser testing found two additional issues:
+correcting a rejected production synopsis left a hidden legacy field invalid,
+and normal production submission returned HTTP 500 after saving Submitted.
+The notification audit identified SMTP STARTTLS certificate verification failure.
+This release fixes both application failure paths and preserves TLS verification.
+
+CHANGES
+- Keep retired inline production fields inside a disabled fieldset. They no
+  longer block native validation or duplicate submitted drawer values. Legitimate
+  inactive tabs and required drawers retain validation. The wizard counts only
+  its outer steps and respects inherited disabled controls.
+- Save production/scouting submission state, history, inbox and external jobs
+  in one database transaction. Recheck status and ownership under the row lock.
+  Independent database mail/SMS jobs retry provider failures without repeating
+  submission or preventing other recipients/channels from being processed.
+- Preserve message, locale and action URL through queue serialization without
+  copying private applicant/record model fields. Queue persistence must use the
+  same application database; failed enqueue rolls back the entire submission.
+- Include CLI-only public shared-IP rate-limit verification: three disposable
+  actors, 20 accepted writes each, then the 61st request rejected. Verified HTTPS,
+  real CSRF and stored-value checks remain active; no counter is cleared. The
+  helper refuses a nonempty/interfered quota baseline and cleans exact fixtures
+  and temporary sessions. It does not test login/OTP or every serving node.
+- Include a read-only SMTP trust probe: greeting/EHLO/STARTTLS, validated TLS,
+  configured CA locations and public certificate metadata. It does not
+  authenticate or send a message, and it does not modify trust configuration.
+
+DEPLOYMENT
+Use the existing RFCtgWeb staging server, C:\inetpub\rfc, IIS RFC, C:\php\php.exe
+and RFCQueueWorker. Deploy with the verified ZIP and the existing
+Deploy-RfcStagingVerification.ps1 wrapper. No new service, migration or .env
+change is introduced. Existing application rollback, private environment/storage
+preservation and internal fixture cleanup remain in force. The owner waived
+an additional staging database backup.
+
+The wrapper checks the deployed source, cached mailer constructibility, isolated
+controllers, coordinated database concurrency and 16 workflow cases per language.
+It requires one Running/Automatic worker. Read the summary before retrying:
+a verification failure can occur after deployment succeeds.
+
+Run the new public limiter and SMTP trust helpers separately as instructed after
+successful deployment. A failed SMTP trust probe does not undo deployment. Keep
+its error distinct from application checks. Correct the validated certificate
+chain/hostname/Windows PHP CA trust problem; never disable certificate checks.
+
+Do not resubmit production request 4: it is already Submitted. Use a fresh test
+draft for the v5 submission retest, and the existing scouting draft 5. Do not
+repeat historical registration decisions or bulk-retry unrelated failed jobs.
+External notification delivery remains at least once; an accepted provider call
+and actual receipt are separate evidence. Retained sv-6ff5d9eaaed74d1c fixtures
+remain for the public retest and require exact manifest-based cleanup afterward.
+
+The known public TLS, gateway cookie and DNS-callback evidence gaps remain
+separate infrastructure work. V01 remains excluded by agreement. The owner email
+draft is not ready to send until application testing and delivery checks finish.
+
+LOCAL VERIFICATION
+- Final combined PHP 8.3.32 suite: 487 tests, 4,661 assertions passed.
+- Seven real-browser wizard checks passed, including server error, correction
+  and actual intercepted multipart submission with exactly one synopsis value.
+- Public-limit verifier guard/kernel tests and isolated no-dev dependency smoke
+  passed; no Windows/public execution is claimed by these local results.
+- Four isolated SMTP TLS probes passed: trusted STARTTLS and implicit TLS,
+  untrusted-CA rejection and hostname mismatch rejection; no AUTH or email.
+- Independent code review, formatting, PHP syntax and diff checks passed.

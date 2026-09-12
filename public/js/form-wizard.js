@@ -3,7 +3,10 @@
 
     document.addEventListener("DOMContentLoaded", function () {
         document.querySelectorAll("#form-wizard1").forEach(function (form) {
-            const fieldsets = Array.from(form.querySelectorAll("fieldset"));
+            // Nested fieldsets can group disabled legacy controls; only outer groups are steps.
+            const fieldsets = Array.from(form.querySelectorAll("fieldset")).filter(function (fieldset) {
+                return !fieldset.parentElement.closest("fieldset");
+            });
 
             if (fieldsets.length === 0) {
                 return;
@@ -149,7 +152,7 @@
             };
 
             const controlIsInvalid = function (control) {
-                return ! control.disabled
+                return ! control.matches(":disabled")
                     && control.type !== "hidden"
                     && typeof control.checkValidity === "function"
                     && ! control.checkValidity();
@@ -157,7 +160,7 @@
 
             const validateControls = function (controls) {
                 const availableControls = controls.filter(function (control) {
-                    return ! control.disabled && control.type !== "hidden";
+                    return ! control.matches(":disabled") && control.type !== "hidden";
                 });
                 const invalidControls = availableControls.filter(controlIsInvalid);
 
@@ -408,7 +411,7 @@
             const serverErrorControls = [];
             const availableServerControls = Array.from(form.querySelectorAll("input[name], select[name], textarea[name]"))
                 .filter(function (control) {
-                    return !control.disabled && control.type !== "hidden" && !control.closest(".legacy-annex-inline");
+                    return !control.matches(":disabled") && control.type !== "hidden" && !control.closest(".legacy-annex-inline");
                 });
 
             serverErrorFields.forEach(function (field) {

@@ -701,7 +701,8 @@
                         </div>
 
                         <div class="col-12">
-                            <div class="card mb-0 d-none legacy-annex-inline" aria-hidden="true">
+                            {{-- Retired copies must never validate or submit, including before JavaScript runs. --}}
+                            <fieldset disabled class="card mb-0 d-none legacy-annex-inline" aria-hidden="true">
                                 <div class="card-header">
                                     <div class="header-title">
                                         <h3 class="mb-0">{{ __('app.applications.annex_forms_title') }}</h3>
@@ -994,7 +995,7 @@
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                            </fieldset>
                         </div>
 
                         @include('applications.partials.requirement-offcanvases')
@@ -3043,16 +3044,6 @@
         const requestForm = document.getElementById('form-wizard1');
 
         if (requestForm) {
-            const disableLegacyAnnexFields = function () {
-                requestForm.querySelectorAll('.legacy-annex-inline input, .legacy-annex-inline select, .legacy-annex-inline textarea').forEach(function (field) {
-                    field.disabled = true;
-                });
-            };
-
-            requestForm.addEventListener('submit', function () {
-                disableLegacyAnnexFields();
-            });
-
             initializeScheduleDateValidation(requestForm);
             refreshApplicationWorkSummaryRules(requestForm);
             requestForm.querySelectorAll('[data-work-summary-input]').forEach(bindApplicationWorkSummaryValidation);

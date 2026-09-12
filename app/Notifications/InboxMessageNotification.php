@@ -15,17 +15,18 @@ class InboxMessageNotification extends Notification
     use Queueable;
 
     /**
+     * Protected fields allow Laravel to restore queued subclasses on PHP 8.3.
+     *
      * @param  array<string, mixed>  $routeParameters
      */
     public function __construct(
-        private readonly string $typeKey,
-        private readonly string $title,
-        private readonly string $body,
-        private readonly string $routeName,
-        private readonly array $routeParameters = [],
-        private readonly array $meta = [],
-    ) {
-    }
+        protected string $typeKey,
+        protected string $title,
+        protected string $body,
+        protected string $routeName,
+        protected array $routeParameters = [],
+        protected array $meta = [],
+    ) {}
 
     public function via(object $notifiable): array
     {

@@ -11,10 +11,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\ChecksSubmissionDelivery;
 use Tests\TestCase;
 
 class ScoutingRequestFlowTest extends TestCase
 {
+    use ChecksSubmissionDelivery;
     use RefreshDatabase;
 
     public function test_scouting_create_page_uses_template_form_shell(): void
@@ -504,6 +506,18 @@ class ScoutingRequestFlowTest extends TestCase
     /**
      * @return array{0: User, 1: Entity}
      */
+    protected function createSubmissionForDeliveryTest(): array
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+        Storage::fake('local');
+        [$user] = $this->createApplicantContext();
+        $this->actingAs($user)->post(route('scouting-requests.store'), $this->scoutingPayload())->assertRedirect()->assertSessionHasNoErrors();
+        $record = ScoutingRequest::query()->firstOrFail();
+
+        return [$user, $record, route('scouting-requests.submit', $record), route('scouting-requests.show', $record)];
+    }
+
     private function createApplicantContext(): array
     {
         $group = Group::query()->where('code', 'organizations')->firstOrFail();

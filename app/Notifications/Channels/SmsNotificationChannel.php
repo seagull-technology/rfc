@@ -44,7 +44,7 @@ class SmsNotificationChannel
             && ($result['ok'] ?? false) !== true
             && ($result['stage'] ?? null) !== 'invalid_msisdn') {
             // Only opted-in queued notifications retry; never expose provider data.
-            throw new RuntimeException('Registration SMS delivery failed.');
+            throw new RuntimeException('Queued SMS delivery failed.');
         }
 
         return $result;
