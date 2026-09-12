@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
+use Illuminate\Support\ViewErrorBag;
 use Tests\TestCase;
 use ZipArchive;
 
@@ -64,6 +66,45 @@ class SecurityHardeningTest extends TestCase
         $this->assertGreaterThanOrEqual(2, substr_count($lodash, '4.18.1'));
         $this->assertStringNotContainsString('Underscore.js 1.8.3', $lodash);
         $this->assertTrue(File::isFile(public_path('js/lodash.LICENSE.txt')));
+    }
+
+    public function test_dashboard_lodash_urls_change_with_asset_contents(): void
+    {
+        $originalPublicPath = public_path();
+        $temporaryPublicPath = storage_path('framework/testing/security-assets-'.Str::random(12));
+        File::ensureDirectoryExists($temporaryPublicPath.'/js');
+
+        try {
+            $this->app->usePublicPath($temporaryPublicPath);
+            $previousUrl = null;
+
+            foreach (['window._ = {VERSION: "first"};', 'window._ = {VERSION: "other"};'] as $contents) {
+                File::put(public_path('js/lodash.min.js'), $contents);
+                touch(public_path('js/lodash.min.js'), 1_700_000_000);
+                $url = asset('js/lodash.min.js').'?v='.hash('sha256', $contents);
+                $this->assertNotSame($previousUrl, $url);
+
+                foreach (['admin-dashboard', 'authority-dashboard', 'portal-dashboard'] as $layout) {
+                    $html = view('layouts.'.$layout, [
+                        'errors' => new ViewErrorBag,
+                        'cspNonce' => 'security-retest-nonce',
+                    ])->render();
+
+                    $this->assertStringContainsString('nonce="security-retest-nonce" src="'.$url.'"', $html);
+                    $this->assertSame(1, substr_count($html, 'js/lodash.min.js'));
+                    $this->assertLessThan(strpos($html, 'js/utility.min.js'), strpos($html, $url));
+
+                    if ($previousUrl !== null) {
+                        $this->assertStringNotContainsString($previousUrl, $html);
+                    }
+                }
+
+                $previousUrl = $url;
+            }
+        } finally {
+            $this->app->usePublicPath($originalPublicPath);
+            File::deleteDirectory($temporaryPublicPath);
+        }
     }
 
     public function test_rendered_login_assets_use_the_response_csp_nonce(): void

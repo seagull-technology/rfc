@@ -1,0 +1,42 @@
+RFC security cache correction - 2026-09-12
+
+PURPOSE
+Complete the V09 application correction after the 10 September staging test.
+The public Lodash file already matched the patched release, but its unversioned
+URL allowed existing browsers to retain old bytes for up to 30 days.
+
+APPLICATION CHANGE
+The admin, authority and applicant dashboards now use one shared script partial.
+Its Lodash URL includes the deployed file's SHA-256 so changed file contents
+produce a new URL. CSP nonces and script order are preserved. Vendor bytes and
+dependency lockfiles are unchanged. No database migration or seeder is needed.
+
+DEPLOYMENT
+Use the reviewed offline ZIP -> C:\Deploy -> Deploy-RfcRelease.ps1 process.
+Verify the supplied checksums. Preserve the existing .env, storage and queue
+service. RFCQueueWorker was verified Running/Automatic after the prior release;
+do not reinstall NSSM or rerun its setup. This bundle includes the corrected
+loopback maintenance check and worker-directory ACL implementation.
+
+The project owner waived an additional database backup for this named staging
+test environment. The deployer retains the prior application release normally.
+This waiver is not a production deployment policy.
+
+VALIDATION
+SecurityHardeningTest: 29 passed, 185 assertions on 12 September. It renders all
+three layouts, checks CSP/script order and verifies a changed URL for changed
+file contents even when file size and modification time are unchanged.
+The offline bundle build additionally checks locked dependencies, vendor bytes,
+frontend compilation and Blade view compilation; see BUILD-MANIFEST.json.
+
+POST-DEPLOYMENT
+Check each dashboard's rendered Lodash URL contains ?v=<deployed SHA-256> and
+compare fetched bytes with the release. Test ordinary browser caching. Confirm
+any gateway cache uses query parameters in its key and all nodes serve the same
+release. Record deployment and worker health before continuing live retesting.
+
+SCOPE
+This release does not change public TLS or gateway cookie policies. Those
+findings were still failing the sampled public checks on 10 September. V01
+remains excluded from implementation; supplier correspondence is handled
+internally. Application and infrastructure retesting is still in progress.

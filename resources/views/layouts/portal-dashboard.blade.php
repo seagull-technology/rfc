@@ -292,7 +292,7 @@
     </script>
     <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/libs.min.js') }}"></script>
     <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/slider-tabs.js') }}"></script>
-    <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/lodash.min.js') }}"></script>
+    @include('layouts.partials.lodash')
     <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/utility.min.js') }}"></script>
     <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/setting.min.js') }}"></script>
     <script nonce="{{ $cspNonce ?? '' }}" src="{{ asset('js/setting-init.js') }}"></script>
