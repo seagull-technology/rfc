@@ -394,8 +394,45 @@
                 });
             });
 
-            const requestedFieldset = Number.parseInt(form.dataset.validationFocusFieldset || "0", 10);
-            const requestedTabId = form.dataset.validationFocusTab || "";
+            let serverErrorFields = [];
+
+            try {
+                const fields = JSON.parse(form.dataset.validationErrorFields || "[]");
+                serverErrorFields = Array.isArray(fields) ? fields.filter(function (field) {
+                    return typeof field === "string";
+                }) : [];
+            } catch (_error) {
+                // An invalid hint must not stop the form's ordinary navigation.
+            }
+
+            const serverErrorControls = [];
+            const availableServerControls = Array.from(form.querySelectorAll("input[name], select[name], textarea[name]"))
+                .filter(function (control) {
+                    return !control.disabled && control.type !== "hidden" && !control.closest(".legacy-annex-inline");
+                });
+
+            serverErrorFields.forEach(function (field) {
+                const matches = availableServerControls.filter(function (control) {
+                    const name = control.name.replace(/\[([^\]]*)\]/g, ".$1").replace(/\.$/, "");
+
+                    return name === field || name.startsWith(field + ".");
+                });
+
+                matches.forEach(function (control) {
+                    control.classList.add("is-invalid");
+                    control.setAttribute("aria-invalid", "true");
+                    if (!serverErrorControls.includes(control)) {
+                        serverErrorControls.push(control);
+                    }
+                });
+            });
+
+            const firstServerErrorControl = serverErrorControls[0];
+            const serverErrorFieldset = firstServerErrorControl?.closest("fieldset");
+            const requestedFieldset = serverErrorFieldset
+                ? fieldsets.indexOf(serverErrorFieldset)
+                : Number.parseInt(form.dataset.validationFocusFieldset || "0", 10);
+            const requestedTabId = firstServerErrorControl?.closest(".tab-pane")?.id || form.dataset.validationFocusTab || "";
             const requestedTabIndex = requestedTabId
                 ? innerTabButtons.findIndex(function (button) {
                     return button.getAttribute("data-bs-target") === "#" + requestedTabId;
@@ -407,7 +444,14 @@
                 requestedTabIndex >= 0 ? requestedTabIndex : activeInnerTabIndex()
             );
 
-            const requestedDrawerId = form.dataset.validationFocusDrawer || "";
+            const requestedDrawerId = firstServerErrorControl?.closest(".application-annex-offcanvas")?.id || form.dataset.validationFocusDrawer || "";
+
+            serverErrorControls.forEach(function (control) {
+                const drawer = control.closest(".application-annex-offcanvas");
+                const row = drawer && form.querySelector('[data-requirement-target="' + CSS.escape(drawer.id) + '"]');
+
+                row?.classList.add("table-danger");
+            });
 
             if (requestedDrawerId) {
                 window.requestAnimationFrame(function () {
@@ -416,7 +460,12 @@
                     if (requirementRow) {
                         requirementRow.classList.add("table-danger");
                         requirementRow.scrollIntoView({ behavior: "auto", block: "center" });
+                        requirementRow.querySelector("button")?.focus({ preventScroll: true });
                     }
+                });
+            } else if (firstServerErrorControl) {
+                window.requestAnimationFrame(function () {
+                    showInvalidControl(firstServerErrorControl);
                 });
             }
 

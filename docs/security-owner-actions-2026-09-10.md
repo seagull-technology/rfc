@@ -2,17 +2,33 @@
 
 Prepared 10 September 2026. Draft only; no email has been sent.
 
-**Not ready to send.** Updated 12 September: application fixes and further
-verification remain in progress. Finalize this draft after the application
-deployment and remaining checks in the latest verification record are complete.
+**NOT READY TO SEND.** Updated 12 September: v3 deployment and the Windows
+internal checks completed. V4's mail-scheme and form-navigation fixes passed
+456 local PHP tests / 4,398 assertions, five isolated browser regressions and
+14 portable wrapper check groups; v4 is not yet recorded deployed. Final form
+submissions, remaining live checks and provider delivery are incomplete.
+Finalize this draft only after the latest verification record is complete.
 
 **Subject:** Filmjordan security retest — admin and infrastructure actions
 
 Dear Administration and Infrastructure Teams,
 
 The following infrastructure findings were observed on the Windows test
-environment serving `filmjordan.jo`. Please address these items before the
-security retest and provide the supporting evidence described below.
+environment serving `filmjordan.jo`. V3 was deployed on 12 September; its internal
+controller/database-concurrency checks and 16 workflow checks in each language
+passed, and the existing worker remained Running/Automatic. Those isolated
+checks do not establish public browser or provider-delivery behavior. Please
+address the infrastructure items below before the security retest and provide
+the supporting evidence described.
+
+Controlled production/scouting draft creation and edits now have passing browser
+samples: invalid input was retained, corrected drafts saved, and a retained
+scouting PDF downloaded with recorded size and hash. Final submission remains untested
+pending the mail fix. The upload route accepted five responses before returning
+429, but exact stored document counts were not independently visible. Temporary
+test membership was removed and the administrator's original context restored;
+the drafts remain for final checks. Browser control has recovered; native
+console/AnyDesk access still requires the established manual deployment path.
 
 ## Confirmed failures requiring correction
 
@@ -27,9 +43,11 @@ protocols, CBC suites and static-RSA key exchange; retain modern TLS 1.2 with
 AEAD encryption and ephemeral key exchange. Synchronize serving/HA peers.
 Provide the listener/address inventory and independent before/after enumeration.
 The measured endpoint fails V11; alternate listeners, standby nodes and the
-internal TLS hop have not been verified.
+internal TLS hop have not been verified. No TLS protocol/cipher enumeration was
+repeated after v3; application deployment does not change that result.
 
-**V07/V08/V10/V12 — gateway cookies:** The public HTTPS sign-in response emitted:
+**V07/V08/V10/V12 — gateway cookies:** The fresh post-v3 public HTTPS sign-in
+response on 12 September at 12:56 UTC still emitted:
 
 | Cookie | Required correction |
 | --- | --- |
@@ -51,14 +69,31 @@ fixed backend pools, removes untrusted forwarded-host headers, and restricts
 origin ingress and outbound/DNS access appropriately. Coordinate a controlled
 callback test with timestamp-correlated gateway, resolver and firewall logs.
 Acceptance requires early rejection **and no DNS/HTTP callback**; HTTP 400 alone
-is insufficient.
+is insufficient. All eight public response cases passed again after v3: two
+canonical requests returned 200 and six untrusted Host/forwarding cases returned
+400 without redirects. No callback collector or correlated owner logs were used.
 
 **V04/V06/V09 — infrastructure coverage:** Confirm all application nodes share
 the intended release, persistent limiter store and cache prefix. Identify any
-edge caches and invalidate legacy Lodash copies when the application team
-provides the final asset URL. One public asset sample already matched; application
-URL versioning is tested locally and awaits deployment. Confirm worker monitoring, private
-log retention and coordinated restart recovery; reboot recovery remains untested.
+edge caches and invalidate applicable legacy Lodash copies. Versioning is now
+deployed: normal and versioned public asset URLs matched the release SHA-256,
+and authenticated Chrome showed the versioned URL with runtime 4.18.1. The
+version query is `v=5077f114118a0f8eeec6c1a302964c3b700db95cc0f37412e5c83fae0d1283d9`.
+The sampled responses retain a 30-day max-age; confirm query-string cache
+behavior and release coverage on every node. Confirm worker monitoring, private
+log retention and coordinated restart/reboot recovery; one healthy worker during
+deployment does not prove those recovery controls.
+
+**Application delivery follow-up, still in progress:** V3 corrected the default
+mailer from `SMTP` to `smtp`; a fresh browser approval now succeeds with one
+history/inbox entry and stale actions are blocked. The worker audit exposed a
+separate uppercase SMTP scheme setting, with three failed email attempts. Its
+narrow correction is locally verified for v4, including one unambiguous URL
+scheme override with credentials preserved; deployment and real delivery
+verification remain pending. V4 also fixes form error navigation. Do not treat the passing
+internal tests as successful external delivery or repeat the completed review.
+Any infrastructure mail-relay request will be finalized after that correction
+and its controlled delivery evidence are reviewed.
 
 **Separate operational item:** No `RFC Laravel Scheduler` task was found. Check
 for an equivalent scheduler before creating anything. Review staging recipients

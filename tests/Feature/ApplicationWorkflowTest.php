@@ -6222,6 +6222,27 @@ class ApplicationWorkflowTest extends TestCase
         $application->refresh();
     }
 
+    public function test_invalid_draft_exposes_server_error_fields_for_wizard_navigation_without_losing_input(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+        [$user] = $this->createApplicantContext();
+
+        $this->actingAs($user)->from(route('applications.create'))
+            ->post(route('applications.store'), ['project_name' => 'Browser validation navigation'])
+            ->assertRedirect(route('applications.create'))
+            ->assertSessionHasErrors(['production_terms_accepted', 'work_content_summary_synopsis']);
+
+        $response = $this->get(route('applications.create'))->assertOk();
+        $response->assertSee('value="Browser validation navigation"', false);
+        preg_match('/data-validation-error-fields="([^"]*)"/', $response->getContent(), $matches);
+        $this->assertNotEmpty($matches[1] ?? null);
+        $fields = json_decode(html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertContains('production_terms_accepted', $fields);
+        $this->assertContains('work_content_summary_synopsis', $fields);
+        $this->assertNotContains('project_name', $fields);
+    }
+
     /**
      * @param  array<string, mixed>  $userOverrides
      * @param  array<string, mixed>  $entityOverrides

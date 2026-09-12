@@ -4,9 +4,11 @@ namespace App\Console\Commands;
 
 use App\Http\Middleware\ValidateCsrfToken;
 use App\Support\ApprovedOutboundUrl;
+use App\Support\SmtpUrl;
 use Composer\InstalledVersions;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Mail\MailManager;
 use Illuminate\Routing\Route;
 use Illuminate\Support\ConfigurationUrlParser;
 use Illuminate\Support\Facades\RateLimiter;
@@ -141,6 +143,10 @@ class VerifyProductionSecurity extends Command
         $configuration = $mailers[$mailer];
         if (isset($configuration['url'])) {
             try {
+                if (($configuration['transport'] ?? null) === 'smtp' && is_string($configuration['url'])
+                    && SmtpUrl::hasAmbiguousScheme($configuration['url'])) {
+                    return ['The selected mailer URL must not contain duplicate or array-valued scheme query options; use one scalar scheme without sharing credentials.'];
+                }
                 // Match MailManager's URL overrides without resolving a transport.
                 $configuration = (new ConfigurationUrlParser)->parseConfiguration($configuration);
                 $configuration['transport'] = $configuration['driver'] ?? null;
@@ -149,12 +155,29 @@ class VerifyProductionSecurity extends Command
             }
         }
 
+        if (($mailers[$mailer]['transport'] ?? null) === 'smtp'
+            && ($configuration['transport'] ?? null) !== 'smtp') {
+            return ['The selected SMTP mailer URL must use smtp://; select implicit TLS with MAIL_SCHEME=smtps or the URL scheme=smtps query option.'];
+        }
+
         if (($configuration['transport'] ?? null) === 'smtp') {
+            $scheme = $configuration['scheme'] ?? null;
+            if ($scheme !== null && $scheme !== '' && ! in_array($scheme, ['smtp', 'smtps'], true)) {
+                return ['The effective SMTP scheme must be smtp or smtps (lowercase); review MAIL_SCHEME and any MAIL_URL scheme query override without sharing credentials.'];
+            }
+
             $timeout = $configuration['timeout'] ?? null;
 
             if (! is_numeric($timeout) || ! is_finite((float) $timeout)
                 || (float) $timeout <= 0 || (float) $timeout > 30) {
                 return ['The selected SMTP mailer must use a finite positive socket timeout of at most 30 seconds (MAIL_TIMEOUT for the bundled smtp mailer).'];
+            }
+
+            try {
+                // Construction validates Symfony options but never opens the socket.
+                (new MailManager(app()))->createSymfonyTransport($configuration);
+            } catch (Throwable) {
+                return ['The selected SMTP transport could not be constructed; review its scheme, host, port and options without sharing credentials.'];
             }
         }
 

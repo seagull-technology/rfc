@@ -69,12 +69,41 @@ try {
     if (!is_string($default) || !is_array($mailers)) {
         throw new RuntimeException('Unexpected mailer configuration shape.');
     }
+    $selected = $mailers[$default] ?? null;
+    $smtpSelected = is_array($selected) && ($selected['transport'] ?? null) === 'smtp';
+    $smtpSchemeSupported = false;
+    $smtpConstructible = false;
+    if ($smtpSelected) {
+        try {
+            if (isset($selected['url'])) {
+                if (is_string($selected['url']) && class_exists(App\Support\SmtpUrl::class)
+                    && App\Support\SmtpUrl::hasAmbiguousScheme($selected['url'])) {
+                    throw new RuntimeException('Ambiguous SMTP scheme query options.');
+                }
+                $selected = (new Illuminate\Support\ConfigurationUrlParser)->parseConfiguration($selected);
+                $selected['transport'] = $selected['driver'] ?? null;
+            }
+            $scheme = $selected['scheme'] ?? null;
+            $smtpSchemeSupported = ($selected['transport'] ?? null) === 'smtp'
+                && ($scheme === null || $scheme === '' || in_array($scheme, ['smtp', 'smtps'], true));
+            if ($smtpSchemeSupported) {
+                // Build the transport only; this never opens the SMTP socket or sends mail.
+                (new Illuminate\Mail\MailManager($app))->createSymfonyTransport($selected);
+                $smtpConstructible = true;
+            }
+        } catch (Throwable) {
+            // Return booleans only, including when a malformed URL contains credentials.
+        }
+    }
     echo json_encode([
         'schema' => 'rfc-mailer-state-v1',
         'default_is_upper_smtp' => $default === 'SMTP',
         'default_is_lower_smtp' => $default === 'smtp',
         'lower_smtp_defined' => isset($mailers['smtp']) && is_array($mailers['smtp']),
         'upper_smtp_defined' => array_key_exists('SMTP', $mailers),
+        'smtp_transport_selected' => $smtpSelected,
+        'smtp_scheme_supported' => $smtpSchemeSupported,
+        'smtp_transport_constructible' => $smtpConstructible,
         'configuration_cached' => $app->configurationIsCached(),
         'process_mailer_override_present' => $processOverride,
         'alternate_environment_file_present' => is_string($externalEnvironment) && is_file($root.'/.env.'.$externalEnvironment),
@@ -88,10 +117,18 @@ try {
     $json = Invoke-RfcVerificationNative $Executable @("-d", "display_errors=0", $scriptPath, $Directory) (Join-Path $EvidenceDirectory "mailer-$Phase.json") "Mailer configuration $Phase"
     try { $state = $json | ConvertFrom-Json } catch { throw "Mailer configuration $Phase did not return the expected safe JSON." }
     if ($state.schema -ne "rfc-mailer-state-v1") { throw "Unexpected mailer configuration result." }
-    foreach ($field in @("default_is_upper_smtp", "default_is_lower_smtp", "lower_smtp_defined", "upper_smtp_defined", "configuration_cached", "process_mailer_override_present", "alternate_environment_file_present")) {
+    foreach ($field in @("default_is_upper_smtp", "default_is_lower_smtp", "lower_smtp_defined", "upper_smtp_defined", "smtp_transport_selected", "smtp_scheme_supported", "smtp_transport_constructible", "configuration_cached", "process_mailer_override_present", "alternate_environment_file_present")) {
         if ($state.$field -isnot [bool]) { throw "Incomplete mailer configuration result." }
     }
     return $state
+}
+
+function Assert-RfcActiveSmtpTransport {
+    param([object] $ActiveState)
+    if ($ActiveState.smtp_transport_selected -eq $true -and
+        ($ActiveState.smtp_scheme_supported -ne $true -or $ActiveState.smtp_transport_constructible -ne $true)) {
+        throw "The deployed SMTP transport is invalid. Review effective MAIL_SCHEME and MAIL_URL overrides; no credentials or mail were sent by this check."
+    }
 }
 
 function Repair-RfcSmtpMailerEnvironment {
@@ -342,6 +379,9 @@ try {
     if ($summary.mailer_repair.require_smtp_after_deploy -and ($summary.mailer_after.default_is_lower_smtp -ne $true -or $summary.mailer_after.lower_smtp_defined -ne $true)) {
         throw "Deployment did not activate the corrected smtp configuration. Inspect server-level environment overrides before retrying."
     }
+    # Recognized MAIL_SCHEME case is normalized by the new config on cache rebuild.
+    # Do not rewrite .env/MAIL_URL or credentials to perform that normalization.
+    Assert-RfcActiveSmtpTransport $summary.mailer_after
     Invoke-RfcVerificationNative $PhpExe @((Join-Path $AppPath "artisan"), "security:production-check", "--no-interaction") (Join-Path $evidenceDirectory "configuration-check.log") "Production configuration check" | Out-Null
 
     Write-Host "Running isolated controller, identity and concurrency checks; response checks cover Arabic and English."

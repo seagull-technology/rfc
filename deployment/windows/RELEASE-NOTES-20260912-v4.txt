@@ -1,0 +1,64 @@
+RFC staging verification corrections - 2026-09-12 v4
+
+PURPOSE
+The deployed v3 fixed the registration review HTTP 500 and passed the Windows
+internal/concurrency checks. Its first public approval returned successfully,
+saved one decision/inbox entry, and rejected both stale review replays. The live
+worker audit then exposed a separate uppercase SMTP connection-scheme setting.
+Browser testing also found that production validation errors preserved input but
+left the user on General Information instead of the affected requirements step.
+This release corrects those two observed problems and includes all v3 changes.
+
+CHANGES
+- Normalize recognized SMTP/SMTPS case in MAIL_SCHEME and a single MAIL_URL
+  scheme query value. Only recognized protocol spans change; credentials and
+  unrelated URL bytes remain unchanged. Ambiguous duplicate/array/malformed
+  scheme parameters and unsupported values fail preflight with redacted output.
+- Construct the selected SMTP transport during production validation without
+  opening a connection. Check the effective scheme and constructibility again
+  after deployment/cache rebuild. This catches the observed scheme error before
+  a successful deployment is reported. It does not prove SMTP authentication,
+  relay connectivity, or actual delivery.
+- Use server validation error keys to select the appropriate production form
+  step/tab, highlight affected requirement rows and focus their Fill button.
+  Hidden legacy duplicates are ignored. Existing validation and old-input
+  preservation remain in effect. The wizard asset uses its existing file-time
+  URL version so the changed script is requested after deployment.
+
+DEPLOYMENT
+Target: existing RFCtgWeb staging server, C:\inetpub\rfc, IIS site/pool RFC,
+C:\php\php.exe and the existing RFCQueueWorker service. Use the supplied v4
+ZIP/checksums and Deploy-RfcStagingVerification.ps1 wrapper as in the successful
+v3 deployment. Do not reinstall NSSM or create another worker.
+
+This scheme correction requires no .env edit: the normal configuration-cache
+rebuild applies it. The prior narrowly guarded MAIL_MAILER=SMTP repair remains
+available, but is a no-op when the already-corrected setting is smtp. Existing
+environment/storage preservation, application rollback, private evidence and
+exact internal-fixture cleanup remain in force. The staging owner waived an
+additional database backup. No migrations or new service are added.
+
+The wrapper repeats its internal controller checks, real database concurrency,
+and 16 workflow checks in each language. It requires one Running/Automatic
+managed worker. Read its summary before retrying: a verification failure can
+occur after a successful deployment. Keep raw logs/environment backups private.
+
+This release does not retry historical failed jobs or repeat saved registration
+decisions. Use fresh controlled delivery tests after the configuration repair.
+Notification jobs remain at-least-once delivery; provider receipt is a separate
+verification step. Browser fixtures are reserved for the remaining retest.
+
+LOCAL VERIFICATION OF THE FINAL COMBINED SOURCE
+- 456 PHP tests passed, 4,398 assertions, PHP 8.3.32.
+- Five real-browser wizard regressions passed. The old script fails four
+  error-navigation cases while the fresh-form control still passes.
+- Fourteen portable deployment-wrapper check groups passed.
+- Formatting, syntax and diff checks passed.
+
+These local results do not claim v4 is already deployed. After deployment,
+repeat the public invalid-save navigation, final submission, fresh notification
+delivery and remaining account/limiter checks. The known gateway cookie and
+public TLS defects remain infrastructure-owner work. V01 remains excluded by
+agreement while the supplier/security team handles their internal report action.
+The infrastructure email draft is not ready to send until application testing
+and delivery verification are completed.

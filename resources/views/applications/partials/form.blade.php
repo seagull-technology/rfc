@@ -192,6 +192,7 @@
     data-validation-focus-tab="{{ data_get(session('application_validation_focus'), 'tab') }}"
     data-validation-focus-drawer="{{ data_get(session('application_validation_focus'), 'drawer') }}"
     data-has-server-validation-errors="{{ $errors->any() ? '1' : '0' }}"
+    data-validation-error-fields="{{ json_encode($errors->keys()) }}"
 >
     @csrf
 

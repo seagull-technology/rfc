@@ -6,7 +6,7 @@ $tokens = $null
 $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $ScriptPath).Path, [ref] $tokens, [ref] $parseErrors)
 if ($parseErrors.Count) { throw (($parseErrors | ForEach-Object { $_.Message }) -join [Environment]::NewLine) }
-foreach ($name in @("Write-RfcPrivateText", "Invoke-RfcVerificationNative", "Get-RfcActiveMailerState", "Repair-RfcSmtpMailerEnvironment", "Read-RfcVerifiedBundle", "Assert-RfcRuntimeFile", "Assert-RfcWorkflowResult")) {
+foreach ($name in @("Write-RfcPrivateText", "Invoke-RfcVerificationNative", "Get-RfcActiveMailerState", "Assert-RfcActiveSmtpTransport", "Repair-RfcSmtpMailerEnvironment", "Read-RfcVerifiedBundle", "Assert-RfcRuntimeFile", "Assert-RfcWorkflowResult")) {
     $definition = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) |
         Where-Object { $_.Name -eq $name } | Select-Object -First 1
     if (-not $definition) { throw "Missing helper: $name" }
@@ -40,6 +40,7 @@ function New-TestMailerState {
     return [pscustomobject] @{
         schema = "rfc-mailer-state-v1"; default_is_upper_smtp = $true; default_is_lower_smtp = $false
         lower_smtp_defined = $true; upper_smtp_defined = $false; configuration_cached = $true
+        smtp_transport_selected = $false; smtp_scheme_supported = $false; smtp_transport_constructible = $false
         process_mailer_override_present = $false; alternate_environment_file_present = $false
     }
 }
@@ -197,6 +198,47 @@ return new class {
     $state = Get-RfcActiveMailerState "php" $phpRoot $testRoot "fixture"
     Assert-True ($state.default_is_upper_smtp -and $state.lower_smtp_defined -and -not $state.upper_smtp_defined -and $state.configuration_cached) "Active PHP mailer preflight returned incorrect safe state."
     Assert-True ([IO.File]::ReadAllText((Join-Path $testRoot "mailer-fixture.json")) -notmatch 'private-config-marker') "Mailer preflight printed a private configuration value."
+
+    # Real installed Symfony/Laravel classes construct a transport but never connect.
+    $autoloadPath = (Resolve-Path (Join-Path $PSScriptRoot "../../vendor/autoload.php")).Path.Replace("\", "/").Replace("'", "\'")
+    Write-RfcPrivateText (Join-Path $phpRoot "vendor/autoload.php") ("<?php require '" + $autoloadPath + "';")
+    $smtpBootstrap = @'
+<?php
+$app = new Illuminate\Foundation\Application(dirname(__DIR__));
+$app->instance('config', new Illuminate\Config\Repository(['mail' => ['default' => 'smtp', 'mailers' => ['smtp' => [
+    'transport' => 'smtp', 'scheme' => '__SCHEME__', 'host' => 'mail.example.invalid', 'port' => 2525,
+    'timeout' => 30, 'username' => 'private-config-marker', 'password' => 'private-config-marker',
+    'url' => __URL__,
+]]]]));
+$app->instance(Illuminate\Contracts\Console\Kernel::class, new class { public function bootstrap(): void {} });
+return $app;
+'@
+    foreach ($scheme in @('SMTP', 'SMTPS', 'smtp', 'smtps', 'https')) {
+        Write-RfcPrivateText (Join-Path $phpRoot "bootstrap/app.php") ($smtpBootstrap.Replace('__SCHEME__', $scheme).Replace('__URL__', 'null'))
+        $state = Get-RfcActiveMailerState "php" $phpRoot $testRoot "scheme-fixture"
+        $valid = $scheme -cin @('smtp', 'smtps')
+        Assert-True ($state.smtp_transport_selected -and $state.smtp_scheme_supported -eq $valid -and $state.smtp_transport_constructible -eq $valid) "Cached SMTP scheme validation disagrees with real transport construction."
+        if ($valid) { Assert-RfcActiveSmtpTransport $state }
+        else { Assert-Throws { Assert-RfcActiveSmtpTransport $state } "Invalid cached scheme must block successful verification." }
+        Assert-True ([IO.File]::ReadAllText((Join-Path $testRoot "mailer-scheme-fixture.json")) -notmatch 'private-config-marker|mail.example.invalid') "Scheme validation printed private configuration."
+    }
+    $checks++
+
+    foreach ($url in @(
+        "smtp://private-config-marker:private-config-marker@mail.example.invalid:2525?scheme=SMTP",
+        "smtp://private-config-marker:private-config-marker@mail.example.invalid:2525?local_domain[]=private-config-marker",
+        "smtp://private-config-marker:private-config-marker@mail.example.invalid:2525?scheme=smtp&%73cheme=smtps",
+        "smtp://private-config-marker:private-config-marker@mail.example.invalid:2525?scheme[]=smtp",
+        "smtps://private-config-marker:private-config-marker@mail.example.invalid:465"
+    )) {
+        Write-RfcPrivateText (Join-Path $phpRoot "bootstrap/app.php") ($smtpBootstrap.Replace('__SCHEME__', 'smtp').Replace('__URL__', ("'" + $url + "'")))
+        $state = Get-RfcActiveMailerState "php" $phpRoot $testRoot "url-fixture"
+        Assert-True ($state.smtp_transport_selected -and -not $state.smtp_transport_constructible) "An invalid URL override must not pass transport verification."
+        Assert-Throws { Assert-RfcActiveSmtpTransport $state } "Invalid effective URL configuration must block successful verification."
+        Assert-True ([IO.File]::ReadAllText((Join-Path $testRoot "mailer-url-fixture.json")) -notmatch 'private-config-marker|mail.example.invalid') "URL validation printed private configuration."
+    }
+    $checks++
+
     Write-RfcPrivateText (Join-Path $phpRoot "vendor/autoload.php") "<?php throw new RuntimeException('private-config-marker');"
     $caught = $null
     try { Get-RfcActiveMailerState "php" $phpRoot $testRoot "failed-fixture" | Out-Null } catch { $caught = $_.Exception.Message }

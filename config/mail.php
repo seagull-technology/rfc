@@ -1,5 +1,19 @@
 <?php
 
+use App\Support\SmtpUrl;
+
+$smtpScheme = env('MAIL_SCHEME');
+$smtpUrl = env('MAIL_URL');
+
+// Protocol names are case-insensitive; Symfony's SMTP factory requires lowercase.
+// Change only recognized schemes, never URL credentials or unrelated query values.
+if (is_string($smtpScheme) && in_array(strtolower($smtpScheme), ['smtp', 'smtps'], true)) {
+    $smtpScheme = strtolower($smtpScheme);
+}
+if (is_string($smtpUrl)) {
+    $smtpUrl = SmtpUrl::normalizeKnownSchemes($smtpUrl);
+}
+
 return [
 
     /*
@@ -39,8 +53,8 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => env('MAIL_SCHEME'),
-            'url' => env('MAIL_URL'),
+            'scheme' => $smtpScheme,
+            'url' => $smtpUrl,
             'host' => env('MAIL_HOST', '127.0.0.1'),
             'port' => env('MAIL_PORT', 2525),
             'username' => env('MAIL_USERNAME'),
