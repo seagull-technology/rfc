@@ -1,0 +1,124 @@
+RFC staging security verification release - 2026-09-12 v3
+
+PURPOSE
+Deploy the registration notification correction and narrowly repair the confirmed
+SMTP mailer-name error, then repeat the included internal verification. This
+package supersedes v2 and includes its Lodash cache-versioning and scouting fixes.
+V01 remains excluded; supplier/security-team correspondence is handled internally.
+
+APPLICATION CHANGES
+- Registration review stores the inbox notification, status/history transition
+  and two independent database delivery jobs in the same database transaction.
+  Email and SMS delivery run in the existing worker. A delivery error cannot turn
+  an already committed review into HTTP 500; a failed enqueue rolls back review.
+- External delivery jobs retain the request locale and generated action URLs,
+  attempt delivery at most three times with 15-second backoff, and have a
+  90-second job timeout. SMTP has a default 30-second socket timeout; that socket
+  setting is not an overall delivery-job deadline. Failed jobs and notification
+  audit evidence remain available for a targeted retry after the cause is fixed.
+  This release does not retry old failed jobs or resend earlier notifications.
+- The registration notification queue requires the database driver and the same
+  database connection as the application transaction. DB_QUEUE_CONNECTION must
+  be blank or the same default connection name. The runtime guard rejects a
+  different connection instead of claiming atomic registration/job persistence.
+- All three dashboard layouts share a Lodash include whose SHA-256 URL query
+  changes when asset bytes change, even if file modification times do not.
+- Scouting create/update accepts omitted optional dates, story text and
+  other-production-type text without the previous undefined-key HTTP 500.
+- Two CLI-only verification helpers use process-local notification/mail/job/SMS
+  and HTTP fakes. These fakes do not change the normal website or queue worker.
+
+EXISTING SERVER
+Target: RFCtgWeb, IIS site RFC, application C:\inetpub\rfc, PHP C:\php\php.exe.
+RFCQueueWorker must already be Running/Automatic under its dedicated virtual
+service account, with exactly one managed PHP worker for this application. The
+launcher checks that state before/after deployment and after verification. Do not
+rerun the installer, change the service account, or create another worker.
+
+The owner waived an additional database backup for this staging release. The
+standard deployer preserves .env/storage, pauses writers, retains the previous
+application and handles a failed application swap. No migration or access-control
+seeding is added. Existing approved registration decisions must not be repeated
+just to test delivery; use a new controlled pending record for a browser review.
+
+NARROW MAILER CONFIGURATION REPAIR
+Before deployment, a CLI preflight reads the active Laravel mailer configuration
+and emits only booleans, never mail credentials. When the default is exactly SMTP,
+no custom SMTP mailer exists, and lowercase smtp is configured, the launcher
+checks that .env contains exactly one explicit MAIL_MAILER assignment. A literal
+SMTP value becomes smtp; an already lowercase value is left alone and waits for
+the deployment's normal configuration-cache refresh. Quotes and whitespace are
+retained. Other mailer names are never lowercased.
+
+The repair changes only those four letters in the existing file, preserving its
+encoding/BOM, line endings and other settings. It first saves and verifies the
+original bytes in the protected evidence directory. Duplicate assignments,
+inline comments on MAIL_MAILER, multiline values, conflicting values, process
+overrides and alternate environment files stop automatic repair for review.
+After deployment, the launcher verifies that the active default is now smtp.
+
+The original backup contains credentials: keep env-before-mailer-repair.private.bak
+private. If deployment subsequently fails, the corrected lowercase setting stays
+in place; reverting a release must not silently restore the known invalid mailer
+name. Existing cached configuration may still need the successful deployment
+refresh. A failed file edit itself restores the original bytes before stopping.
+
+DEPLOY AND VERIFY
+Transfer and extract the immutable v3 ZIP under C:\Deploy after verifying the
+separately supplied ZIP hash. Run in Administrator PowerShell:
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Deploy\rfc-offline-release-20260912-v3\Deploy-RfcStagingVerification.ps1" -ReleaseDirectory "C:\Deploy\rfc-offline-release-20260912-v3" -ExpectedChecksumsSha256 "SUPPLIED_SHA256_OF_SHA256SUMS_TXT"
+
+ExpectedChecksumsSha256 is the separately delivered SHA-256 of SHA256SUMS.txt,
+not the ZIP or application archive hash. The launcher verifies that inventory,
+each bundle file and its own bytes, then calls the existing Deploy-RfcRelease.ps1
+interface with the verified application archive hash.
+
+The controller/identity helper runs once and compares Arabic/English responses;
+database concurrency is not skipped. The workflow helper then runs separately
+for ar and en with real CSRF middleware active. Its checks cover form/logo/error
+navigation, PDF upload, corrected save, edit, submission and omitted scouting
+fields. Each helper's exit status and exact cleanup evidence are checked. The
+controller helper deletes only its marked fixtures; workflow transactions roll
+back and their temporary files are removed.
+
+PRIVATE EVIDENCE AND FAILURE HANDLING
+Each evidence directory under C:\ProgramData\RFC\SecurityVerification is
+restricted to Administrators and SYSTEM before logs or backups are written.
+Do not email raw deployment-private.log or the environment backup. Deployment
+output can contain a temporary maintenance bypass URL. The launcher prints and
+saves a concise summary.json; workflow JSON and controller-results.json provide
+bounded internal results. Original controller evidence remains in private storage.
+
+Exit 0: deployment and included internal checks completed, including concurrency.
+Exit 2: deployment completed but concurrency was not proven.
+Exit 1: deployment or verification failed; inspect the summary and named private
+log. A verification failure after successful deployment leaves the new release
+deployed. The worker is not reinstalled. Do not repeat deployment blindly when
+only a verification check failed.
+
+LOCAL VALIDATION
+- Final v3 full application suite: 426 tests passed, 4268 assertions (12 September).
+- Prior v2 full application baseline: 395 tests passed, 4035 assertions.
+- V3 focused notification/registration/admin/auth/application checks: 190 tests
+  passed, 2475 assertions, including six database-queue integration regressions.
+  These cover the exact undefined SMTP mailer, isolated delivery failure,
+  targeted failed-job recovery, rollback on second enqueue, and review decisions.
+- Standalone workflow CLI baseline: 16 checks passed in each locale on isolated
+  SQLite with rollback and temporary-file cleanup verified.
+- Wrapper: syntax parsed and 12 portable check groups passed on PowerShell 7.4.19.
+  Real temporary .env tests cover UTF-8 with/without BOM, UTF-16 LE/BE with BOM,
+  CRLF, Unicode, quoted values, exact backups, existing lowercase cache drift,
+  refused ambiguous syntax and unchanged unrelated values. PHP preflight output
+  and bootstrap failures were checked for configuration-value suppression.
+  This is not a claim of Windows PowerShell 5.1/IIS execution of the new wrapper.
+
+STILL REQUIRES PUBLIC VERIFICATION
+The isolated helpers intentionally suppress outbound delivery. They cannot prove
+the real SMTP account or SMS provider works; verify a fresh controlled browser
+review and its worker/audit result after deployment. Internal checks also do not
+close public timing, browser JavaScript, shared/all-node limits, gateway cookies,
+DNS/HTTP callbacks or public TLS policy. Previously measured TLS 1.0/1.1 and
+CBC/static-RSA acceptance, plus gateway cookie defects, remain open pending their
+owners' changes and independent retesting. The absent named scheduler remains an
+operational item; this release does not enable it or change recipients.

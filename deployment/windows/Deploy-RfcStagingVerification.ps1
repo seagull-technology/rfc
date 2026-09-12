@@ -31,7 +31,7 @@ function Write-RfcPrivateText {
 
 function Invoke-RfcVerificationNative {
     param([string] $Executable, [string[]] $Arguments, [string] $LogPath, [string] $Label)
-    $application = Get-Command -Name $Executable -CommandType Application -ErrorAction Stop
+    $application = Get-Command -Name $Executable -CommandType Application -ErrorAction Stop | Select-Object -First 1
     $previousPreference = $ErrorActionPreference
     $global:LASTEXITCODE = $null
     try {
@@ -48,6 +48,162 @@ function Invoke-RfcVerificationNative {
         throw "$Label failed (exit $nativeExitCode). Private output: $LogPath"
     }
     return $text
+}
+
+function Get-RfcActiveMailerState {
+    param([string] $Executable, [string] $Directory, [string] $EvidenceDirectory, [string] $Phase)
+    # A file avoids Windows native -r quoting. Only booleans leave this PHP process.
+    $scriptPath = Join-Path $EvidenceDirectory "mailer-state.php"
+    $php = @'
+<?php
+declare(strict_types=1);
+try {
+    $root = rtrim($argv[1], '/\\');
+    $processOverride = getenv('MAIL_MAILER') !== false || isset($_ENV['MAIL_MAILER']) || isset($_SERVER['MAIL_MAILER']);
+    $externalEnvironment = getenv('APP_ENV');
+    require $root.'/vendor/autoload.php';
+    $app = require $root.'/bootstrap/app.php';
+    $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+    $default = config('mail.default');
+    $mailers = config('mail.mailers');
+    if (!is_string($default) || !is_array($mailers)) {
+        throw new RuntimeException('Unexpected mailer configuration shape.');
+    }
+    echo json_encode([
+        'schema' => 'rfc-mailer-state-v1',
+        'default_is_upper_smtp' => $default === 'SMTP',
+        'default_is_lower_smtp' => $default === 'smtp',
+        'lower_smtp_defined' => isset($mailers['smtp']) && is_array($mailers['smtp']),
+        'upper_smtp_defined' => array_key_exists('SMTP', $mailers),
+        'configuration_cached' => $app->configurationIsCached(),
+        'process_mailer_override_present' => $processOverride,
+        'alternate_environment_file_present' => is_string($externalEnvironment) && is_file($root.'/.env.'.$externalEnvironment),
+    ], JSON_THROW_ON_ERROR).PHP_EOL;
+} catch (Throwable $error) {
+    fwrite(STDERR, "Mailer configuration preflight failed; no configuration values were printed.\n");
+    exit(1);
+}
+'@
+    Write-RfcPrivateText $scriptPath $php
+    $json = Invoke-RfcVerificationNative $Executable @("-d", "display_errors=0", $scriptPath, $Directory) (Join-Path $EvidenceDirectory "mailer-$Phase.json") "Mailer configuration $Phase"
+    try { $state = $json | ConvertFrom-Json } catch { throw "Mailer configuration $Phase did not return the expected safe JSON." }
+    if ($state.schema -ne "rfc-mailer-state-v1") { throw "Unexpected mailer configuration result." }
+    foreach ($field in @("default_is_upper_smtp", "default_is_lower_smtp", "lower_smtp_defined", "upper_smtp_defined", "configuration_cached", "process_mailer_override_present", "alternate_environment_file_present")) {
+        if ($state.$field -isnot [bool]) { throw "Incomplete mailer configuration result." }
+    }
+    return $state
+}
+
+function Repair-RfcSmtpMailerEnvironment {
+    param([string] $EnvPath, [string] $BackupPath, [object] $ActiveState)
+    if ($ActiveState.default_is_upper_smtp -ne $true) {
+        return [ordered] @{ status = "not-needed"; changed = $false; require_smtp_after_deploy = $false }
+    }
+    if ($ActiveState.upper_smtp_defined -eq $true) {
+        return [ordered] @{ status = "custom-uppercase-mailer-preserved"; changed = $false; require_smtp_after_deploy = $false }
+    }
+    if ($ActiveState.lower_smtp_defined -ne $true) { throw "Automatic mailer correction requires an existing lowercase smtp mailer configuration." }
+    if ($ActiveState.process_mailer_override_present -eq $true -or $ActiveState.alternate_environment_file_present -eq $true) {
+        throw "A process-level mailer override or alternate environment file makes .env correction ambiguous. Review that server configuration; no settings changed."
+    }
+    if ((Get-Item -LiteralPath $EnvPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Automatic mailer correction does not support a linked .env file." }
+
+    $stream = $null
+    $writeAttempted = $false
+    try {
+        # Retain the existing file/ACL and exclude concurrent writers while changing four letters.
+        $stream = [IO.File]::Open($EnvPath, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::Read)
+        if ($stream.Length -gt 1048576) { throw "Automatic mailer correction does not support an .env file larger than 1 MiB." }
+        $original = New-Object byte[] ([int] $stream.Length)
+        $read = 0
+        while ($read -lt $original.Length) {
+            $count = $stream.Read($original, $read, $original.Length - $read)
+            if ($count -eq 0) { throw "Could not read the complete .env file; no settings changed." }
+            $read += $count
+        }
+        $offset = 0
+        $encoding = New-Object System.Text.UTF8Encoding($false, $true)
+        if ($original.Length -ge 4 -and (($original[0] -eq 0xFF -and $original[1] -eq 0xFE -and $original[2] -eq 0 -and $original[3] -eq 0) -or
+            ($original[0] -eq 0 -and $original[1] -eq 0 -and $original[2] -eq 0xFE -and $original[3] -eq 0xFF))) {
+            throw "Automatic mailer correction does not support UTF-32 .env encoding."
+        }
+        if ($original.Length -ge 3 -and $original[0] -eq 0xEF -and $original[1] -eq 0xBB -and $original[2] -eq 0xBF) { $offset = 3 }
+        elseif ($original.Length -ge 2 -and $original[0] -eq 0xFF -and $original[1] -eq 0xFE) {
+            $encoding = New-Object System.Text.UnicodeEncoding($false, $true, $true); $offset = 2
+        }
+        elseif ($original.Length -ge 2 -and $original[0] -eq 0xFE -and $original[1] -eq 0xFF) {
+            $encoding = New-Object System.Text.UnicodeEncoding($true, $true, $true); $offset = 2
+        }
+        try { $content = $encoding.GetString($original, $offset, $original.Length - $offset) }
+        catch { throw "Automatic mailer correction could not decode the .env encoding; no settings changed." }
+        if ($content.IndexOf([char] 0) -ge 0) { throw "Automatic mailer correction does not support NUL bytes in .env." }
+
+        $assignments = @()
+        foreach ($line in [regex]::Matches($content, '[^\r\n]+')) {
+            if ($line.Value -match '^\s*(?:#|$)') { continue }
+            $separator = $line.Value.IndexOf('=')
+            $rawKey = if ($separator -ge 0) { $line.Value.Substring(0, $separator) } else { $line.Value }
+            $key = ($rawKey.Trim() -creplace '^export[ \t]+', '').Trim()
+            if ($key.Length -ge 2 -and (($key[0] -eq '"' -and $key[$key.Length - 1] -eq '"') -or
+                ($key[0] -eq "'" -and $key[$key.Length - 1] -eq "'"))) { $key = $key.Substring(1, $key.Length - 2) }
+            if ($separator -lt 0) {
+                if ($key -ceq "MAIL_MAILER") { throw "MAIL_MAILER requires one explicit single-line assignment; no settings changed." }
+                continue
+            }
+            $value = $line.Value.Substring($separator + 1)
+            $trimmed = $value.TrimStart([char[]] " `t")
+            # Reject multiline quoted values before selecting any matching text within them.
+            if ($trimmed.Length -gt 0 -and $trimmed[0] -in @([char] '"', [char] "'")) {
+                $quote = $trimmed[0]
+                $closed = $false
+                for ($i = 1; $i -lt $trimmed.Length; $i++) {
+                    if ($quote -eq '"' -and $trimmed[$i] -eq '\') { $i++; continue }
+                    if ($trimmed[$i] -eq $quote) { $closed = $true; break }
+                }
+                if (-not $closed) { throw "Automatic mailer correction requires single-line .env values; no settings changed." }
+            }
+            if ($key -ceq "MAIL_MAILER") {
+                $assignments += [pscustomobject] @{ Value = $value; Start = $line.Index + $separator + 1 }
+            }
+        }
+        if ($assignments.Count -ne 1) { throw "Automatic mailer correction requires exactly one active MAIL_MAILER assignment; no settings changed." }
+        $setting = [regex]::Match($assignments[0].Value, '^[ \t]*(?<quote>[''"]?)(?<setting>SMTP|smtp)\k<quote>[ \t]*$')
+        if (-not $setting.Success) { throw "MAIL_MAILER must contain only literal SMTP or smtp, optionally quoted. Inline comments and other values require review; no settings changed." }
+        if ($setting.Groups['setting'].Value -ceq "smtp") {
+            return [ordered] @{ status = "env-already-correct-awaiting-cache-refresh"; changed = $false; require_smtp_after_deploy = $true }
+        }
+        $characterOffset = $assignments[0].Start + $setting.Groups['setting'].Index
+        $byteOffset = $offset + $encoding.GetByteCount($content.Substring(0, $characterOffset))
+        $replacement = $encoding.GetBytes("smtp")
+        if (Test-Path -LiteralPath $BackupPath) { throw "The private pre-repair environment backup already exists; no settings changed." }
+        [IO.File]::WriteAllBytes($BackupPath, $original)
+        if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($BackupPath)) -cne [Convert]::ToBase64String($original)) { throw "Private environment backup verification failed; no settings changed." }
+        $expected = [byte[]] $original.Clone()
+        [Array]::Copy($replacement, 0, $expected, $byteOffset, $replacement.Length)
+        $stream.Position = $byteOffset
+        $writeAttempted = $true
+        $stream.Write($replacement, 0, $replacement.Length)
+        $stream.Flush($true)
+        $stream.Position = 0
+        $verified = New-Object byte[] $original.Length
+        $read = 0
+        while ($read -lt $verified.Length) {
+            $count = $stream.Read($verified, $read, $verified.Length - $read)
+            if ($count -eq 0) { throw "Incomplete mailer correction verification." }
+            $read += $count
+        }
+        if ([Convert]::ToBase64String($verified) -cne [Convert]::ToBase64String($expected)) { throw "Mailer correction byte verification failed." }
+        return [ordered] @{ status = "corrected-uppercase-smtp"; changed = $true; require_smtp_after_deploy = $true; private_backup = $BackupPath }
+    }
+    catch {
+        if ($writeAttempted) {
+            try { $stream.Position = 0; $stream.Write($original, 0, $original.Length); $stream.SetLength($original.Length); $stream.Flush($true) }
+            catch { throw "Mailer correction failed and original bytes could not be restored. Use the private backup: $BackupPath" }
+            throw "Mailer correction failed; original environment bytes were restored. Private backup: $BackupPath"
+        }
+        throw
+    }
+    finally { if ($stream) { $stream.Dispose() } }
 }
 
 function Read-RfcVerifiedBundle {
@@ -163,6 +319,9 @@ try {
     $summary['worker_before'] = Get-RfcHealthyWorker
     $evidenceDirectory = New-RfcPrivateEvidenceDirectory
     $summary['evidence_directory'] = $evidenceDirectory
+    $summary['mailer_before'] = Get-RfcActiveMailerState $PhpExe $AppPath $evidenceDirectory "before"
+    $summary['mailer_repair'] = Repair-RfcSmtpMailerEnvironment (Join-Path $AppPath ".env") (Join-Path $evidenceDirectory "env-before-mailer-repair.private.bak") $summary.mailer_before
+    Write-Host "Mailer configuration preflight: $($summary.mailer_repair.status)."
     Write-Host "Verified package and existing worker. Deploying $($bundle.Manifest.release)."
     $summary.status = "deployment"
     $powerShellExe = Join-Path $env:windir "System32\WindowsPowerShell\v1.0\powershell.exe"
@@ -179,6 +338,10 @@ try {
         "resources/views/layouts/partials/lodash.blade.php", "public/js/lodash.min.js"
     )) { Assert-RfcRuntimeFile $AppPath $bundle.Manifest $relative }
     $summary['worker_after_deploy'] = Get-RfcHealthyWorker
+    $summary['mailer_after'] = Get-RfcActiveMailerState $PhpExe $AppPath $evidenceDirectory "after"
+    if ($summary.mailer_repair.require_smtp_after_deploy -and ($summary.mailer_after.default_is_lower_smtp -ne $true -or $summary.mailer_after.lower_smtp_defined -ne $true)) {
+        throw "Deployment did not activate the corrected smtp configuration. Inspect server-level environment overrides before retrying."
+    }
     Invoke-RfcVerificationNative $PhpExe @((Join-Path $AppPath "artisan"), "security:production-check", "--no-interaction") (Join-Path $evidenceDirectory "configuration-check.log") "Production configuration check" | Out-Null
 
     Write-Host "Running isolated controller, identity and concurrency checks; response checks cover Arabic and English."
@@ -232,6 +395,9 @@ catch {
     }
     else {
         Write-Warning "Deployment was not confirmed successful. Check the private deployment log and current IIS/worker state before retrying."
+    }
+    if ($summary.mailer_repair -and $summary.mailer_repair.changed) {
+        Write-Warning "The narrow SMTP-to-smtp environment correction is retained even if deployment failed. The original private backup is recorded in the summary; active cached configuration may still need a successful deployment refresh."
     }
 }
 finally {

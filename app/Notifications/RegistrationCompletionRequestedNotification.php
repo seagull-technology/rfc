@@ -4,21 +4,28 @@ namespace App\Notifications;
 
 use App\Models\Entity;
 use App\Notifications\Channels\SmsNotificationChannel;
-use Illuminate\Bus\Queueable;
+use App\Notifications\Concerns\QueuesRegistrationDelivery;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 
-class RegistrationCompletionRequestedNotification extends Notification
+class RegistrationCompletionRequestedNotification extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use QueuesRegistrationDelivery;
+
+    private readonly string $completionUrl;
 
     public function __construct(
-        private readonly Entity $entity,
+        Entity $entity,
         private readonly string $decision,
         private readonly ?string $note = null,
     ) {
+        $this->initializeDelivery($entity);
+        $this->completionUrl = URL::temporarySignedRoute('registration.completion.link.edit', now()->addDays(7), [
+            'entity' => $this->registrationSnapshot['id'],
+        ]);
     }
 
     public function via(object $notifiable): array
@@ -36,11 +43,11 @@ class RegistrationCompletionRequestedNotification extends Notification
             'type_key' => $translationPrefix,
             'title' => __('app.notifications.'.$translationPrefix.'_title'),
             'body' => __('app.notifications.'.$translationPrefix.'_body', [
-                'entity' => $this->entity->displayName(),
-                'status' => __('app.statuses.'.$this->entity->status),
+                'entity' => $this->registrationDisplayName(),
+                'status' => __('app.statuses.'.$this->registrationSnapshot['status']),
             ]),
             'url' => $this->signedUrl(),
-            'entity_id' => $this->entity->getKey(),
+            'entity_id' => $this->registrationSnapshot['id'],
         ];
     }
 
@@ -51,10 +58,10 @@ class RegistrationCompletionRequestedNotification extends Notification
         $message = (new MailMessage)
             ->subject(__('app.notifications.'.$translationPrefix.'_mail_subject'))
             ->line(__('app.notifications.'.$translationPrefix.'_mail_intro', [
-                'entity' => $this->entity->displayName(),
+                'entity' => $this->registrationDisplayName(),
             ]))
             ->line(__('app.notifications.'.$translationPrefix.'_mail_status', [
-                'status' => __('app.statuses.'.$this->entity->status),
+                'status' => __('app.statuses.'.$this->registrationSnapshot['status']),
             ]));
 
         if (filled($this->note)) {
@@ -86,8 +93,8 @@ class RegistrationCompletionRequestedNotification extends Notification
     public function auditBody(object $notifiable): string
     {
         return __('app.notifications.'.$this->translationPrefix().'_body', [
-            'entity' => $this->entity->displayName(),
-            'status' => __('app.statuses.'.$this->entity->status),
+            'entity' => $this->registrationDisplayName(),
+            'status' => __('app.statuses.'.$this->registrationSnapshot['status']),
         ]);
     }
 
@@ -103,15 +110,13 @@ class RegistrationCompletionRequestedNotification extends Notification
     {
         return [
             'type' => 'entity',
-            'id' => $this->entity->getKey(),
+            'id' => $this->registrationSnapshot['id'],
         ];
     }
 
     private function signedUrl(): string
     {
-        return URL::temporarySignedRoute('registration.completion.link.edit', now()->addDays(7), [
-            'entity' => $this->entity->getKey(),
-        ]);
+        return $this->completionUrl;
     }
 
     private function translationPrefix(): string

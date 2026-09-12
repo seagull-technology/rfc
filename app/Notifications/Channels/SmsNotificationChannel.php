@@ -5,12 +5,11 @@ namespace App\Notifications\Channels;
 use App\Services\SmsService;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 class SmsNotificationChannel
 {
-    public function __construct(private readonly SmsService $smsService)
-    {
-    }
+    public function __construct(private readonly SmsService $smsService) {}
 
     /**
      * @return array<string, mixed>
@@ -39,7 +38,16 @@ class SmsNotificationChannel
             ];
         }
 
-        return $this->smsService->send(Str::limit($message, 480, ''), (string) $phone);
+        $result = $this->smsService->send(Str::limit($message, 480, ''), (string) $phone);
+
+        if (($notification->retryFailedSmsDelivery ?? false) === true
+            && ($result['ok'] ?? false) !== true
+            && ($result['stage'] ?? null) !== 'invalid_msisdn') {
+            // Only opted-in queued notifications retry; never expose provider data.
+            throw new RuntimeException('Registration SMS delivery failed.');
+        }
+
+        return $result;
     }
 
     private function fallbackMessage(object $notifiable, Notification $notification): string

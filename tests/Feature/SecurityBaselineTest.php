@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class SecurityBaselineTest extends TestCase
@@ -226,7 +227,8 @@ class SecurityBaselineTest extends TestCase
             ->assertFailed();
     }
 
-    public function test_production_check_accepts_a_hardened_runtime(): void
+    #[DataProvider('sharedRegistrationQueueConnections')]
+    public function test_production_check_accepts_a_hardened_runtime(?string $queueDatabaseConnection): void
     {
         app()->detectEnvironment(fn (): string => 'production');
         config([
@@ -241,6 +243,7 @@ class SecurityBaselineTest extends TestCase
             'session.domain' => null,
             'cache.limiter' => 'database',
             'queue.default' => 'database',
+            'queue.connections.database.connection' => $queueDatabaseConnection,
             'security.trusted_proxies' => ['10.0.40.81'],
             'filesystems.disks.local.serve' => false,
             'security.trusted_hosts.enforce' => true,
@@ -259,6 +262,11 @@ class SecurityBaselineTest extends TestCase
         $this->artisan('security:production-check')
             ->expectsOutputToContain('Production security checks passed.')
             ->assertSuccessful();
+    }
+
+    public static function sharedRegistrationQueueConnections(): array
+    {
+        return [[null], [''], ['sqlite']];
     }
 
     public function test_security_evidence_command_generates_private_sbom_and_control_manifest(): void
@@ -316,6 +324,27 @@ class SecurityBaselineTest extends TestCase
 
         $this->artisan('security:production-check')
             ->expectsOutputToContain('QUEUE_CONNECTION must use a durable asynchronous queue')
+            ->assertFailed();
+    }
+
+    public function test_production_check_rejects_a_different_registration_queue_connection_even_with_the_same_settings(): void
+    {
+        config([
+            'database.connections.registration_queue_alias' => config('database.connections.sqlite'),
+            'queue.connections.database.connection' => 'registration_queue_alias',
+        ]);
+
+        $this->artisan('security:production-check')
+            ->expectsOutputToContain('DB_QUEUE_CONNECTION empty or exactly matching the default application database connection name')
+            ->assertFailed();
+    }
+
+    public function test_production_check_rejects_a_database_queue_name_with_a_non_database_driver(): void
+    {
+        config(['queue.connections.database.driver' => 'sync']);
+
+        $this->artisan('security:production-check')
+            ->expectsOutputToContain('Registration delivery requires the database queue driver')
             ->assertFailed();
     }
 }

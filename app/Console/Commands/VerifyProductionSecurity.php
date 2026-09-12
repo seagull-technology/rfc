@@ -8,8 +8,10 @@ use Composer\InstalledVersions;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Routing\Route;
+use Illuminate\Support\ConfigurationUrlParser;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route as RouteFacade;
+use Throwable;
 
 class VerifyProductionSecurity extends Command
 {
@@ -36,6 +38,8 @@ class VerifyProductionSecurity extends Command
             blank(config('session.domain')) ? null : 'SESSION_DOMAIN must be empty/null so the cookie remains host-only.',
             $this->hasSharedRateLimitStore() ? null : 'The rate limiter must use a shared persistent cache store (database, redis, memcached, or dynamodb).',
             $this->hasDurableQueue() ? null : 'QUEUE_CONNECTION must use a durable asynchronous queue (database, redis, sqs, or beanstalkd) for password-reset delivery.',
+            $this->hasRegistrationDatabaseQueue() ? null : 'Registration delivery requires the database queue driver and DB_QUEUE_CONNECTION empty or exactly matching the default application database connection name.',
+            ...$this->invalidMailConfiguration(),
             $this->hasExplicitTrustedProxies() ? null : 'TRUSTED_PROXIES must contain only explicit proxy IP addresses or CIDR ranges; wildcard trust is not allowed.',
             config('filesystems.disks.local.serve') === false ? null : 'FILESYSTEM_LOCAL_SERVE must be false; private files are served by authorized download controllers.',
             config('security.trusted_hosts.enforce') === true ? null : 'TRUSTED_HOSTS_ENFORCE must be true.',
@@ -110,6 +114,51 @@ class VerifyProductionSecurity extends Command
         return is_string($connection) && in_array(config("queue.connections.{$connection}.driver"), [
             'database', 'redis', 'sqs', 'beanstalkd',
         ], true);
+    }
+
+    private function hasRegistrationDatabaseQueue(): bool
+    {
+        $applicationConnection = config('database.default');
+        $queueConnection = config('queue.connections.database.connection');
+
+        return config('queue.connections.database.driver') === 'database'
+            && is_string($applicationConnection) && $applicationConnection !== ''
+            && ($queueConnection === null || $queueConnection === ''
+                || $queueConnection === $applicationConnection);
+    }
+
+    /** @return array<int, string> */
+    private function invalidMailConfiguration(): array
+    {
+        $mailer = config('mail.default');
+        $mailers = config('mail.mailers');
+
+        if (! is_string($mailer) || $mailer === '' || ! is_array($mailers)
+            || ! isset($mailers[$mailer]) || ! is_array($mailers[$mailer])) {
+            return ['MAIL_MAILER must exactly match a configured mail.mailers key (case-sensitive; use smtp for the bundled SMTP mailer).'];
+        }
+
+        $configuration = $mailers[$mailer];
+        if (isset($configuration['url'])) {
+            try {
+                // Match MailManager's URL overrides without resolving a transport.
+                $configuration = (new ConfigurationUrlParser)->parseConfiguration($configuration);
+                $configuration['transport'] = $configuration['driver'] ?? null;
+            } catch (Throwable) {
+                return ['The selected mailer URL is invalid; review its configuration without sharing credentials.'];
+            }
+        }
+
+        if (($configuration['transport'] ?? null) === 'smtp') {
+            $timeout = $configuration['timeout'] ?? null;
+
+            if (! is_numeric($timeout) || ! is_finite((float) $timeout)
+                || (float) $timeout <= 0 || (float) $timeout > 30) {
+                return ['The selected SMTP mailer must use a finite positive socket timeout of at most 30 seconds (MAIL_TIMEOUT for the bundled smtp mailer).'];
+            }
+        }
+
+        return [];
     }
 
     private function hasBrowserLogRoute(): bool

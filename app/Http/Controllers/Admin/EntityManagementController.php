@@ -531,29 +531,25 @@ class EntityManagementController extends Controller
                 ])->save();
             }
 
-            return $record->fresh(['group', 'users']);
+            $record = $record->fresh(['group', 'users']);
+            $primaryOwner = $record->users
+                ->sortByDesc(fn (User $user): int => (int) ($user->pivot?->is_primary ?? false))
+                ->first();
+
+            // Persist the inbox and external delivery jobs with the decision. A queue
+            // insert failure rolls back; provider failures are retried by the worker.
+            if ($primaryOwner) {
+                $primaryOwner->notify($validated['decision'] === 'approve'
+                    ? new RegistrationApprovedNotification(entity: $record, note: $validated['note'] ?? null)
+                    : new RegistrationCompletionRequestedNotification(
+                        entity: $record,
+                        decision: $validated['decision'],
+                        note: $validated['note'] ?? null,
+                    ));
+            }
+
+            return $record;
         });
-
-        $primaryOwner = $entity->users
-            ->sortByDesc(fn (User $user): int => (int) ($user->pivot?->is_primary ?? false))
-            ->first();
-
-        if ($primaryOwner) {
-            if ($validated['decision'] === 'approve') {
-                $primaryOwner->notify(new RegistrationApprovedNotification(
-                    entity: $entity,
-                    note: $validated['note'] ?? null,
-                ));
-            }
-
-            if (in_array($validated['decision'], ['needs_completion', 'reject'], true)) {
-                $primaryOwner->notify(new RegistrationCompletionRequestedNotification(
-                    entity: $entity,
-                    decision: $validated['decision'],
-                    note: $validated['note'] ?? null,
-                ));
-            }
-        }
 
         return redirect()
             ->route('admin.entities.show', $entity)
