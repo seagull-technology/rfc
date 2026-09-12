@@ -741,10 +741,10 @@ class ScoutingRequestController extends Controller
             'project_nationality' => $validated['project_nationality'],
             'scout_start_date' => $validated['scout_start_date'],
             'scout_end_date' => $validated['scout_end_date'],
-            'production_start_date' => $validated['production_start_date'] ?: null,
-            'production_end_date' => $validated['production_end_date'] ?: null,
+            'production_start_date' => ($validated['production_start_date'] ?? null) ?: null,
+            'production_end_date' => ($validated['production_end_date'] ?? null) ?: null,
             'project_summary' => $validated['project_summary'],
-            'story_text' => $validated['story_text'] ?: null,
+            'story_text' => ($validated['story_text'] ?? null) ?: null,
             'story_file_path' => $storyFileMeta['path'],
             'story_file_name' => $storyFileMeta['name'],
             'story_file_mime_type' => $storyFileMeta['mime'],
@@ -767,7 +767,7 @@ class ScoutingRequestController extends Controller
                 ],
                 'production' => [
                     'types' => array_values($validated['production_types']),
-                    'type_other' => $validated['production_type_other'] ?: null,
+                    'type_other' => ($validated['production_type_other'] ?? null) ?: null,
                 ],
                 'locations' => collect((array) $validated['locations'])
                     ->map(fn (array $location): array => [

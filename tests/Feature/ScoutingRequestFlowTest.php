@@ -155,6 +155,42 @@ class ScoutingRequestFlowTest extends TestCase
         ));
     }
 
+    public function test_optional_scouting_fields_can_be_omitted_when_creating_and_updating(): void
+    {
+        $this->refreshApplicationWithLocale('en');
+        $this->seed(AccessControlSeeder::class);
+        Storage::fake('local');
+        [$user, $entity] = $this->createApplicantContext();
+        $payload = $this->scoutingPayload();
+
+        foreach (['production_start_date', 'production_end_date', 'story_text', 'production_type_other'] as $field) {
+            unset($payload[$field]);
+        }
+
+        $response = $this->actingAs($user)->post(route('scouting-requests.store'), $payload);
+        $response->assertStatus(302)->assertSessionHasNoErrors();
+        $record = ScoutingRequest::query()->where('entity_id', $entity->getKey())->firstOrFail();
+        $response->assertRedirect(route('scouting-requests.show', $record));
+        $this->assertNull($record->production_start_date);
+        $this->assertNull($record->production_end_date);
+        $this->assertNull($record->story_text);
+        $this->assertNull(data_get($record->metadata, 'production.type_other'));
+
+        unset($payload['story_file']);
+        $payload['project_name'] = 'Updated without optional fields';
+        $this->actingAs($user)->post(route('scouting-requests.update', $record), $payload)
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('scouting-requests.show', $record));
+        $record->refresh();
+
+        $this->assertSame('Updated without optional fields', $record->project_name);
+        $this->assertSame('draft', $record->status);
+        $this->assertNull($record->production_start_date);
+        $this->assertNull($record->production_end_date);
+        $this->assertNull($record->story_text);
+        $this->assertNull(data_get($record->metadata, 'production.type_other'));
+    }
+
     public function test_applicant_dashboard_displays_live_scouting_request_data(): void
     {
         $this->refreshApplicationWithLocale('en');

@@ -1,0 +1,85 @@
+RFC staging security verification release - 2026-09-12 v2
+
+PURPOSE
+Deploy the additional cache-versioning and scouting form corrections, then run
+bounded internal checks against the deployed Laravel code and database. This
+release supersedes the 2026-09-12 v1 package for the next staging deployment.
+V01 remains excluded; supplier/security-team correspondence is handled internally.
+
+APPLICATION CHANGES
+- All three dashboard layouts use a shared Lodash script include with a SHA-256
+  query parameter. The URL changes whenever the shipped asset bytes change,
+  including when file modification times remain unchanged.
+- Scouting create/update accepts omitted optional production dates, story text
+  and other-production-type text. Previously these valid omissions caused HTTP
+  500 because nullable fields were accessed without checking their presence.
+- Includes two CLI-only staging verification helpers outside public/. Their
+  process-local fakes suppress notifications, mail, jobs, SMS and outbound HTTP.
+  Normal website and queue-worker configuration is not replaced by these fakes.
+
+EXISTING SERVER
+Target: RFCtgWeb, IIS site RFC, application C:\inetpub\rfc, PHP C:\php\php.exe.
+RFCQueueWorker is already installed, Running/Automatic, under its dedicated
+virtual service account. Do not rerun the installer, switch the service account,
+or create a second worker. The orchestrator checks existing worker health before
+and after deployment and after verification.
+
+The owner explicitly waived an additional database backup for this staging
+release. The standard deployer still preserves .env/storage, pauses writers,
+retains the previous application, and handles a failed application swap. Do not
+replace .env or seed access-control data. This release adds no migration.
+
+DEPLOY AND VERIFY
+Transfer and extract the immutable v2 ZIP under C:\Deploy after verifying the
+separately supplied ZIP hash. Then run in Administrator PowerShell:
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Deploy\rfc-offline-release-20260912-v2\Deploy-RfcStagingVerification.ps1" -ReleaseDirectory "C:\Deploy\rfc-offline-release-20260912-v2" -ExpectedChecksumsSha256 "SUPPLIED_SHA256_OF_SHA256SUMS_TXT"
+
+Use the separately delivered SHA-256 of the extracted SHA256SUMS.txt, not the ZIP
+hash or the application archive hash, for ExpectedChecksumsSha256. The launcher
+checks that hash, verifies each listed bundle file, then passes the verified
+application archive hash to the existing Deploy-RfcRelease.ps1 interface.
+
+The launcher runs the identity/controller helper once; its response comparisons
+already cover both Arabic and English. It then runs the workflow helper for ar
+and en separately. Concurrency is not skipped. Each helper's exit status and
+cleanup evidence are checked. The workflow helper keeps real CSRF middleware
+active while exercising form/logo/error navigation, PDF upload, corrected save,
+edit, submission and omitted scouting fields. It rolls back its fixture
+transaction and removes temporary files. The controller helper creates isolated
+marked fixtures and removes exactly those records after its checks.
+
+PRIVATE EVIDENCE AND FAILURE HANDLING
+The orchestrator restricts each evidence directory under
+C:\ProgramData\RFC\SecurityVerification to Administrators and SYSTEM before
+writing logs. Do not email raw deployment-private.log: deployment output can
+contain a temporary maintenance bypass URL. summary.json contains the concise
+outcome. Workflow JSON and controller-results.json contain bounded check results.
+Original controller evidence remains on Laravel's private storage disk.
+
+Exit 0: deployment and the included internal checks completed, including the
+concurrent review check. Exit 2: deployment completed but concurrency was not
+proven. Exit 1: deployment or verification failed; inspect summary.json and the
+identified private log. A failure after successful deployment leaves the new
+release deployed and does not reinstall the worker or undo the application.
+Do not repeat deployment blindly when only a verification check failed.
+
+LOCAL VALIDATION
+- Full application suite: 395 tests passed, 4035 assertions (12 September).
+- Related scouting/navigation/workflow-runner suite: 28 passed, 325 assertions.
+- Optional-field regression reproduced HTTP 500 before the correction.
+- Standalone workflow CLI: 16 checks passed in each of ar/en against isolated
+  SQLite, with rollback and temporary-file cleanup verified.
+- The controller helper was locally tested separately; deployed production-engine
+  concurrency is established only by the server run's evidence.
+- Orchestrator syntax and portable checks are recorded with its test results.
+  These are not a claim of Windows PowerShell 5.1/IIS execution of this new wrapper.
+
+STILL REQUIRES PUBLIC VERIFICATION
+Internal checks do not establish public gateway timing, browser JavaScript,
+all-node/shared limits, corrected edge cookies, absence of DNS/HTTP callbacks,
+or public TLS policy. Public TLS previously accepted TLS 1.0/1.1 and CBC/static-
+RSA suites; the measured gateway cookies also require corrections. Preserve these
+open findings until the responsible controls are changed and independently tested.
+The named RFC Laravel Scheduler task remains an operational confirmation item;
+this release does not enable a scheduler or change notification recipients.

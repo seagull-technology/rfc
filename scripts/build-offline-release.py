@@ -270,6 +270,9 @@ def main():
         files = create_app_archive(source, bundle / "rfc-app.tar.gz", timestamp)
         for name in ["Deploy-RfcRelease.ps1", "Install-RfcQueueWorker.ps1", "PRE-DEPLOY-CHECKLIST.txt", ".env.production.example", "SECURITY-RETEST.md"]:
             shutil.copyfile(source / "deployment/windows" / name, bundle / name)
+        staging_launcher = source / "deployment/windows/Deploy-RfcStagingVerification.ps1"
+        if staging_launcher.is_file():
+            shutil.copyfile(staging_launcher, bundle / staging_launcher.name)
         shutil.copyfile(source / str(notes), bundle / "RELEASE-NOTES.txt")
         windows_bundle = "C:\\Deploy\\" + args.release_name
         (bundle / "DEPLOY-COMMAND.txt").write_text(
