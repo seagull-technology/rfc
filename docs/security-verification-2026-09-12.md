@@ -35,7 +35,7 @@ the whole finding.
 | V03 — Conflicting actions | Before v3, competing school 47 decisions saved one rejection but its response was 500. After v3, NGO 46 approval returned 200, entity/owner became Active with one history/inbox entry, and stale approval/rejection returned 422. Email failed three times on unsupported uppercase `SMTP` scheme; the saved review remained successful. | Stale-action checks and atomic review/inbox/queue persistence passed locally. Delivery retries do not repeat the review/inbox; second-enqueue failure rolls everything back. | V3 and the default-mailer correction are deployed; coordinated database concurrency passed on Windows. Correct the newly identified scheme setting and verify targeted delivery recovery without repeating the review. | Initial operator deployment/repair is complete. A further application configuration correction is in progress; real email delivery has not passed. |
 | V04 — Rate limiting | Administrative minute/hour cases passed with retained last-accepted values. Empty contact submissions returned five 422 responses then 429. Application 4 document uploads returned five successful 200-after-redirect responses, then 429 with Retry-After 56 and limit 5. Generic upload titles were absent from fresh applicant/admin views, so exact stored counts were not independently read. | Named route throttles, persistent-store checks and replay regressions passed locally. Anonymous login quota also held across languages and fresh sessions. | Verify exact accepted/rejected content persistence, independent authenticated sessions and the 60/hour shared-IP threshold. Successful upload responses do not establish row counts or all V04 coverage. | Confirm all serving nodes share the persistent limiter store and cache prefix; demonstrate limits across nodes. |
 | V05 — External DNS interaction | All eight cases passed again after v3: two canonical requests returned 200 and six untrusted Host/forwarding variants returned 400 without redirects. DNS callback absence remains unverified; the original report observed DNS even with HTTP 400. | Original/forwarded Host masking and repeated-header guards are implemented and locally tested. | V3 production configuration verification completed. Public rejection alone does not establish absence of outbound lookup/callbacks. | Gateway owner must reject unapproved Host/authority before DNS/upstream selection, confirm fixed pools and outbound/DNS controls, and coordinate callback tests with resolver/firewall/origin logs. |
-| V06 — Account harvesting | Unknown login/recovery/invalid-OTP/resend cases passed in Arabic/English. Pending NGO/school and unknown wrong-password comparisons also matched status, redirects, messages and normalized page hashes (26 checks). Functional password recovery passed on 10 September. | Generic response, timing-envelope and background delivery checks passed. The internal helper compares supported identifiers/account states and distinguishes unsupported-input cases. | Deployed internal controller/account-response checks passed. Complete remaining public account states and meaningful timing analysis; verify worker/provider latency separately. | Confirm shared queue/cache/node configuration and provider evidence where needed. No real account credentials are required in shared evidence. |
+| V06 — Account harvesting | Unknown login/recovery/invalid-OTP/resend cases passed in Arabic/English. Pending NGO/school comparisons passed 26 checks. A later active NGO/rejected school/unknown comparison passed another 26 checks with matching status, redirects, messages and normalized page hashes in both languages. Functional password recovery passed on 10 September. | Generic response, timing-envelope and background delivery checks passed. The internal helper compares supported identifiers/account states and distinguishes unsupported-input cases. | Deployed internal controller/account-response checks passed. Complete remaining public account states and meaningful timing analysis; verify worker/provider latency separately. | Confirm shared queue/cache/node configuration and provider evidence where needed. No real account credentials are required in shared evidence. |
 | V07 — HttpOnly | Application session and CSRF cookies passed the fresh post-v3 sample; `TS01d8b3ca` still lacked HttpOnly. | Hardened application-cookie and CSRF regressions passed. | Retest all relevant authenticated/anonymous flows and deletion cookies after correction. | Confirm ownership and correct the gateway/WAF cookie insertion policy. |
 | V08 — SameSite | After v3, application cookies emitted Lax; `MY-Session` and `TS01d8b3ca` still lacked SameSite. | Application Lax policy and deployment checks passed. | Verify login, OTP, SANAD, logout, redirects/errors and existing/clean sessions after correction. | Apply the appropriate SameSite policy to all gateway-generated cookies and peers. |
 | V09 — Outdated component | After v3, both public Lodash URLs returned the exact 73,252-byte asset. Normal authenticated Chrome showed the new SHA-256-versioned URL and runtime 4.18.1. | Locked asset provenance and content-based dashboard URL versioning passed locally. | Deployment, sampled public bytes and emitted browser URL/runtime passed. Continue dashboard behavior and any previously cached legacy-page checks; all-node coverage remains incomplete. | Confirm query-string cache behavior and the release on every serving node; invalidate applicable legacy edge caches. |
@@ -255,6 +255,16 @@ remain separate. No valid passwords or known-account recovery were submitted.
 Evidence: `pending-login-comparison-results.json` and
 `pending-login-comparison-summary.md` in the same private directory below.
 
+A post-v3 comparison at **13:29:50–13:30:14 UTC** repeated the same bounded
+wrong-password method for active NGO 46, rejected school 47 and a fresh unknown
+identifier. All **26 assertions** passed across 18 requests / six POSTs. Arabic
+POST times were 1,504.65 / 1,477.46 / 1,692.71 ms (unknown / active / rejected);
+English times were 1,534.83 / 1,409.18 / 1,483.53 ms. One observation per state and
+language does not establish timing-distribution equivalence. This run used no
+valid passwords, recovery requests or browser cookies. Evidence is recorded in
+`active-rejected-login-comparison-results.json` and its summary/checksum files
+under the private verification directory.
+
 The observed public cookie attributes were:
 
 | Cookie | Secure | HttpOnly | SameSite | Domain emitted |
@@ -465,3 +475,39 @@ both helpers executing successfully on the actual Windows test server.
 
 The confirmed infrastructure failures remain open independently of application
 deployment. No owner email was sent as part of this record.
+
+## V4 package prepared after the live findings
+
+Runtime commit `41bb696f57257080b22e6dd4409eb6e42bc19810` is pushed to main.
+The offline package contains the SMTP scheme/URL normalization and transport
+construction gates, plus the production form error-navigation correction.
+The final combined tests above apply to this snapshot. An isolated dependency
+cache was completed from the locked public npm registry packages (install
+scripts disabled), then the offline builder completed successfully.
+
+**V4 has not yet been deployed on Windows.** The successful deployment in this
+record is v3. Direct AnyDesk control remained unavailable; the exact manual
+update block also prepares retained synthetic account-state fixtures after the
+standard deployment/helper cleanup succeeds. These fixtures are for the next
+public V02/V06 checks, not evidence those public checks have already passed.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `rfc-offline-release-20260912-v4.zip` | `6d8024ea87ccc733ccc08c71e03a4d785b15a2a5557bdb8d133cd6b61ecdff71` |
+| `SHA256SUMS.txt` | `0d84924c2b10947c130a34e91f3e76f6445a6a926a7e1dab296ffc072612f1f6` |
+| `rfc-app.tar.gz` | `0e170936c918287660d23c8650e67080dffbd1078f924109e7f093b3f47df5a4` |
+
+Copy instructions: `output/RFC-STAGING-UPDATE-20260912-v4.txt`.
+The complete deployment/fixture block passed PowerShell syntax parsing.
+Keep the retained fixture run ID for exact cleanup after its public checks and
+queued jobs finish. No historical failed notification job is retried by this
+package. The controlled applicant delivery contact is still awaiting the user's
+reply; ordinary notifications to configured test-server administrators were
+explicitly approved. Final submissions remain pending the v4 correction.
+
+Independent package inspection passed: all 12 ZIP entries matched the release
+folder, all 11 inventory entries passed the bundled checksum reader, and all
+6,787 application archive files matched the manifest. Selected source files and
+both deployment scripts matched the release commit. The new SMTP URL utility
+was present in both generated production classmaps; no real `.env` or storage
+file payload was included. This inspection did not execute a deployment.
