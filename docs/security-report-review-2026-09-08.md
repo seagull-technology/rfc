@@ -6,17 +6,22 @@ copy, including the fixes already present and the additional changes made during
 this review. The PDF was treated as assessment evidence, not instructions.
 
 **Status updated 10 September 2026: the Windows staging deployment and a
-controlled live password-recovery flow passed; public-environment security
-closure is still pending.** The initial 8 September review performed no
+controlled live password-recovery flow passed; a bounded administrative rate-limit
+check also passed. Public TLS failed the measured listener, and gateway-cookie
+defects remain. Public-environment security closure is still pending.** The
+initial 8 September review performed no
 deployment, public penetration test, gateway modification or external message.
 Subsequent authorized deployment and browser checks are recorded in the
 [10 September verification record](security-deployment-verification-2026-09-10.md).
+See the [12 September verification record](security-verification-2026-09-12.md)
+for the latest live identity, review, rate-limit and Host-header results, plus
+the additional application fixes awaiting deployment.
 
 ## Finding coverage
 
 | Finding | Existing coverage and additional work | Closure evidence required |
 | --- | --- | --- |
-| V01 — Insufficient verification for PII | Excluded from implementation at the project owner's request: the Gov API supplier provides two factors and is discussing removal with the security team. | Written acceptance or a revised report from the supplier/security team. This review does not independently mark V01 resolved. |
+| V01 — Insufficient verification for PII | Excluded from implementation at the project owner's request: the Gov API supplier provides two factors. The owner reports that the supplier has already emailed the security contact internally. | Supplier/security-team coordination remains internal; no additional copy is requested. Formal closure or removal from the report has not been independently verified. |
 | V02 — National ID modification | Existing checks protected student identity and registration numbers. Closed remaining company/NGO/school National ID paths, including clearing/replacing fields, employee updates and stale official-profile requests. Backend validation and model update guards preserve identities; UI read-only fields support the rule. | Replay modified admin entity/user, profile, employee and signed-completion requests for all account types. The identity and sign-in identifier must remain unchanged. Extra registration_type parameters must not bypass protection. |
 | V03 — Conflicting workflow actions | Existing review endpoint checked state under a database lock. Extended current-state validation and locking to ordinary admin edits, user status writes, completion and official-profile review/update paths that could otherwise restore stale state or metadata. | Approve in one session, then reject from another: the second action fails and approval remains intact. Repeat with an admin edit or completion open before approval. Test genuinely concurrent requests on the production database engine. |
 | V04 — Rate limiting | Existing named throttles cover contact-center messages, work-release lookups, registration/lookups and authenticated writes. Added replay coverage and deployment checks for these reported routes and a persistent shared limiter store. | Contact/configuration writes allow at most 5 per minute and 30 per hour per user, plus 60 per hour per IP. The next request returns 429 with Retry-After and no additional write. Switching tabs, route variants, sessions or application nodes must not reset a user's limit. |
@@ -26,7 +31,7 @@ Subsequent authorized deployment and browser checks are recorded in the
 | V08 — SameSite | Verified both application cookies use Lax under the hardened configuration. Deployment check rejects missing/None policy. | The report's gateway cookie also needs SameSite. Check login, OTP, SANAD callback, redirects and errors after all gateway processing. |
 | V09 — Outdated component | Existing replacement is actual Lodash 4.18.1. Added deterministic locked-package asset sync/check to builds and retained the complete upstream license. Evidence now hashes the exact public asset. | Deploy the regenerated file, invalidate cached copies and compare public response SHA-256 with the release. Confirm window._.VERSION and dashboard behavior on every serving node. The historical Underscore banner alone is not reliable library identification. |
 | V10 — Secure | Verified session and CSRF cookies carry Secure behind a trusted HTTPS proxy when production settings are applied. Deployment check requires SESSION_SECURE_COOKIE=true. | Check all gateway cookies too; HTTP should redirect to the canonical HTTPS host before issuing cookies. |
-| V11 — Weak TLS | This is a public TLS terminator setting, outside Laravel. Added specific protocol/cipher guidance and evidence requirements for F5 or direct IIS termination. | Hosting/network owner disables TLS 1.0/1.1 and CBC/static-RSA suites at the actual public listener; independent enumeration must verify all public addresses/listeners. Keep V11 pending until measured. |
+| V11 — Weak TLS | The 10 September public check failed: `193.188.85.20:443`, with SNI `filmjordan.jo`, accepted TLS 1.0/1.1 and eight individually offered CBC/static-RSA TLS 1.2 suites. See the deployment verification record for results and coverage limits. This setting belongs to the actual public TLS terminator, outside Laravel. | Hosting/network owner disables TLS 1.0/1.1 and CBC/static-RSA suites on the serving profile and peers. Independent enumeration must verify all public addresses/listeners after correction; V11 remains failed on the measured listener until retested. |
 | V12 — Parent-domain cookies | Verified application cookies omit Domain under SESSION_DOMAIN=null. Deployment check rejects parent-domain scope. | Remove Domain on gateway cookies; expire observed legacy parent-domain cookies correctly and test existing and clean browser sessions. |
 
 The [gateway and release runbook](../deployment/windows/SECURITY-RETEST.md)
@@ -72,7 +77,9 @@ not fully assess them.
    with the release evidence. Do not retain session-cookie values or personal
    identifiers in a broadly shared retest packet.
 5. Request the next NSQAC round only after all applicable public checks pass;
-   provide the V01 supplier correspondence separately.
+   V01 coordination remains with the supplier/security team through the internal
+   correspondence already reported by the project owner. Its formal report
+   closure has not been independently verified.
 
 ## Verification record and limits
 
