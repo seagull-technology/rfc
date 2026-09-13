@@ -12,7 +12,7 @@ use App\Models\Group;
 use App\Models\ScoutingRequest;
 use App\Models\User;
 use App\Models\UserRoleAssignmentAudit;
-use App\Notifications\InboxMessageNotification;
+use App\Notifications\ProfileChangeInboxNotification;
 use App\Notifications\RegistrationApprovedNotification;
 use App\Notifications\RegistrationCompletionRequestedNotification;
 use App\Services\AuthorityApprovalNotificationService;
@@ -612,30 +612,28 @@ class EntityManagementController extends Controller
 
             $entity->forceFill(['metadata' => $metadata])->save();
 
+            $primaryOwner = $entity->users()
+                ->orderByDesc('entity_user.is_primary')
+                ->orderBy('users.name')
+                ->first();
+
+            if ($primaryOwner) {
+                $primaryOwner->notify(new ProfileChangeInboxNotification(
+                    typeKey: $validated['decision'] === 'approve' ? 'profile_change_approved' : 'profile_change_rejected',
+                    title: $validated['decision'] === 'approve'
+                        ? __('app.profile.notifications.change_approved_title')
+                        : __('app.profile.notifications.change_rejected_title'),
+                    body: $validated['decision'] === 'approve'
+                        ? __('app.profile.notifications.change_approved_body', ['entity' => $entity->displayName()])
+                        : __('app.profile.notifications.change_rejected_body', ['entity' => $entity->displayName()]),
+                    routeName: 'profile.show',
+                    entityId: $entity->getKey(),
+                    requestKey: $requestKey,
+                ));
+            }
+
             return $entity;
         });
-
-        $primaryOwner = $entity->users()
-            ->orderByDesc('entity_user.is_primary')
-            ->orderBy('users.name')
-            ->first();
-
-        if ($primaryOwner) {
-            $primaryOwner->notify(new InboxMessageNotification(
-                typeKey: $validated['decision'] === 'approve' ? 'profile_change_approved' : 'profile_change_rejected',
-                title: $validated['decision'] === 'approve'
-                    ? __('app.profile.notifications.change_approved_title')
-                    : __('app.profile.notifications.change_rejected_title'),
-                body: $validated['decision'] === 'approve'
-                    ? __('app.profile.notifications.change_approved_body', ['entity' => $entity->displayName()])
-                    : __('app.profile.notifications.change_rejected_body', ['entity' => $entity->displayName()]),
-                routeName: 'profile.show',
-                meta: [
-                    'entity_id' => $entity->getKey(),
-                    'profile_change_request_id' => $requestKey,
-                ],
-            ));
-        }
 
         return redirect()
             ->route('admin.entities.show', $entity)

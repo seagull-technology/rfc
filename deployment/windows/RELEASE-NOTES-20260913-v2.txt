@@ -1,0 +1,36 @@
+RFC staging release - 13 September 2026 v2
+
+APPLICATION CHANGE
+Make official profile-change request and review notifications durable. The
+previous synchronous email call could fail after the profile request or review
+was already saved, returning an HTTP error and skipping later recipients or SMS.
+The request/review, in-app notification and database delivery jobs now share the
+existing transaction. Independent mail/SMS jobs handle provider failures after
+the HTTP request completes. Existing identity locks, approval checks and stale
+decision rejection remain in place.
+
+DEPLOYMENT
+Use the existing verified offline ZIP and Deploy-RfcStagingVerification.ps1 on
+RFCtgWeb, C:\inetpub\rfc, IIS RFC, C:\php\php.exe and RFCQueueWorker. The owner
+waived an additional staging database backup. Preserve existing environment,
+storage, release rollback and internal verification behavior. No new migration,
+dependency, service or environment change is introduced.
+
+Do not rerun the separate SMTP/public-IP probes, resubmit production4/production9
+or scouting5, or repeat saved registration decisions. The failed persistence
+readback has its own corrected v2 diagnostic and does not require deployment.
+Use the existing applicant session for the next profile tests, preserving its
+identity and contacts. Restore any harmless test name/description through the
+normal profile workflow after verification.
+
+Known SMTP certificate trust, gateway cookies, public TLS, DNS callback evidence,
+shared-IP/node verification and exact retained-fixture cleanup remain separate.
+The owner email is NOT READY TO SEND until application verification is complete.
+
+LOCAL VERIFICATION
+Full suite: 511 tests and 5,063 assertions passed on PHP 8.4.23, matching
+the server version. Focused profile tests passed 12 tests / 299 assertions,
+including real database-job execution after a simulated SMTP TLS failure,
+rollback on partial/later enqueue failure, stale/duplicate rejection, preserved
+identity/contact fields and exclusion of private data from queued payloads.
+Formatting checks and independent source/test review passed.

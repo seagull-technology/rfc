@@ -7,7 +7,7 @@ use App\Models\ApplicationAuthorityApproval;
 use App\Models\Entity;
 use App\Models\ScoutingRequest;
 use App\Models\User;
-use App\Notifications\InboxMessageNotification;
+use App\Notifications\ProfileChangeInboxNotification;
 use App\Rules\SafeExternalUrl;
 use App\Support\ApplicantDashboardState;
 use App\Support\EntityLogo;
@@ -341,7 +341,7 @@ class ProfileController extends Controller
             'note' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        $changeRequest = DB::transaction(function () use ($entity, $user, $validated): array {
+        DB::transaction(function () use ($entity, $user, $validated): void {
             $entity = Entity::query()->lockForUpdate()->findOrFail($entity->getKey());
 
             if (ProfileChangeRequests::pending($entity)) {
@@ -376,10 +376,9 @@ class ProfileController extends Controller
 
             $entity->forceFill(['metadata' => $metadata])->save();
 
-            return $changeRequest;
+            // Keep the request, every inbox entry and delivery job atomic.
+            $this->notifyProfileChangeReviewers($entity, $changeRequest);
         });
-
-        $this->notifyProfileChangeReviewers($entity, $changeRequest);
 
         return redirect()
             ->route('profile.show')
@@ -457,16 +456,13 @@ class ProfileController extends Controller
             ->get()
             ->unique('id')
             ->each(function (User $reviewer) use ($entity, $changeRequest): void {
-                $reviewer->notify(new InboxMessageNotification(
+                $reviewer->notify(new ProfileChangeInboxNotification(
                     typeKey: 'profile_change_requested',
                     title: __('app.profile.notifications.change_requested_title'),
                     body: __('app.profile.notifications.change_requested_body', ['entity' => $entity->displayName()]),
                     routeName: 'admin.entities.show',
-                    routeParameters: ['entity' => $entity->getKey()],
-                    meta: [
-                        'entity_id' => $entity->getKey(),
-                        'profile_change_request_id' => $changeRequest['id'] ?? null,
-                    ],
+                    entityId: $entity->getKey(),
+                    requestKey: $changeRequest['id'],
                 ));
             });
     }
