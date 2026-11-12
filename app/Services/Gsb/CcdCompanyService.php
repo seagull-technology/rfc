@@ -2,6 +2,7 @@
 
 namespace App\Services\Gsb;
 
+use DateTimeImmutable;
 use Illuminate\Support\Facades\Cache;
 
 class CcdCompanyService
@@ -18,25 +19,53 @@ class CcdCompanyService
             && $this->client->credentialsConfigured();
     }
 
+    public function requiresRegistrationDate(): bool
+    {
+        return str_ends_with(
+            rtrim((string) config('services.gsb.services.ccd_company.path'), '/'),
+            '/CompanybyNoAndRegDate',
+        );
+    }
+
     /** @return array<string, mixed> */
-    public function lookup(string $nationalNumber): array
+    public function lookup(string $nationalNumber, ?string $registrationDate = null): array
     {
         if (! $this->isRunnable()) {
             return ['ok' => false, 'error' => 'SERVICE_DISABLED'];
         }
 
-        return Cache::remember(
-            'gsb:ccd_company:'.$nationalNumber,
-            now()->addMinutes((int) config('services.gsb.cache_minutes', 10)),
-            fn (): array => $this->performLookup($nationalNumber),
-        );
+        if ($this->requiresRegistrationDate()) {
+            $date = DateTimeImmutable::createFromFormat('!Y-m-d', $registrationDate ?? '');
+            if (! $date || $date->format('Y-m-d') !== $registrationDate) {
+                return ['ok' => false, 'error' => 'INVALID_REGISTRATION_DATE'];
+            }
+        }
+
+        $key = 'gsb:ccd_company:v2:'.hash('sha256', json_encode([
+            config('services.gsb.base_url'), config('services.gsb.services.ccd_company'),
+            $nationalNumber, $registrationDate,
+        ]));
+        if (Cache::has($key)) {
+            return Cache::get($key);
+        }
+
+        $result = $this->performLookup($nationalNumber, $registrationDate);
+        if ($result['ok'] ?? false) {
+            Cache::put($key, $result, now()->addMinutes((int) config('services.gsb.cache_minutes', 10)));
+        }
+
+        return $result;
     }
 
     /** @return array<string, mixed> */
-    private function performLookup(string $nationalNumber): array
+    private function performLookup(string $nationalNumber, ?string $registrationDate): array
     {
         $response = $this->client->request(
             'ccd_company',
+            payload: $this->requiresRegistrationDate() ? [
+                'NationalNo' => $nationalNumber,
+                'RegDate' => DateTimeImmutable::createFromFormat('!Y-m-d', $registrationDate)->format('n/j/Y'),
+            ] : [],
             pathParameters: ['nationalNo' => $nationalNumber],
         );
 

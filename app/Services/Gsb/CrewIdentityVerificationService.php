@@ -23,10 +23,12 @@ class CrewIdentityVerificationService
     ) {}
 
     /** @return array<string, mixed> */
-    public function lookup(string $identifier, string $category, int $userId): array
+    public function lookup(string $identifier, string $category, int $userId, ?string $birthDate = null, ?string $civilNumber = null): array
     {
         $identifier = preg_replace('/\D+/', '', $identifier) ?: '';
-        $result = $this->lookupService->lookup($identifier, $category);
+        $result = $birthDate !== null || $civilNumber !== null
+            ? $this->lookupService->lookup($identifier, $category, $birthDate, $civilNumber)
+            : $this->lookupService->lookup($identifier, $category);
 
         if ($result['ok'] ?? false) {
             $verifiedAt = now()->toIso8601String();
@@ -143,6 +145,12 @@ class CrewIdentityVerificationService
             'INVALID_INDIVIDUAL_NUMBER',
             'INVALID_NATIONALITY_CATEGORY',
             'NOT_FOUND',
+            'AUTHORIZATION_REQUIRED',
+            'IDENTITY_NOT_CONFIRMED',
+            'TOKEN_LOOKUP_FAILED',
+            'STANDARD_LOOKUP_FAILED',
+            'INVALID_BIRTH_DATE',
+            'INVALID_CIVIL_NUMBER',
         ], true);
     }
 }

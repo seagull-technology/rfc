@@ -67,6 +67,7 @@ return [
         'company_capital' => 'company capital',
         'company_lookup_verified' => 'commercial registration verification',
         'company_registration_date' => 'company registration date',
+        'company_lookup_registration_date' => 'company registration date',
         'code' => 'OTP code',
         'decision' => 'decision',
         'description' => 'description',

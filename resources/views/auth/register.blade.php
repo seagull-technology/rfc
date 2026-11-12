@@ -9,6 +9,7 @@
 
 @php
     $studentLookupCompleted = old('registration_type') === 'student' && old('student_lookup_verified') === '1';
+    $companyLookupRequiresDate = app(\App\Services\CompanyRegistrationLookupService::class)->requiresRegistrationDate();
     $companyLookupCompleted = old('registration_type') === 'company' && old('company_lookup_verified') === '1';
     $studentBirthDateValue = old('registration_type') === 'student' ? (string) old('birth_date', '') : '';
 
@@ -276,11 +277,20 @@
                                                     <div class="row">
                                                         @if ($type === 'company')
                                                             <div class="col-12">
-                                                                <div class="registration-identity-lookup registration-identity-lookup--company">
+                                                                <div class="registration-identity-lookup registration-identity-lookup--company {{ $companyLookupRequiresDate ? 'registration-identity-lookup--with-date' : '' }}">
                                                                     <div class="registration-identity-field">
                                                                         <label class="form-label">{{ __('app.auth.organization_national_id') }}</label>
                                                                         <input type="text" name="registration_number" class="form-control @error('registration_number') is-invalid @enderror" placeholder="{{ __('app.auth.organization_national_id_placeholder') }}" value="{{ old('registration_type') === 'company' ? old('registration_number') : '' }}" inputmode="numeric" pattern="\d{1,10}" maxlength="10" autocomplete="off" data-company-registration-number required>
                                                                     </div>
+                                                                    @if ($companyLookupRequiresDate)
+                                                                        <div class="registration-identity-field">
+                                                                            <label class="form-label" for="company-lookup-registration-date">{{ __('app.auth.company_registration_date') }}</label>
+                                                                            <input type="date" id="company-lookup-registration-date" name="company_lookup_registration_date" class="form-control" value="{{ old('registration_type') === 'company' ? old('company_lookup_registration_date') : '' }}" max="{{ now()->toDateString() }}" data-company-lookup-date required>
+                                                                            @error('company_lookup_registration_date')
+                                                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                                                            @enderror
+                                                                        </div>
+                                                                    @endif
                                                                     <button type="button" class="btn btn-danger registration-lookup-button registration-identity-submit" data-company-lookup-check>
                                                                             <i class="ph ph-magnifying-glass"></i>
                                                                             <span>{{ __('app.auth.check_registration_number') }}</span>
@@ -1029,6 +1039,7 @@
                 }
 
                 const registrationNumber = form.querySelector('[data-company-registration-number]');
+                const registrationDate = form.querySelector('[data-company-lookup-date]');
                 const checkButton = form.querySelector('[data-company-lookup-check]');
                 const message = form.querySelector('[data-company-lookup-message]');
                 const verifiedInput = form.querySelector('[data-company-lookup-verified]');
@@ -1036,6 +1047,7 @@
                 const accountSection = form.querySelector('[data-company-account-fields]');
                 const submitButton = form.querySelector('[data-register-submit="company"]');
                 const accountInputs = form.querySelectorAll('[data-company-account-input]');
+                let verifiedRegistrationDate = verifiedInput?.value === '1' ? registrationDate?.value : '';
                 let verifiedRegistrationNumber = verifiedInput?.value === '1' ? registrationNumber?.value : '';
 
                 const normalizeRegistrationNumber = function (value) {
@@ -1077,6 +1089,7 @@
 
                 const resetLookup = function () {
                     verifiedRegistrationNumber = '';
+                    verifiedRegistrationDate = '';
 
                     if (verifiedInput) {
                         verifiedInput.value = '0';
@@ -1121,6 +1134,13 @@
                     }
                 });
 
+                registrationDate?.addEventListener('input', function () {
+                    if (registrationDate.value !== verifiedRegistrationDate) {
+                        resetLookup();
+                        setMessage('', null);
+                    }
+                });
+
                 checkButton?.addEventListener('click', async function () {
                     const value = normalizeRegistrationNumber(registrationNumber?.value || '');
 
@@ -1142,6 +1162,12 @@
                         registrationNumber.value = value;
                     }
 
+                    if (registrationDate && !registrationDate.reportValidity()) {
+                        resetLookup();
+                        return;
+                    }
+                    const dateValue = registrationDate?.value || null;
+
                     checkButton.disabled = true;
                     setMessage(registerMessages.checkingRegistrationNumber, null);
 
@@ -1153,9 +1179,16 @@
                                 'Content-Type': 'application/json',
                                 'X-CSRF-TOKEN': csrfToken,
                             },
-                            body: JSON.stringify({ registration_number: value }),
+                            body: JSON.stringify({ registration_number: value, company_lookup_registration_date: dateValue }),
                         });
                         const payload = await response.json();
+
+                        if (normalizeRegistrationNumber(registrationNumber?.value) !== value
+                            || (registrationDate?.value || null) !== dateValue) {
+                            resetLookup();
+                            setMessage('', null);
+                            return;
+                        }
 
                         if (!response.ok) {
                             resetLookup();
@@ -1174,6 +1207,7 @@
                         }
 
                         verifiedRegistrationNumber = registrationNumber?.value || value;
+                        verifiedRegistrationDate = dateValue;
                         profileSection.hidden = false;
                         accountSection.hidden = false;
                         setAccountRequired(true);

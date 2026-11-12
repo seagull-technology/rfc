@@ -5,20 +5,24 @@ namespace App\Http\Controllers;
 use App\Services\Gsb\IndividualPersonalInfoLookupService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class ApplicationPersonalDetailsLookupController extends Controller
 {
     public function __invoke(Request $request, IndividualPersonalInfoLookupService $service): JsonResponse
     {
+        $standard = (bool) config('services.gsb.services.psd_personal_standard.enabled', false);
         $validated = $request->validate([
             'nationality_category' => ['required', 'string', 'in:arab,foreign,travel_document'],
             'personal_number' => ['required', 'string', 'digits:10'],
+            'birth_date' => [Rule::requiredIf($standard), 'nullable', 'date_format:Y-m-d', 'before:today'],
         ]);
 
-        $result = $service->lookup(
-            $validated['personal_number'],
-            $validated['nationality_category'],
-        );
+        $arguments = [$validated['personal_number'], $validated['nationality_category']];
+        if ($standard) {
+            $arguments[] = $validated['birth_date'];
+        }
+        $result = $service->lookup(...$arguments);
 
         if (! ($result['ok'] ?? false)) {
             $error = (string) ($result['error'] ?? 'LOOKUP_FAILED');

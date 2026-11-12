@@ -67,6 +67,7 @@ return [
         'company_capital' => 'رأس مال الشركة',
         'company_lookup_verified' => 'التحقق من السجل التجاري',
         'company_registration_date' => 'تاريخ تسجيل الشركة',
+        'company_lookup_registration_date' => 'تاريخ تسجيل الشركة',
         'code' => 'رمز التحقق',
         'decision' => 'القرار',
         'description' => 'الوصف',

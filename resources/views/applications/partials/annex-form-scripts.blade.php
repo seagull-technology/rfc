@@ -96,6 +96,7 @@
                     },
                 };
                 const applicationCastCrewVerificationUrl = @js(route('applications.crew.identity.lookup'));
+                @include('applications.partials.crew-standard-verification-script')
 
                 function refreshProductionTermsForeignApplicant() {
                     const source = document.querySelector('[name="international_producer_name"]');
@@ -941,6 +942,7 @@
             }
 
             function applicationCastCrewVerificationReady(row) {
+                if (!crewStandardReady(row, applicationCastCrewCategory(row))) return false;
                 const identifier = applicationCastCrewIdentifier(row);
 
                 if (applicationIsCastCrewJordanian(row)) {
@@ -959,7 +961,7 @@
                 const showIndividualColumn = rows.some(function (row) {
                     return !applicationIsCastCrewJordanian(row) && applicationCastCrewHasPrimaryIdentity(row);
                 });
-                const showVerificationColumn = rows.some(applicationCastCrewVerificationReady);
+                const showVerificationColumn = rows.length > 0;
 
                 table.querySelector('[data-cast-crew-individual-heading]')?.classList.toggle('d-none', !showIndividualColumn);
                 table.querySelectorAll('[data-cast-crew-individual-cell]').forEach(function (cell) {
@@ -1056,9 +1058,11 @@
 
                 if (status === 'verified' || status === 'pending') {
                     row.dataset.castCrewVerifiedIdentifier = identifier;
+                row.dataset.castCrewVerifiedParameters = crewStandardKey(row);
                     row.dataset.castCrewVerifiedCategory = category;
                 } else {
                     delete row.dataset.castCrewVerifiedIdentifier;
+                delete row.dataset.castCrewVerifiedParameters;
                     delete row.dataset.castCrewVerifiedCategory;
                 }
 
@@ -1070,7 +1074,8 @@
                 const category = applicationCastCrewCategory(row);
                 const identifier = applicationCastCrewIdentifier(row);
                 const unchanged = row.dataset.castCrewVerifiedCategory === category
-                    && row.dataset.castCrewVerifiedIdentifier === identifier;
+                    && row.dataset.castCrewVerifiedIdentifier === identifier
+                    && row.dataset.castCrewVerifiedParameters === crewStandardKey(row);
 
                 if ((status === 'verified' || status === 'pending') && unchanged) {
                     return;
@@ -1107,6 +1112,9 @@
                     row.querySelector('[data-cast-crew-birth-date]').value = identity.birth_date;
                 }
 
+                row.querySelectorAll('[data-cast-crew-api-field]').forEach(field => {
+                    if (field.checkValidity()) field.classList.remove('is-invalid');
+                });
                 updateApplicationCastCrewMode(row);
             }
 
@@ -1114,6 +1122,13 @@
                 const category = applicationCastCrewCategory(row);
                 const identifier = applicationCastCrewIdentifier(row);
                 const button = row.querySelector('[data-cast-crew-verify]');
+                const requestParameters = crewStandardValues(row);
+                const requestKey = crewStandardKey(row);
+                if (!crewStandardReady(row, category)) {
+                    setApplicationCastCrewVerification(row, 'unverified', {message: crewStandardFieldsMessage, error: true});
+                    return false;
+                }
+
 
                 if (!identifier) {
                     setApplicationCastCrewVerification(row, category === 'foreign' ? 'manual' : 'unverified', {
@@ -1155,6 +1170,7 @@
                         },
                         body: JSON.stringify({
                             nationality_category: category,
+                        ...requestParameters,
                             identifier: identifier,
                         }),
                     });
@@ -1162,7 +1178,9 @@
                         return {};
                     });
 
-                    if (!response.ok || !payload.ok) {
+                    if (category !== applicationCastCrewCategory(row) || identifier !== applicationCastCrewIdentifier(row) || requestKey !== crewStandardKey(row)) return false;
+
+                if (!response.ok || !payload.ok) {
                         setApplicationCastCrewVerification(row, 'unverified', {
                             message: payload.message || applicationCastCrewLabels.unavailable,
                             error: true,
@@ -1233,6 +1251,7 @@
                 const passportImage = row.querySelector('[data-cast-crew-passport-image]');
                 const verificationPanel = row.querySelector('[data-cast-crew-verification-panel]');
                 const isJordanian = applicationIsCastCrewJordanian(row);
+                mountCrewStandardFields(row, isJordanian);
                 const hasNationality = String(nationality?.value || '').trim() !== '';
 
                 if (jordanianName) {
@@ -1304,7 +1323,7 @@
                 const verificationIdentifier = applicationCastCrewIdentifier(row);
                 const verificationReady = applicationCastCrewVerificationReady(row);
 
-                verificationPanel?.classList.toggle('d-none', !verificationReady);
+                verificationPanel?.classList.remove('d-none');
 
                 if ((verificationStatus === 'verified' || verificationStatus === 'pending')
                     && !row.dataset.castCrewVerifiedIdentifier) {
@@ -1316,6 +1335,7 @@
 
                 if (verifyButton) {
                     verifyButton.disabled = !verificationReady;
+                    updateCrewCheckHint(row, applicationCastCrewCategory(row), verificationReady);
                 }
 
                 applicationCastCrewSetApiFieldsLocked(row, verificationStatus === 'verified');
@@ -1359,11 +1379,11 @@
                         + '<td><select class="form-select" name="cast_crew[' + rowKey + '][nationality]" data-cast-crew-nationality required>' + applicationNationalityOptionsHtml + '</select></td>'
                         + '<td>' + applicationCastCrewIdentityInputHtml(rowKey) + '</td>'
                         + '<td class="d-none" data-cast-crew-individual-cell>' + applicationCastCrewIndividualNumberInputHtml(rowKey) + '</td>'
+                        + '<td><input type="date" class="form-control" name="cast_crew[' + rowKey + '][birth_date]" max="' + applicationCrewBirthDateMax + '" data-cast-crew-birth-date data-cast-crew-api-field required></td>'
                         + '<td class="d-none" data-cast-crew-verification-cell>' + applicationCastCrewVerificationHtml(rowKey) + '</td>'
                         + '<td class="cast-crew-name-cell">' + applicationCastCrewNameInputsHtml(rowKey) + '</td>'
                         + '<td><input type="text" class="form-control" name="cast_crew[' + rowKey + '][role]" required></td>'
                         + '<td><select class="form-select" name="cast_crew[' + rowKey + '][gender]" data-cast-crew-gender data-cast-crew-api-field required>' + applicationGenderOptionsHtml + '</select></td>'
-                        + '<td><input type="date" class="form-control" name="cast_crew[' + rowKey + '][birth_date]" max="' + applicationCrewBirthDateMax + '" data-cast-crew-birth-date data-cast-crew-api-field required></td>'
                         + '<td class="d-none" data-cast-crew-passport-cell>' + applicationCastCrewPassportImageInputHtml(rowKey) + '</td>'
                         + deleteCell;
                 } else if (fieldName === 'filming_locations') {
@@ -1506,7 +1526,7 @@
                     updateApplicationCastCrewMode(event.target.closest('tr'));
                 }
 
-                if (event.target.matches('[data-cast-crew-identity], [data-cast-crew-individual-number]')) {
+                if (event.target.matches('[data-cast-crew-identity], [data-cast-crew-individual-number], [data-cast-crew-civil-number], [data-cast-crew-birth-date]')) {
                     const row = event.target.closest('tr');
                     updateApplicationCastCrewMode(row);
                     applicationCastCrewInvalidateVerification(row);

@@ -85,12 +85,14 @@ class GsbClient
                 ->timeout((int) config('services.gsb.timeout', 25))
                 ->retry(2, 200, throw: false);
 
-            $response = match ($method) {
-                'GET' => $pendingRequest->get($url, $payload),
-                'PUT' => $pendingRequest->put($url, $payload),
-                'PATCH' => $pendingRequest->patch($url, $payload),
-                default => $pendingRequest->post($url, $payload),
-            };
+            $response = ($config['payload_in'] ?? null) === 'query'
+                ? $pendingRequest->send($method, $url, ['query' => $payload])
+                : match ($method) {
+                    'GET' => $pendingRequest->get($url, $payload),
+                    'PUT' => $pendingRequest->put($url, $payload),
+                    'PATCH' => $pendingRequest->patch($url, $payload),
+                    default => $pendingRequest->post($url, $payload),
+                };
 
             $json = $response->json();
 
@@ -113,11 +115,15 @@ class GsbClient
                 'error' => null,
             ];
         } catch (Throwable $exception) {
+            // Query-parameter lookup exceptions can include the complete identity.
+            $message = in_array($service, ['cspd_personal_info_standard', 'psd_personal_standard'], true)
+                ? 'Standard personal information request failed ('.class_basename($exception).')'
+                : $exception->getMessage();
             Log::channel('gov_lookup')->error('GSB request failed', [
                 'service' => $service,
                 'method' => $method,
                 'url' => $this->safeUrl($url, $pathParameters),
-                'message' => $exception->getMessage(),
+                'message' => $message,
                 'payload' => $this->safePayloadSummary($payload),
             ]);
 
@@ -129,7 +135,7 @@ class GsbClient
                 'url' => $url,
                 'json' => null,
                 'body' => null,
-                'error' => $exception->getMessage(),
+                'error' => $message,
             ];
         }
     }
@@ -260,7 +266,7 @@ class GsbClient
 
         if ($bearer !== '') {
             $headers['Authorization'] = 'Bearer '.$bearer;
-        } elseif ($basicUser !== '' && $basicPass !== '') {
+        } elseif (($serviceConfig['send_basic_auth'] ?? true) && $basicUser !== '' && $basicPass !== '') {
             $headers['Authorization'] = 'Basic '.base64_encode($basicUser.':'.$basicPass);
         }
 
@@ -362,7 +368,7 @@ class GsbClient
 
         $value = (string) $value;
 
-        if (preg_match('/(token|secret|password|authorization|code|verifier|hash|signature)/i', $key) === 1) {
+        if (preg_match('/(token|secret|password|authorization|code|verifier|hash|signature|birth|dob|civ)/i', $key) === 1) {
             return '[redacted]';
         }
 

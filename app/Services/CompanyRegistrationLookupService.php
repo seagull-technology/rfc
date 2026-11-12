@@ -14,10 +14,14 @@ class CompanyRegistrationLookupService
         private readonly MitEstablishmentService $mitEstablishmentService,
     ) {}
 
-    /**
-     * @return array<string, mixed>
-     */
-    public function lookup(string $registrationNumber): array
+    public function requiresRegistrationDate(): bool
+    {
+        return $this->ccdCompanyService->requiresRegistrationDate()
+            || $this->mitEstablishmentService->requiresRegistrationDate();
+    }
+
+    /** @return array<string, mixed> */
+    public function lookup(string $registrationNumber, ?string $registrationDate = null): array
     {
         $registrationNumber = $this->normalizeRegistrationNumber($registrationNumber);
 
@@ -29,12 +33,16 @@ class CompanyRegistrationLookupService
         }
 
         if (! $this->ccdCompanyService->isRunnable() && ! $this->mitEstablishmentService->isRunnable()) {
+            if (app()->environment('production') || config('services.gsb.enabled')) {
+                return ['ok' => false, 'error' => 'SERVICE_DISABLED'];
+            }
+
             return $this->localLookup($registrationNumber);
         }
 
         $attempts = [];
 
-        foreach ($this->providers($registrationNumber) as $provider) {
+        foreach ($this->providers($registrationNumber, $registrationDate) as $provider) {
             if (! $provider['runnable']) {
                 continue;
             }
@@ -51,6 +59,7 @@ class CompanyRegistrationLookupService
                 return [
                     'ok' => true,
                     'registration_number' => $registrationNumber,
+                    'lookup_registration_date' => $registrationDate,
                     'data' => (array) ($result['data'] ?? []),
                     'meta' => array_merge((array) ($result['meta'] ?? []), [
                         'attempts' => $attempts,
@@ -73,10 +82,13 @@ class CompanyRegistrationLookupService
     /**
      * @param  array<string, mixed>|null  $lookupState
      */
-    public function lookupStateMatches(?array $lookupState, string $registrationNumber): bool
+    public function lookupStateMatches(?array $lookupState, string $registrationNumber, ?string $registrationDate = null): bool
     {
         return (bool) ($lookupState['ok'] ?? false)
             && ($lookupState['registration_number'] ?? null) === $this->normalizeRegistrationNumber($registrationNumber)
+            && (! $this->requiresRegistrationDate() || (
+                filled($registrationDate) && ($lookupState['lookup_registration_date'] ?? null) === $registrationDate
+            ))
             && is_array($lookupState['data'] ?? null);
     }
 
@@ -89,6 +101,7 @@ class CompanyRegistrationLookupService
         return [
             'ok' => (bool) ($lookup['ok'] ?? false),
             'registration_number' => $lookup['registration_number'] ?? null,
+            'lookup_registration_date' => $lookup['lookup_registration_date'] ?? null,
             'data' => (array) ($lookup['data'] ?? []),
             'meta' => (array) ($lookup['meta'] ?? []),
             'verified_at' => now()->toDateTimeString(),
@@ -101,18 +114,18 @@ class CompanyRegistrationLookupService
     }
 
     /** @return array<int, array{source:string,runnable:bool,lookup:callable():array<string,mixed>}> */
-    private function providers(string $registrationNumber): array
+    private function providers(string $registrationNumber, ?string $registrationDate): array
     {
         return [
             [
                 'source' => 'gsb_ccd_company',
                 'runnable' => $this->ccdCompanyService->isRunnable(),
-                'lookup' => fn (): array => $this->ccdCompanyService->lookup($registrationNumber),
+                'lookup' => fn (): array => $this->ccdCompanyService->lookup($registrationNumber, $registrationDate),
             ],
             [
                 'source' => 'gsb_mit_services',
                 'runnable' => $this->mitEstablishmentService->isRunnable(),
-                'lookup' => fn (): array => $this->mitEstablishmentService->lookup($registrationNumber),
+                'lookup' => fn (): array => $this->mitEstablishmentService->lookup($registrationNumber, $registrationDate),
             ],
         ];
     }

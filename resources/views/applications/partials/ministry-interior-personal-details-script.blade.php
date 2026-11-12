@@ -401,6 +401,16 @@
                             }
 
                             personalNumber.setCustomValidity('');
+                            const birthDate = rowControl(row, 'birth_date');
+                            const usesStandardPsd = @js((bool) config('services.gsb.services.psd_personal_standard.enabled', false));
+                            if (usesStandardPsd && (!birthDate?.value || !birthDate.checkValidity())) {
+                                if (status) {
+                                    status.textContent = @js(__('app.auth.student_birth_date_required'));
+                                    status.className = 'ministry-personal-details-form__lookup-status text-danger';
+                                }
+                                birthDate?.focus();
+                                return;
+                            }
                             lookupButton.disabled = true;
                             const originalLabel = lookupButton.innerHTML;
                             lookupButton.textContent = lookupLoadingLabel;
@@ -417,6 +427,7 @@
                                     body: JSON.stringify({
                                         personal_number: personalNumberValue,
                                         nationality_category: category.value,
+                                        birth_date: birthDate?.value || null,
                                     }),
                                 });
                                 const payload = await response.json().catch(() => null);

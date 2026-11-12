@@ -1167,6 +1167,7 @@
             nationalIdDigits: @js(__('app.applications.cast_crew_national_id_digits')),
         };
         const applicationCastCrewVerificationUrl = @js(route('applications.crew.identity.lookup'));
+                @include('applications.partials.crew-standard-verification-script')
         const applicationCastCrewLabels = {
             individualNumber: @js(__('app.applications.annex_fields.individual_number')),
             foreignOptionalHelp: @js(__('app.applications.cast_crew_verification.foreign_optional_help')),
@@ -1730,6 +1731,7 @@
         }
 
         function castCrewVerificationReady(row) {
+                if (!crewStandardReady(row, castCrewCategory(row))) return false;
             const identifier = castCrewIdentifier(row);
 
             if (isCastCrewJordanian(row)) {
@@ -1748,7 +1750,7 @@
             const showIndividualColumn = rows.some(function (row) {
                 return !isCastCrewJordanian(row) && castCrewHasPrimaryIdentity(row);
             });
-            const showVerificationColumn = rows.some(castCrewVerificationReady);
+            const showVerificationColumn = rows.length > 0;
 
             table.querySelector('[data-cast-crew-individual-heading]')?.classList.toggle('d-none', !showIndividualColumn);
             table.querySelectorAll('[data-cast-crew-individual-cell]').forEach(function (cell) {
@@ -1864,9 +1866,11 @@
 
             if (status === 'verified' || status === 'pending') {
                 row.dataset.castCrewVerifiedIdentifier = identifier;
+                row.dataset.castCrewVerifiedParameters = crewStandardKey(row);
                 row.dataset.castCrewVerifiedCategory = category;
             } else {
                 delete row.dataset.castCrewVerifiedIdentifier;
+                delete row.dataset.castCrewVerifiedParameters;
                 delete row.dataset.castCrewVerifiedCategory;
             }
 
@@ -1878,7 +1882,8 @@
             const category = castCrewCategory(row);
             const identifier = castCrewIdentifier(row);
             const unchanged = row.dataset.castCrewVerifiedCategory === category
-                && row.dataset.castCrewVerifiedIdentifier === identifier;
+                && row.dataset.castCrewVerifiedIdentifier === identifier
+                    && row.dataset.castCrewVerifiedParameters === crewStandardKey(row);
 
             if ((status === 'verified' || status === 'pending') && unchanged) {
                 return;
@@ -1915,13 +1920,23 @@
                 row.querySelector('[data-cast-crew-birth-date]').value = identity.birth_date;
             }
 
-            updateCastCrewNameMode(row);
+            row.querySelectorAll('[data-cast-crew-api-field]').forEach(field => {
+                    if (field.checkValidity()) field.classList.remove('is-invalid');
+                });
+                updateCastCrewNameMode(row);
         }
 
         async function verifyCastCrewRow(row) {
             const category = castCrewCategory(row);
             const identifier = castCrewIdentifier(row);
             const button = row.querySelector('[data-cast-crew-verify]');
+                const requestParameters = crewStandardValues(row);
+                const requestKey = crewStandardKey(row);
+                if (!crewStandardReady(row, category)) {
+                    setCastCrewVerification(row, 'unverified', {message: crewStandardFieldsMessage, error: true});
+                    return false;
+                }
+
 
             if (!castCrewVerificationReady(row)) {
                 setCastCrewVerification(row, category === 'foreign' ? 'manual' : 'unverified', {
@@ -1963,12 +1978,15 @@
                     },
                     body: JSON.stringify({
                         nationality_category: category,
+                        ...requestParameters,
                         identifier: identifier,
                     }),
                 });
                 const payload = await response.json().catch(function () {
                     return {};
                 });
+
+                if (category !== castCrewCategory(row) || identifier !== castCrewIdentifier(row) || requestKey !== crewStandardKey(row)) return false;
 
                 if (!response.ok || !payload.ok) {
                     setCastCrewVerification(row, 'unverified', {
@@ -2053,6 +2071,7 @@
             const identity = row.querySelector('[data-cast-crew-identity]');
             const feedback = row.querySelector('[data-cast-crew-identity-feedback]');
             const isJordanian = isCastCrewJordanian(row);
+                mountCrewStandardFields(row, isJordanian);
             const nationality = row.querySelector('[data-cast-crew-nationality]');
             const hasNationality = String(nationality?.value || '').trim() !== '';
 
@@ -2152,7 +2171,7 @@
             const verificationReady = castCrewVerificationReady(row);
             const verificationIdentifier = castCrewIdentifier(row);
 
-            verificationPanel?.classList.toggle('d-none', !verificationReady);
+            verificationPanel?.classList.remove('d-none');
 
             if ((verificationStatus === 'verified' || verificationStatus === 'pending')
                 && !row.dataset.castCrewVerifiedIdentifier) {
@@ -2164,6 +2183,7 @@
 
             if (verifyButton) {
                 verifyButton.disabled = !verificationReady;
+                    updateCrewCheckHint(row, castCrewCategory(row), verificationReady);
             }
 
             castCrewSetApiFieldsLocked(row, verificationStatus === 'verified');
@@ -2494,11 +2514,11 @@
                     + '<td><select class="form-select" name="cast_crew[' + rowKey + '][nationality]" data-cast-crew-nationality required>' + applicationNationalityOptionsHtml + '</select></td>'
                     + '<td>' + castCrewIdentityInputHtml(rowKey) + '</td>'
                     + '<td class="d-none" data-cast-crew-individual-cell>' + castCrewIndividualNumberInputHtml(rowKey) + '</td>'
+                    + '<td><input type="date" class="form-control" name="cast_crew[' + rowKey + '][birth_date]" max="' + applicationCrewBirthDateMax + '" data-cast-crew-birth-date data-cast-crew-api-field required></td>'
                     + '<td class="d-none" data-cast-crew-verification-cell>' + castCrewVerificationHtml(rowKey) + '</td>'
                     + '<td class="cast-crew-name-cell">' + castCrewJordanianNameInputsHtml(rowKey) + '</td>'
                     + '<td><input type="text" class="form-control" name="cast_crew[' + rowKey + '][role]" required></td>'
                     + '<td><select class="form-select" name="cast_crew[' + rowKey + '][gender]" data-cast-crew-gender data-cast-crew-api-field required>' + applicationGenderOptionsHtml + '</select></td>'
-                    + '<td><input type="date" class="form-control" name="cast_crew[' + rowKey + '][birth_date]" max="' + applicationCrewBirthDateMax + '" data-cast-crew-birth-date data-cast-crew-api-field required></td>'
                     + '<td class="d-none" data-cast-crew-passport-cell>' + castCrewPassportImageInputHtml(rowKey) + '</td>'
                     + deleteCell;
             } else if (fieldName === 'filming_locations') {
@@ -3120,7 +3140,7 @@
                         refreshApplicationWorkSummaryRules(requestForm);
                     }
 
-                    if (event.target.matches('[data-cast-crew-nationality], [data-cast-crew-name-part], [data-cast-crew-full-name-input], [data-cast-crew-identity], [data-cast-crew-individual-number]')) {
+                    if (event.target.matches('[data-cast-crew-nationality], [data-cast-crew-name-part], [data-cast-crew-full-name-input], [data-cast-crew-identity], [data-cast-crew-individual-number], [data-cast-crew-civil-number], [data-cast-crew-birth-date]')) {
                         if (event.target.matches('[data-cast-crew-identity]') && eventName === 'input') {
                             event.target.dataset.validationTouched = 'true';
                         }
@@ -3129,7 +3149,7 @@
 
                         updateCastCrewNameMode(row);
 
-                        if (event.target.matches('[data-cast-crew-nationality], [data-cast-crew-identity], [data-cast-crew-individual-number]')) {
+                        if (event.target.matches('[data-cast-crew-nationality], [data-cast-crew-identity], [data-cast-crew-individual-number], [data-cast-crew-civil-number], [data-cast-crew-birth-date]')) {
                             invalidateCastCrewVerification(row);
                         }
                     }

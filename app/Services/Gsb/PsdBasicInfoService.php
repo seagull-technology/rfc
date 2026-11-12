@@ -20,6 +20,20 @@ class PsdBasicInfoService
             return ['ok' => false, 'error' => 'INVALID_INDIVIDUAL_NUMBER'];
         }
 
+        if ($this->client->isEnabled('psd_basic_info_token')) {
+            if (! $this->client->hasPath('psd_basic_info_token')
+                || ! $this->client->credentialsConfigured('psd_basic_info_token')) {
+                return ['ok' => false, 'error' => 'SERVICE_DISABLED'];
+            }
+
+            if (blank(config('services.gsb.services.psd_basic_info_token.bearer'))) {
+                return ['ok' => false, 'error' => 'AUTHORIZATION_REQUIRED'];
+            }
+
+            // Check authorization on every token lookup; never fall back to retired routes.
+            return $this->performLookup($individualNumber);
+        }
+
         if (! $this->tokenServiceRunnable() && ! $this->maskedServiceRunnable()) {
             return ['ok' => false, 'error' => 'SERVICE_DISABLED'];
         }
@@ -43,7 +57,7 @@ class PsdBasicInfoService
             ];
         }
 
-        if ($this->maskedServiceRunnable()) {
+        if (! $this->client->isEnabled('psd_basic_info_token') && $this->maskedServiceRunnable()) {
             $attempts[] = [
                 'service' => 'cspd_personal_info_masked',
                 'response' => $this->client->requestPath(
@@ -79,7 +93,9 @@ class PsdBasicInfoService
         if (! ($response['ok'] ?? false) || ! is_array($response['json'] ?? null)) {
             return [
                 'ok' => false,
-                'error' => (int) ($response['status'] ?? 0) === 404 ? 'NOT_FOUND' : ($response['error'] ?? 'LOOKUP_FAILED'),
+                'error' => in_array((int) ($response['status'] ?? 0), [401, 403], true)
+                    ? 'AUTHORIZATION_REQUIRED'
+                    : ($source === 'psd_basic_info_token' ? 'TOKEN_LOOKUP_FAILED' : ($response['error'] ?? 'LOOKUP_FAILED')),
                 'status' => $response['status'] ?? null,
             ];
         }
@@ -87,8 +103,16 @@ class PsdBasicInfoService
         $json = $response['json'];
         $logicalStatus = (int) (data_get($json, 'code') ?? data_get($json, 'status') ?? 200);
 
+        if (in_array($logicalStatus, [401, 403], true)) {
+            return ['ok' => false, 'error' => 'AUTHORIZATION_REQUIRED', 'status' => $response['status'] ?? null];
+        }
+
         if ($logicalStatus === 404 || data_get($json, 'data.hasData') === false || data_get($json, 'hasData') === false) {
             return ['ok' => false, 'error' => 'NOT_FOUND', 'status' => $response['status'] ?? null];
+        }
+
+        if ($source === 'psd_basic_info_token' && $logicalStatus >= 400) {
+            return ['ok' => false, 'error' => 'TOKEN_LOOKUP_FAILED', 'status' => $response['status'] ?? null];
         }
 
         $record = $this->normalizer->firstRecord($json);

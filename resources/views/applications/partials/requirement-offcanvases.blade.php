@@ -207,71 +207,90 @@
         }
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable {
-            min-width: 2050px;
+            min-width: 0;
+            width: 100%;
+        }
+
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable th,
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable td {
+            white-space: normal;
+            vertical-align: top;
+        }
+
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable .form-control,
+        .offcanvas.application-annex-offcanvas #castCrewRequestTable .form-select {
+            min-width: 0;
+        }
+
+        #castCrewRequestTable .cast-crew-jordanian-name > div {
+            flex: 0 0 50%;
+            max-width: 50%;
         }
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(1),
         .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(1) {
-            min-width: 3.5rem;
-            width: 3.5rem;
+            min-width: 40px;
+            width: 40px;
         }
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(2),
         .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(2) {
-            min-width: 12rem;
-            width: 12rem;
+            min-width: 130px;
+            width: 130px;
         }
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(3),
         .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(3) {
-            min-width: 16rem;
+            min-width: 200px;
+            width: 200px;
         }
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(4),
         .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(4) {
-            min-width: 18rem;
-            width: 18rem;
+            min-width: 190px;
+            width: 190px;
         }
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(5),
         .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(5) {
-            min-width: 18rem;
-            width: 18rem;
-            white-space: normal;
+            min-width: 160px;
+            width: 160px;
         }
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(6),
         .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(6) {
-            min-width: 34rem;
+            min-width: 190px;
+            width: 190px;
         }
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(7),
         .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(7) {
-            min-width: 14rem;
+            min-width: 260px;
+            width: 260px;
         }
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(8),
         .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(8) {
-            min-width: 12rem;
-            width: 12rem;
+            min-width: 130px;
+            width: 130px;
         }
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(9),
         .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(9) {
-            min-width: 13rem;
-            width: 13rem;
+            min-width: 100px;
+            width: 100px;
         }
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(10),
         .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(10) {
-            min-width: 7rem;
-            width: 7rem;
+            min-width: 180px;
+            width: 180px;
         }
 
         .offcanvas.application-annex-offcanvas #castCrewRequestTable th:nth-child(11),
         .offcanvas.application-annex-offcanvas #castCrewRequestTable td:nth-child(11) {
-            min-width: 7rem;
-            width: 7rem;
+            min-width: 55px;
+            width: 55px;
         }
 
         .cast-crew-verification-panel {
@@ -461,11 +480,11 @@
 	                            <th>{{ __('app.applications.annex_fields.nationality') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.identity_number') }}</th>
 	                            <th class="d-none" data-cast-crew-individual-heading>{{ __('app.applications.annex_fields.individual_number') }}</th>
+	                            <th>{{ __('app.applications.annex_fields.birth_date') }}</th>
 	                            <th class="d-none" data-cast-crew-verification-heading>{{ __('app.applications.cast_crew_verification.verification') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.person_name') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.role') }}</th>
 	                            <th>{{ __('app.applications.annex_fields.gender') }}</th>
-	                            <th>{{ __('app.applications.annex_fields.birth_date') }}</th>
 	                            <th class="d-none" data-cast-crew-passport-heading>{{ __('app.applications.annex_fields.passport_image') }}</th>
 	                            <th>{{ __('app.applications.actions') }}</th>
 	                        </tr>
@@ -530,6 +549,7 @@
 	                                        <small class="form-text text-muted d-block mt-1">{{ __('app.applications.cast_crew_verification.foreign_optional_help') }}</small>
 	                                    </div>
 	                                </td>
+	                                <td><input type="date" class="form-control" name="cast_crew[{{ $index }}][birth_date]" value="{{ $row['birth_date'] ?? '' }}" max="{{ $maxCrewBirthDate }}" data-cast-crew-birth-date data-cast-crew-api-field required></td>
 	                                <td class="d-none" data-cast-crew-verification-cell>
 	                                    <input type="hidden" name="cast_crew[{{ $index }}][verification_token]" value="" data-cast-crew-verification-token>
 	                                    <input type="hidden" name="cast_crew[{{ $index }}][identity_verification_status]" value="{{ $castCrewVerificationStatus }}" data-cast-crew-verification-status>
@@ -566,7 +586,6 @@
 	                                        @endforeach
 	                                    </select>
 	                                </td>
-	                                <td><input type="date" class="form-control" name="cast_crew[{{ $index }}][birth_date]" value="{{ $row['birth_date'] ?? '' }}" max="{{ $maxCrewBirthDate }}" data-cast-crew-birth-date data-cast-crew-api-field required></td>
 	                                <td class="d-none" data-cast-crew-passport-cell>
 	                                    <div class="{{ $castCrewShowsPassportImage ? '' : 'd-none' }}" data-cast-crew-passport-image>
 	                                        <input type="file" class="form-control" name="cast_crew[{{ $index }}][passport_image]" accept="image/jpeg,image/png,.jpg,.jpeg,.png" @disabled(! $castCrewShowsPassportImage)>

@@ -41,10 +41,10 @@ class PersonalInfoRecordNormalizer
     public function normalize(array $record): array
     {
         $values = $this->index($record);
-        $firstName = $this->value($values, ['aname1', 'name1', 'firstname', 'arabicfirstname', 'firstnamearabic', 'arabicname1']);
-        $fatherName = $this->value($values, ['aname2', 'name2', 'fathername', 'secondname', 'arabicsecondname', 'arabicname2']);
-        $grandfatherName = $this->value($values, ['aname3', 'name3', 'grandfathername', 'thirdname', 'arabicthirdname', 'arabicname3']);
-        $familyName = $this->value($values, ['aname4', 'name4', 'familyname', 'lastname', 'surname', 'arabicfamilyname', 'arabicname4']);
+        $firstName = $this->value($values, ['aname1', 'name1', 'firstname', 'arabicfirstname', 'firstnamearabic', 'arabicname1', 'efirstname', 'ename1']);
+        $fatherName = $this->value($values, ['aname2', 'name2', 'fathername', 'secondname', 'arabicsecondname', 'arabicname2', 'efathername', 'ename2']);
+        $grandfatherName = $this->value($values, ['aname3', 'name3', 'grandfathername', 'grandfname', 'thirdname', 'arabicthirdname', 'arabicname3', 'egrandfname', 'ename3']);
+        $familyName = $this->value($values, ['aname4', 'name4', 'familyname', 'lastname', 'surname', 'arabicfamilyname', 'arabicname4', 'efamilyname', 'ename4']);
         $fullName = $this->value($values, [
             'fullname',
             'personname',
@@ -52,6 +52,7 @@ class PersonalInfoRecordNormalizer
             'namearabic',
             'aname',
             'name',
+            'efullname',
         ]);
 
         if (! filled($fullName)) {
@@ -66,10 +67,12 @@ class PersonalInfoRecordNormalizer
             'father_name' => $fatherName,
             'grandfather_name' => $grandfatherName,
             'family_name' => $familyName,
-            'birth_date' => $this->date($this->value($values, ['birthdate', 'dateofbirth', 'dob', 'bdate', 'brthdate', 'birthday'])),
+            'birth_date' => $this->date($this->value($values, ['birthdate22', 'birthdate', 'birthdt', 'dateofbirth', 'dob', 'bdate', 'brthdate', 'birthday'])),
             'birth_place' => $this->value($values, ['birthplace', 'placeofbirth', 'placebirth', 'birthplacedesc', 'birthcity', 'birthcountry']),
             'gender' => $this->gender($this->value($values, ['genderdesc', 'genderdescription', 'gendercode', 'gender', 'sexdesc', 'sexcode', 'sex'])),
-            'nationality' => $this->value($values, ['nationalityname', 'nationalitydesc', 'nationalitydescription', 'nationality', 'countryname']),
+            'nationality' => $this->value($values, ['nationalityname', 'nationalitydesc', 'nationalitydescription', 'nationality', 'countryname'])
+                ?? data_get($record, 'country.0.A_DESCRIPTION')
+                ?? data_get($record, 'country.0.E_DESCRIPTION'),
             'phone' => $this->value($values, ['mobilenumber', 'mobileno', 'mobile', 'cellphone', 'phonenumber', 'phoneno', 'phone', 'telno', 'telephone']),
             'email' => $this->value($values, ['emailaddress', 'email']),
             'address' => $this->value($values, ['fulladdress', 'residenceaddress', 'residenceaddressdesc', 'currentaddress', 'addressdesc', 'address']),
@@ -91,7 +94,10 @@ class PersonalInfoRecordNormalizer
 
         foreach ($record as $key => $value) {
             if (is_scalar($value) || $value === null) {
-                $values[$this->normalizeKey((string) $key)] = $value;
+                $normalizedKey = $this->normalizeKey((string) $key);
+                if (filled($value) || ! array_key_exists($normalizedKey, $values)) {
+                    $values[$normalizedKey] = $value;
+                }
             }
         }
 

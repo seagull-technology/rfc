@@ -11,13 +11,16 @@ class CompanyLookupController extends Controller
 {
     public function __invoke(Request $request, CompanyRegistrationLookupService $lookupService): JsonResponse
     {
+        $request->session()->forget(CompanyRegistrationLookupService::SESSION_KEY);
+
         $payload = $request->validate([
             'registration_number' => ['required', 'regex:/^\d{1,10}$/'],
+            'company_lookup_registration_date' => [$lookupService->requiresRegistrationDate() ? 'required' : 'nullable', 'date_format:Y-m-d', 'before_or_equal:today'],
         ], [
             'registration_number.regex' => __('app.auth.organization_national_id_digits'),
         ]);
 
-        $result = $lookupService->lookup($payload['registration_number']);
+        $result = $lookupService->lookup($payload['registration_number'], $payload['company_lookup_registration_date'] ?? null);
 
         if (! ($result['ok'] ?? false)) {
             return response()->json([

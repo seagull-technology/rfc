@@ -215,6 +215,7 @@ class RegisterController extends Controller
             'registration_number' => ['required', 'regex:/^\d{1,10}$/'],
             'entity_name' => ['nullable', 'string', 'max:255'],
             'company_registration_date' => ['nullable', 'date'],
+            'company_lookup_registration_date' => [$companyLookupService->requiresRegistrationDate() ? 'required' : 'nullable', 'date_format:Y-m-d', 'before_or_equal:today'],
             'company_capital' => ['nullable', 'numeric', 'min:0'],
             'email' => ['required', 'string', 'email', 'max:255'],
             'phone' => ['required', 'regex:/^\d{10}$/'],
@@ -231,7 +232,7 @@ class RegisterController extends Controller
 
         $lookupState = $request->session()->get(CompanyRegistrationLookupService::SESSION_KEY);
 
-        if (! $companyLookupService->lookupStateMatches(is_array($lookupState) ? $lookupState : null, $data['registration_number'])) {
+        if (! $companyLookupService->lookupStateMatches(is_array($lookupState) ? $lookupState : null, $data['registration_number'], $data['company_lookup_registration_date'] ?? null)) {
             throw ValidationException::withMessages([
                 'registration_number' => __('app.auth.company_lookup_required'),
             ]);

@@ -159,7 +159,8 @@
         padding: 1rem;
     }
 
-    .registration-identity-lookup--student {
+    .registration-identity-lookup--student,
+    .registration-identity-lookup--with-date {
         grid-template-columns: repeat(2, minmax(15rem, 1fr)) auto;
     }
 
@@ -428,11 +429,13 @@
             flex: 0 0 min(12rem, 72vw);
         }
 
-        .registration-identity-lookup--student {
+        .registration-identity-lookup--student,
+        .registration-identity-lookup--with-date {
             grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
-        .registration-identity-lookup--student .registration-identity-submit {
+        .registration-identity-lookup--student .registration-identity-submit,
+        .registration-identity-lookup--with-date .registration-identity-submit {
             grid-column: 1 / -1;
             width: 100%;
         }
